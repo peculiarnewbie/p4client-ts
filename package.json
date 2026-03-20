@@ -1,0 +1,21 @@
+{
+  "name": "p4-ts-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.10",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "bun run --cwd packages/core build",
+    "typecheck": "bun run --cwd packages/core typecheck",
+    "test": "bun run --cwd packages/core test",
+    "clean": "bun run --cwd packages/core clean",
+    "pack:core": "bun run --cwd packages/core pack:check"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.10",
+    "@types/node": "^24.6.0",
+    "typescript": "^5.9.2"
+  }
+}
