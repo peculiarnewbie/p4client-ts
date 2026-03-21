@@ -3,6 +3,24 @@
   "version": "0.1.0",
   "description": "Typed TypeScript helpers for the Perforce p4 CLI",
   "license": "MIT",
+  "author": "peculiarnewbie",
+  "keywords": [
+    "perforce",
+    "p4",
+    "cli",
+    "typescript",
+    "version-control",
+    "scm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/peculiarnewbie/p4-ts.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/peculiarnewbie/p4-ts/issues"
+  },
+  "homepage": "https://github.com/peculiarnewbie/p4-ts#readme",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
