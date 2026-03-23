@@ -9,6 +9,7 @@ export {
   listPendingChangelists,
   listP4Workspaces,
   previewReconcile,
+  streamPreviewReconcile,
   previewSync,
   sync
 } from "./service.js";
@@ -18,6 +19,7 @@ export {
   normalizeNullableString,
   normalizeP4Change,
   parseP4JsonLines,
+  parseP4ProgressLine,
   parseP4KeyValueOutput,
   unixSecondsToIsoString
 } from "./helpers.js";
@@ -29,16 +31,22 @@ export type {
   P4CommandExecutor,
   P4CommandOptions,
   P4CommandResult,
+  P4CommandStreamEvent,
+  P4CommandStreamSource,
   P4EnvironmentSummary,
   P4JsonValue,
   P4JsonWorkspace,
   P4ListWorkspaceResult,
+  P4OperationHandle,
   P4OpenedFileSummary,
   P4PendingChangelistSummary,
   P4ReconcileCandidate,
+  P4ReconcileProgressEvent,
   P4ReconcilePreviewResult,
   P4ClientOptions,
+  P4ProgressSnapshot,
   P4Service,
+  P4StreamingCommandExecutor,
   P4SyncItem,
   P4SyncResult,
   P4SyncPreviewItem,
@@ -47,5 +55,6 @@ export type {
   PreviewReconcileOptions,
   PreviewSyncOptions,
   SyncOptions,
-  RunTaggedJsonOptions
+  RunTaggedJsonOptions,
+  WatchP4CommandOptions
 } from "./types.js";

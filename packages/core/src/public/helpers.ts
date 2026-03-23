@@ -1,4 +1,4 @@
-import type { LocalWorkspaceCandidate } from "./types.js";
+import type { LocalWorkspaceCandidate, P4ProgressSnapshot } from "./types.js";
 
 /**
  * Parse classic `p4 info`-style `Key: Value` output into an object map.
@@ -33,6 +33,35 @@ export function parseP4JsonLines<T = Record<string, unknown>>(output: string): T
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
     .map((line) => JSON.parse(line) as T);
+}
+
+/**
+ * Parse a best-effort progress snapshot from a raw Perforce progress line.
+ *
+ * The CLI progress format is version-dependent, so this parser intentionally
+ * extracts only coarse, low-risk fields when they are obvious.
+ */
+export function parseP4ProgressLine(line: string): P4ProgressSnapshot | null {
+  const rawMessage = line.trim();
+  if (!rawMessage) return null;
+
+  const percentMatch = /(\d{1,3})(?:\.\d+)?%/.exec(rawMessage);
+  const pairMatch = /\b(\d+)\s*\/\s*(\d+)\b/.exec(rawMessage);
+  const ofMatch = /\b(\d+)\s+of\s+(\d+)\b/i.exec(rawMessage);
+  const completed = pairMatch?.[1] ?? ofMatch?.[1] ?? null;
+  const total = pairMatch?.[2] ?? ofMatch?.[2] ?? null;
+  const percent = percentMatch ? Number(percentMatch[1]!) : null;
+
+  const phaseMatch = /^([A-Za-z][A-Za-z0-9 /_-]{2,40}?)(?::|\s+-\s+)/.exec(rawMessage);
+  const phase = phaseMatch?.[1]?.trim() ?? null;
+
+  return {
+    rawMessage,
+    phase,
+    completed: completed ? Number(completed) : null,
+    total: total ? Number(total) : null,
+    percent: Number.isFinite(percent) ? percent : null
+  };
 }
 
 /**

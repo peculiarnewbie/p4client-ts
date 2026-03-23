@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { createP4Service } from "../src/public/service.js";
 
 describe("createP4Service", () => {
@@ -194,5 +194,74 @@ describe("createP4Service", () => {
       ],
       totalCount: 1
     });
+  });
+
+  it("streams reconcile progress events through the Effect service", async () => {
+    const service = createP4Service({
+      streamExecutor: (command, args) => ({
+        events: (async function*() {
+          yield { type: "start", command, args };
+          yield { type: "line", source: "stderr" as const, line: "Scanning workspace: 1/2 (50%)" };
+          yield {
+            type: "line",
+            source: "stdout" as const,
+            line: "{\"depotFile\":\"//Project/main/foo.txt\",\"action\":\"edit\",\"change\":\"12345\"}"
+          };
+          yield { type: "exit", exitCode: 0 };
+        })(),
+        result: Promise.resolve({
+          command,
+          args,
+          stdout: [
+            "Scanning workspace: 1/2 (50%)",
+            "{\"depotFile\":\"//Project/main/foo.txt\",\"action\":\"edit\",\"change\":\"12345\"}"
+          ].join("\n"),
+          stderr: "",
+          exitCode: 0
+        })
+      })
+    });
+
+    const events = await Effect.runPromise(
+      service.streamPreviewReconcile().pipe(Stream.runCollect)
+    );
+
+    expect(Array.from(events)).toEqual([
+      {
+        type: "start",
+        command: "p4",
+        args: ["-I", "-Mj", "-z", "tag", "reconcile", "-n"],
+        progressRequested: true
+      },
+      {
+        type: "progress",
+        source: "stderr",
+        rawLine: "Scanning workspace: 1/2 (50%)",
+        snapshot: {
+          rawMessage: "Scanning workspace: 1/2 (50%)",
+          phase: "Scanning workspace",
+          completed: 1,
+          total: 2,
+          percent: 50
+        }
+      },
+      {
+        type: "complete",
+        result: {
+          added: [],
+          edited: [
+            {
+              depotFile: "//Project/main/foo.txt",
+              clientFile: null,
+              localFile: null,
+              action: "edit",
+              type: null,
+              changelist: 12345
+            }
+          ],
+          deleted: []
+        }
+      }
+    ]);
   });
 });

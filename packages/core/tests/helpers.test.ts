@@ -6,6 +6,7 @@ import {
   normalizeP4Change,
   parseP4JsonLines,
   parseP4KeyValueOutput,
+  parseP4ProgressLine,
   unixSecondsToIsoString
 } from "../src/public/helpers.js";
 import type { P4JsonWorkspace } from "../src/public/types.js";
@@ -58,6 +59,18 @@ describe("parseP4JsonLines", () => {
   it("handles empty lines", () => {
     expect(parseP4JsonLines("")).toEqual([]);
     expect(parseP4JsonLines("\n\n")).toEqual([]);
+  });
+});
+
+describe("parseP4ProgressLine", () => {
+  it("extracts best-effort progress fields from a human-readable line", () => {
+    expect(parseP4ProgressLine("Scanning workspace: 3/12 (25%)")).toEqual({
+      rawMessage: "Scanning workspace: 3/12 (25%)",
+      phase: "Scanning workspace",
+      completed: 3,
+      total: 12,
+      percent: 25
+    });
   });
 });
 

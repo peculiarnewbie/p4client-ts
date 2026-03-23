@@ -1,11 +1,12 @@
 import { hostname as getHostName } from "node:os";
-import { runCommand } from "../internal/command.js";
+import { runCommand, watchCommand } from "../internal/command.js";
 import { P4CommandError } from "./errors.js";
 import {
   isLocalWorkspace,
   normalizeNullableNumber,
   normalizeNullableString,
   normalizeP4Change,
+  parseP4ProgressLine,
   parseP4JsonLines,
   parseP4KeyValueOutput,
   unixSecondsToIsoString
@@ -18,6 +19,9 @@ import type {
   P4ClientOptions,
   P4CommandOptions,
   P4CommandResult,
+  P4CommandStreamEvent,
+  P4OperationHandle,
+  P4ReconcileProgressEvent,
   P4EnvironmentSummary,
   P4JsonWorkspace,
   P4OpenedFileSummary,
@@ -31,7 +35,8 @@ import type {
   PreviewReconcileOptions,
   PreviewSyncOptions,
   SyncOptions,
-  RunTaggedJsonOptions
+  RunTaggedJsonOptions,
+  WatchP4CommandOptions
 } from "./types.js";
 
 /**
@@ -47,6 +52,7 @@ export class P4Client {
   readonly env: NodeJS.ProcessEnv | undefined;
 
   private readonly executor;
+  private readonly streamExecutor;
   private readonly configuredHostName;
   private cachedEnvironment: P4EnvironmentSummary | null = null;
   private cachedWorkspaces: P4WorkspaceSummary[] | null = null;
@@ -63,6 +69,7 @@ export class P4Client {
     this.env = options.env;
     this.configuredHostName = options.hostName;
     this.executor = options.executor ?? runCommand;
+    this.streamExecutor = options.streamExecutor ?? watchCommand;
   }
 
   /**
@@ -75,34 +82,38 @@ export class P4Client {
    * `allowNonZeroExit` was not enabled.
    */
   async run(args: string[], options: P4CommandOptions = {}): Promise<P4CommandResult> {
-    const commandOptions: P4CommandOptions = {
-      env: { ...process.env, ...this.env, ...options.env }
-    };
-
-    const cwd = options.cwd ?? this.cwd;
-    if (cwd !== undefined) {
-      commandOptions.cwd = cwd;
-    }
-
-    if (options.input !== undefined) {
-      commandOptions.input = options.input;
-    }
-
-    if (options.allowNonZeroExit !== undefined) {
-      commandOptions.allowNonZeroExit = options.allowNonZeroExit;
-    }
-
+    const commandOptions = this.buildCommandOptions(options);
     const result = await this.executor(this.executable, args, commandOptions);
 
     if (result.exitCode !== 0 && !commandOptions.allowNonZeroExit) {
-      const details = result.stderr.trim() || result.stdout.trim() || "Unknown error";
-      throw new P4CommandError(
-        `${this.executable} ${args.join(" ")} exited with ${result.exitCode}: ${details}`,
-        result
-      );
+      throw this.toCommandError(args, result);
     }
 
     return result;
+  }
+
+  /**
+   * Run a raw `p4` command and observe incremental output lines.
+   *
+   * The final result follows the same non-zero exit behavior as {@link run}.
+   */
+  watch(
+    args: string[],
+    options: WatchP4CommandOptions = {}
+  ): P4OperationHandle<P4CommandStreamEvent, P4CommandResult> {
+    const commandOptions = this.buildCommandOptions(options);
+    const handle = this.streamExecutor(this.executable, args, commandOptions);
+
+    return {
+      events: handle.events,
+      result: handle.result.then((result) => {
+        if (result.exitCode !== 0 && !commandOptions.allowNonZeroExit) {
+          throw this.toCommandError(args, result);
+        }
+
+        return result;
+      })
+    };
   }
 
   /**
@@ -308,33 +319,127 @@ export class P4Client {
   async previewReconcile(
     options: PreviewReconcileOptions = {}
   ): Promise<P4ReconcilePreviewResult> {
-    const commandArgs = ["reconcile", "-n"];
-    if (options.changelist !== undefined) {
-      commandArgs.push("-c", String(options.changelist));
-    }
-    if (options.useModTime) {
-      commandArgs.push("-m");
-    }
-    if (options.includeWritable) {
-      commandArgs.push("-w");
-    }
-    this.appendFileSpecs(commandArgs, options.fileSpec);
-
+    const commandArgs = this.getPreviewReconcileCommandArgs(options);
     const rows = await this.runTaggedJson<Record<string, unknown>>(commandArgs);
-    const result: P4ReconcilePreviewResult = {
-      added: [],
-      edited: [],
-      deleted: []
+    return this.toReconcilePreviewResult(rows);
+  }
+
+  /**
+   * Preview reconcile results while observing best-effort progress events.
+   *
+   * The final structured preview result remains authoritative; progress lines
+   * are emitted as raw, version-dependent hints.
+   */
+  watchPreviewReconcile(
+    options: PreviewReconcileOptions = {}
+  ): P4OperationHandle<P4ReconcileProgressEvent, P4ReconcilePreviewResult> {
+    const queue = this.createAsyncEventQueue<P4ReconcileProgressEvent>();
+    const baseArgs = this.getPreviewReconcileCommandArgs(options);
+    const argsWithProgress = ["-I", "-Mj", "-z", "tag", ...baseArgs];
+
+    queue.push({
+      type: "start",
+      command: this.executable,
+      args: argsWithProgress,
+      progressRequested: true
+    });
+
+    const result = (async () => {
+      let sawProgress = false;
+
+      const executeAttempt = async (args: string[]): Promise<{
+        rows: Record<string, unknown>[];
+      }> => {
+        const rows: Record<string, unknown>[] = [];
+        const handle = this.watch(args, { allowNonZeroExit: true });
+
+        for await (const event of handle.events) {
+          if (event.type !== "line") {
+            continue;
+          }
+
+          if (event.source === "stdout") {
+            const parsed = this.tryParseJsonLine(event.line);
+            if (parsed) {
+              rows.push(parsed);
+              continue;
+            }
+          }
+
+          sawProgress = true;
+          queue.push({
+            type: "progress",
+            source: event.source,
+            rawLine: event.line,
+            snapshot: parseP4ProgressLine(event.line)
+          });
+        }
+
+        const commandResult = await handle.result;
+        if (commandResult.exitCode !== 0) {
+          throw new P4CommandError(
+            `${this.executable} ${args.join(" ")} exited with ${commandResult.exitCode}: ${
+              commandResult.stderr.trim() || commandResult.stdout.trim() || "Unknown error"
+            }`,
+            commandResult
+          );
+        }
+
+        return { rows };
+      };
+
+      try {
+        const firstAttempt = await executeAttempt(argsWithProgress);
+        const preview = this.toReconcilePreviewResult(firstAttempt.rows);
+
+        if (!sawProgress) {
+          queue.push({
+            type: "progress-unavailable",
+            reason: "not-emitted",
+            message: "Perforce did not emit progress lines for this reconcile preview."
+          });
+        }
+
+        queue.push({ type: "complete", result: preview });
+        return preview;
+      } catch (error) {
+        if (!(error instanceof P4CommandError) || !this.isUnsupportedProgressError(error.result)) {
+          throw error;
+        }
+
+        queue.push({
+          type: "progress-unavailable",
+          reason: "unsupported",
+          message: error.result.stderr.trim() || error.result.stdout.trim() || "Progress output is unsupported."
+        });
+
+        const fallbackRows = await executeAttempt(["-Mj", "-z", "tag", ...baseArgs]);
+        const preview = this.toReconcilePreviewResult(fallbackRows.rows);
+        if (!sawProgress) {
+          queue.push({
+            type: "progress-unavailable",
+            reason: "not-emitted",
+            message: "Reconcile preview completed without emitting progress lines."
+          });
+        }
+        queue.push({ type: "complete", result: preview });
+        return preview;
+      }
+    })();
+
+    void result.then(
+      () => {
+        queue.finish();
+      },
+      (error) => {
+        queue.fail(error);
+      }
+    );
+
+    return {
+      events: queue.iterable,
+      result
     };
-
-    for (const row of rows) {
-      const candidate = this.toReconcileCandidate(row);
-      if (candidate.action === "add") result.added.push(candidate);
-      else if (candidate.action === "edit") result.edited.push(candidate);
-      else result.deleted.push(candidate);
-    }
-
-    return result;
   }
 
   /**
@@ -441,6 +546,23 @@ export class P4Client {
     };
   }
 
+  private toReconcilePreviewResult(rows: Record<string, unknown>[]): P4ReconcilePreviewResult {
+    const result: P4ReconcilePreviewResult = {
+      added: [],
+      edited: [],
+      deleted: []
+    };
+
+    for (const row of rows) {
+      const candidate = this.toReconcileCandidate(row);
+      if (candidate.action === "add") result.added.push(candidate);
+      else if (candidate.action === "edit") result.edited.push(candidate);
+      else result.deleted.push(candidate);
+    }
+
+    return result;
+  }
+
   private getSyncCommandArgs(
     options: Pick<PreviewSyncOptions, "fileSpec" | "force" | "keepWorkspaceFiles">,
     preview: boolean
@@ -488,5 +610,141 @@ export class P4Client {
     }
 
     commandArgs.push(fileSpec);
+  }
+
+  private getPreviewReconcileCommandArgs(options: PreviewReconcileOptions): string[] {
+    const commandArgs = ["reconcile", "-n"];
+    if (options.changelist !== undefined) {
+      commandArgs.push("-c", String(options.changelist));
+    }
+    if (options.useModTime) {
+      commandArgs.push("-m");
+    }
+    if (options.includeWritable) {
+      commandArgs.push("-w");
+    }
+    this.appendFileSpecs(commandArgs, options.fileSpec);
+    return commandArgs;
+  }
+
+  private buildCommandOptions(options: P4CommandOptions): P4CommandOptions {
+    const commandOptions: P4CommandOptions = {
+      env: { ...process.env, ...this.env, ...options.env }
+    };
+
+    const cwd = options.cwd ?? this.cwd;
+    if (cwd !== undefined) {
+      commandOptions.cwd = cwd;
+    }
+
+    if (options.input !== undefined) {
+      commandOptions.input = options.input;
+    }
+
+    if (options.allowNonZeroExit !== undefined) {
+      commandOptions.allowNonZeroExit = options.allowNonZeroExit;
+    }
+
+    return commandOptions;
+  }
+
+  private toCommandError(args: string[], result: P4CommandResult): P4CommandError {
+    const details = result.stderr.trim() || result.stdout.trim() || "Unknown error";
+    return new P4CommandError(
+      `${this.executable} ${args.join(" ")} exited with ${result.exitCode}: ${details}`,
+      result
+    );
+  }
+
+  private tryParseJsonLine(line: string): Record<string, unknown> | null {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      return parsed !== null && typeof parsed === "object"
+        ? parsed as Record<string, unknown>
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private isUnsupportedProgressError(result: P4CommandResult): boolean {
+    const text = [result.stderr, result.stdout].filter(Boolean).join("\n");
+    const patterns = [
+      /unknown option.*-I/i,
+      /invalid option.*-I/i,
+      /don't know about.*-I/i,
+      /progress indicators?.*not available/i,
+      /not compatible with.*-I/i,
+      /usage:.*\bp4\b/i
+    ];
+
+    return patterns.some((pattern) => pattern.test(text));
+  }
+
+  private createAsyncEventQueue<T>(): {
+    iterable: AsyncIterable<T>;
+    push: (event: T) => void;
+    fail: (error: unknown) => void;
+    finish: () => void;
+  } {
+    const values: T[] = [];
+    const waiters: Array<{
+      resolve: (result: IteratorResult<T>) => void;
+      reject: (error: unknown) => void;
+    }> = [];
+    let error: unknown = null;
+    let done = false;
+
+    return {
+      iterable: {
+        [Symbol.asyncIterator]() {
+          return {
+            next() {
+              if (values.length > 0) {
+                return Promise.resolve({ done: false, value: values.shift()! });
+              }
+              if (error !== null) {
+                return Promise.reject(error);
+              }
+              if (done) {
+                return Promise.resolve({ done: true, value: undefined });
+              }
+
+              return new Promise<IteratorResult<T>>((resolve, reject) => {
+                waiters.push({ resolve, reject });
+              });
+            }
+          };
+        }
+      },
+      push(event: T) {
+        if (done || error !== null) return;
+        const waiter = waiters.shift();
+        if (waiter) {
+          waiter.resolve({ done: false, value: event });
+          return;
+        }
+        values.push(event);
+      },
+      fail(nextError: unknown) {
+        if (done || error !== null) return;
+        error = nextError;
+        while (waiters.length > 0) {
+          waiters.shift()!.reject(nextError);
+        }
+      },
+      finish() {
+        if (done || error !== null) return;
+        done = true;
+        while (waiters.length > 0) {
+          waiters.shift()!.resolve({ done: true, value: undefined });
+        }
+      }
+    };
   }
 }

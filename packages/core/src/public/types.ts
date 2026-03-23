@@ -26,6 +26,29 @@ export interface P4CommandResult {
 }
 
 /**
+ * Source stream for a low-level command output event.
+ */
+export type P4CommandStreamSource = "stdout" | "stderr";
+
+/**
+ * Incremental command events emitted while a `p4` process is running.
+ */
+export type P4CommandStreamEvent =
+  | { type: "start"; command: string; args: string[] }
+  | { type: "line"; source: P4CommandStreamSource; line: string }
+  | { type: "exit"; exitCode: number };
+
+/**
+ * Handle returned by progress-aware operations.
+ */
+export interface P4OperationHandle<TEvent, TResult> {
+  /** Incremental events emitted while the operation runs. */
+  events: AsyncIterable<TEvent>;
+  /** Final typed result once the operation finishes. */
+  result: Promise<TResult>;
+}
+
+/**
  * Low-level execution options for raw `p4` commands.
  */
 export interface P4CommandOptions {
@@ -40,6 +63,11 @@ export interface P4CommandOptions {
 }
 
 /**
+ * Low-level execution options for raw observed `p4` commands.
+ */
+export interface WatchP4CommandOptions extends P4CommandOptions {}
+
+/**
  * Injectable command runner used by {@link P4ClientOptions.executor}.
  */
 export type P4CommandExecutor = (
@@ -47,6 +75,15 @@ export type P4CommandExecutor = (
   args: string[],
   options: P4CommandOptions
 ) => Promise<P4CommandResult>;
+
+/**
+ * Injectable streaming command runner used by progress-aware APIs.
+ */
+export type P4StreamingCommandExecutor = (
+  command: string,
+  args: string[],
+  options: P4CommandOptions
+) => P4OperationHandle<P4CommandStreamEvent, P4CommandResult>;
 
 /**
  * Configuration for constructing a `P4Client`.
@@ -62,6 +99,8 @@ export interface P4ClientOptions {
   hostName?: string;
   /** Injectable command executor for tests or custom process handling. */
   executor?: P4CommandExecutor;
+  /** Injectable streaming executor for progress-aware APIs and tests. */
+  streamExecutor?: P4StreamingCommandExecutor;
 }
 
 /**
@@ -235,6 +274,35 @@ export interface P4ReconcilePreviewResult {
 }
 
 /**
+ * Best-effort parsed progress details from a Perforce progress line.
+ */
+export interface P4ProgressSnapshot {
+  rawMessage: string;
+  phase: string | null;
+  completed: number | null;
+  total: number | null;
+  percent: number | null;
+}
+
+/**
+ * Progress events emitted while previewing reconcile.
+ */
+export type P4ReconcileProgressEvent =
+  | { type: "start"; command: string; args: string[]; progressRequested: boolean }
+  | {
+      type: "progress";
+      source: P4CommandStreamSource;
+      rawLine: string;
+      snapshot: P4ProgressSnapshot | null;
+    }
+  | {
+      type: "progress-unavailable";
+      reason: "unsupported" | "not-emitted";
+      message: string;
+    }
+  | { type: "complete"; result: P4ReconcilePreviewResult };
+
+/**
  * Options for previewing `p4 sync`.
  */
 export interface PreviewSyncOptions {
@@ -321,6 +389,9 @@ export interface P4Service {
   previewReconcile: (
     options?: PreviewReconcileOptions
   ) => import("effect").Effect.Effect<P4ReconcilePreviewResult, Error>;
+  streamPreviewReconcile: (
+    options?: PreviewReconcileOptions
+  ) => import("effect").Stream.Stream<P4ReconcileProgressEvent, Error>;
   previewSync: (
     options?: PreviewSyncOptions
   ) => import("effect").Effect.Effect<P4SyncPreviewResult, Error>;

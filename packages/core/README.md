@@ -61,6 +61,18 @@ if (syncPreview.totalCount > 0) {
     fileSpec: "//Project/main/..."
   });
 }
+
+const reconcileOperation = p4.watchPreviewReconcile({
+  fileSpec: "C:/work/project/..."
+});
+
+for await (const event of reconcileOperation.events) {
+  if (event.type === "progress") {
+    console.log(event.rawLine);
+  }
+}
+
+const reconcileWithProgress = await reconcileOperation.result;
 ```
 
 ## Documentation
@@ -79,12 +91,25 @@ Build the static docs site:
 bun run docs:build
 ```
 
+## Reconcile Progress
+
+`previewReconcile()` remains the simple buffered API. Use
+`watchPreviewReconcile()` when you need incremental progress while still
+awaiting the final structured reconcile result.
+
+Progress output is best-effort:
+
+- Perforce progress lines are version-dependent and not treated as a stable schema.
+- The final structured reconcile preview remains the source of truth.
+- When `-I` progress is unsupported, the watcher retries once without `-I` and emits a `progress-unavailable` event.
+- When Perforce completes without any progress lines, the watcher emits `progress-unavailable` with reason `not-emitted`.
+
 ## Effect Service API
 
 For [Effect](https://effect.website)-based codebases, `createP4Service` returns the same operations as `P4Client` wrapped in `Effect`:
 
 ```ts
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { createP4Service } from "p4client-ts";
 
 const p4 = createP4Service();
@@ -93,6 +118,9 @@ const environment = await Effect.runPromise(p4.getP4Environment());
 const workspaces = await Effect.runPromise(p4.listP4Workspaces());
 const opened = await Effect.runPromise(p4.getOpenedFiles({ change: "default" }));
 const reconcilePreview = await Effect.runPromise(p4.previewReconcile());
+const reconcileEvents = await Effect.runPromise(
+  p4.streamPreviewReconcile().pipe(Stream.runCollect)
+);
 const syncPreview = await Effect.runPromise(p4.previewSync({ fileSpec: "//Project/main/..." }));
 
 if (syncPreview.totalCount > 0) {

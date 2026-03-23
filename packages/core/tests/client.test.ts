@@ -1,9 +1,35 @@
 import { describe, expect, it } from "bun:test";
 import { P4Client } from "../src/public/client.js";
 import { P4CommandError } from "../src/public/errors.js";
-import type { P4CommandExecutor } from "../src/public/types.js";
+import type {
+  P4CommandExecutor,
+  P4CommandResult,
+  P4CommandStreamEvent,
+  P4OperationHandle,
+  P4StreamingCommandExecutor
+} from "../src/public/types.js";
 
 function createExecutor(resolver: P4CommandExecutor): P4CommandExecutor {
+  return resolver;
+}
+
+function createStreamHandle(
+  events: P4CommandStreamEvent[],
+  result: P4CommandResult
+): P4OperationHandle<P4CommandStreamEvent, P4CommandResult> {
+  return {
+    events: (async function*() {
+      for (const event of events) {
+        yield event;
+      }
+    })(),
+    result: Promise.resolve(result)
+  };
+}
+
+function createStreamingExecutor(
+  resolver: P4StreamingCommandExecutor
+): P4StreamingCommandExecutor {
   return resolver;
 }
 
@@ -423,6 +449,230 @@ describe("P4Client", () => {
     });
 
     await expect(p4.previewReconcile()).rejects.toThrow("Unsupported reconcile action");
+  });
+
+  it("emits reconcile progress events and returns the final preview result", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      streamExecutor: createStreamingExecutor((command, args) => {
+        calls.push(args);
+
+        return createStreamHandle(
+          [
+            { type: "start", command, args },
+            { type: "line", source: "stderr", line: "Scanning workspace: 1/4 (25%)" },
+            {
+              type: "line",
+              source: "stdout",
+              line: "{\"depotFile\":\"//Project/main/edit.txt\",\"path\":\"C:\\\\work\\\\Project_Main\\\\edit.txt\",\"action\":\"edit\",\"change\":\"12345\"}"
+            },
+            { type: "line", source: "stdout", line: "Hashing files: 4/4 (100%)" },
+            { type: "exit", exitCode: 0 }
+          ],
+          {
+            command,
+            args,
+            stdout: [
+              "Scanning workspace: 1/4 (25%)",
+              "{\"depotFile\":\"//Project/main/edit.txt\",\"path\":\"C:\\\\work\\\\Project_Main\\\\edit.txt\",\"action\":\"edit\",\"change\":\"12345\"}",
+              "Hashing files: 4/4 (100%)"
+            ].join("\n"),
+            stderr: "",
+            exitCode: 0
+          }
+        );
+      })
+    });
+
+    const operation = p4.watchPreviewReconcile({ fileSpec: "C:/work/Project_Main/..." });
+    const events = [];
+
+    for await (const event of operation.events) {
+      events.push(event);
+    }
+
+    await expect(operation.result).resolves.toEqual({
+      added: [],
+      edited: [
+        {
+          depotFile: "//Project/main/edit.txt",
+          clientFile: null,
+          localFile: "C:\\work\\Project_Main\\edit.txt",
+          action: "edit",
+          type: null,
+          changelist: 12345
+        }
+      ],
+      deleted: []
+    });
+
+    expect(events).toEqual([
+      {
+        type: "start",
+        command: "p4",
+        args: ["-I", "-Mj", "-z", "tag", "reconcile", "-n", "C:/work/Project_Main/..."],
+        progressRequested: true
+      },
+      {
+        type: "progress",
+        source: "stderr",
+        rawLine: "Scanning workspace: 1/4 (25%)",
+        snapshot: {
+          rawMessage: "Scanning workspace: 1/4 (25%)",
+          phase: "Scanning workspace",
+          completed: 1,
+          total: 4,
+          percent: 25
+        }
+      },
+      {
+        type: "progress",
+        source: "stdout",
+        rawLine: "Hashing files: 4/4 (100%)",
+        snapshot: {
+          rawMessage: "Hashing files: 4/4 (100%)",
+          phase: "Hashing files",
+          completed: 4,
+          total: 4,
+          percent: 100
+        }
+      },
+      {
+        type: "complete",
+        result: {
+          added: [],
+          edited: [
+            {
+              depotFile: "//Project/main/edit.txt",
+              clientFile: null,
+              localFile: "C:\\work\\Project_Main\\edit.txt",
+              action: "edit",
+              type: null,
+              changelist: 12345
+            }
+          ],
+          deleted: []
+        }
+      }
+    ]);
+
+    expect(calls).toEqual([
+      ["-I", "-Mj", "-z", "tag", "reconcile", "-n", "C:/work/Project_Main/..."]
+    ]);
+  });
+
+  it("reports progress-unavailable when reconcile emits no progress lines", async () => {
+    const p4 = new P4Client({
+      streamExecutor: createStreamingExecutor((command, args) =>
+        createStreamHandle(
+          [
+            { type: "start", command, args },
+            {
+              type: "line",
+              source: "stdout",
+              line: "{\"depotFile\":\"//Project/main/add.txt\",\"action\":\"add\",\"change\":\"default\"}"
+            },
+            { type: "exit", exitCode: 0 }
+          ],
+          {
+            command,
+            args,
+            stdout: "{\"depotFile\":\"//Project/main/add.txt\",\"action\":\"add\",\"change\":\"default\"}",
+            stderr: "",
+            exitCode: 0
+          }
+        ))
+    });
+
+    const operation = p4.watchPreviewReconcile();
+    const events = [];
+    for await (const event of operation.events) {
+      events.push(event);
+    }
+
+    await operation.result;
+
+    expect(events[1]).toEqual({
+      type: "progress-unavailable",
+      reason: "not-emitted",
+      message: "Perforce did not emit progress lines for this reconcile preview."
+    });
+  });
+
+  it("retries without -I when progress is unsupported", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      streamExecutor: createStreamingExecutor((command, args) => {
+        calls.push(args);
+
+        if (args[0] === "-I") {
+          return createStreamHandle(
+            [
+              { type: "start", command, args },
+              { type: "line", source: "stderr", line: "Unknown option: -I." },
+              { type: "exit", exitCode: 1 }
+            ],
+            {
+              command,
+              args,
+              stdout: "",
+              stderr: "Unknown option: -I.",
+              exitCode: 1
+            }
+          );
+        }
+
+        return createStreamHandle(
+          [
+            { type: "start", command, args },
+            {
+              type: "line",
+              source: "stdout",
+              line: "{\"depotFile\":\"//Project/main/delete.txt\",\"action\":\"delete\"}"
+            },
+            { type: "exit", exitCode: 0 }
+          ],
+          {
+            command,
+            args,
+            stdout: "{\"depotFile\":\"//Project/main/delete.txt\",\"action\":\"delete\"}",
+            stderr: "",
+            exitCode: 0
+          }
+        );
+      })
+    });
+
+    const operation = p4.watchPreviewReconcile();
+    const events = [];
+    for await (const event of operation.events) {
+      events.push(event);
+    }
+
+    await expect(operation.result).resolves.toEqual({
+      added: [],
+      edited: [],
+      deleted: [
+        {
+          depotFile: "//Project/main/delete.txt",
+          clientFile: null,
+          localFile: null,
+          action: "delete",
+          type: null,
+          changelist: null
+        }
+      ]
+    });
+
+    expect(events).toContainEqual({
+      type: "progress-unavailable",
+      reason: "unsupported",
+      message: "Unknown option: -I."
+    });
+    expect(calls).toEqual([
+      ["-I", "-Mj", "-z", "tag", "reconcile", "-n"],
+      ["-Mj", "-z", "tag", "reconcile", "-n"]
+    ]);
   });
 
   it("returns sync preview items with a total count", async () => {

@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { P4Client } from "./client.js";
 import type { P4ClientOptions, P4Service } from "./types.js";
 
@@ -24,6 +24,11 @@ export function createP4Service(options: P4ClientOptions = {}): P4Service {
       Effect.promise(() => client.getChangelistFiles(change, serviceOptions)),
     previewReconcile: (serviceOptions) =>
       Effect.promise(() => client.previewReconcile(serviceOptions)),
+    streamPreviewReconcile: (serviceOptions) =>
+      Stream.fromAsyncIterable(
+        client.watchPreviewReconcile(serviceOptions).events,
+        (error) => error instanceof Error ? error : new Error(String(error))
+      ),
     previewSync: (serviceOptions) =>
       Effect.promise(() => client.previewSync(serviceOptions)),
     sync: (serviceOptions) =>
@@ -76,6 +81,13 @@ export function getChangelistFiles(
  */
 export function previewReconcile(options?: Parameters<P4Service["previewReconcile"]>[0]) {
   return defaultService.previewReconcile(options);
+}
+
+/**
+ * Stream reconcile preview progress events using the default Effect service.
+ */
+export function streamPreviewReconcile(options?: Parameters<P4Service["streamPreviewReconcile"]>[0]) {
+  return defaultService.streamPreviewReconcile(options);
 }
 
 /**
