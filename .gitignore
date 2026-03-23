@@ -3,3 +3,7 @@ dist
 coverage
 *.tsbuildinfo
 bun.lock
+.astro
+.typedoc
+packages/www/dist
+packages/www/src/content/docs/api/**

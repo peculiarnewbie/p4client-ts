@@ -1,6 +1,6 @@
 {
   "name": "p4client-ts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Typed TypeScript helpers for the Perforce p4 CLI",
   "license": "MIT",
   "author": "peculiarnewbie",
@@ -42,6 +42,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test tests/*.test.ts",
     "test:e2e": "bun test tests/e2e",
+    "docs:api": "typedoc --options typedoc.json",
+    "docs:api:check": "typedoc --options typedoc.json",
     "pack:check": "npm pack --dry-run",
     "prepublishOnly": "bun run clean && bun run typecheck && bun run build"
   },

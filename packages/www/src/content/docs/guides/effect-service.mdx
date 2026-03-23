@@ -1,0 +1,41 @@
+---
+title: Effect Service
+description: Use createP4Service() when your application is already Effect-oriented.
+---
+
+## Why Use the Service Wrapper
+
+`createP4Service()` exposes the same operations as `P4Client`, but returns `Effect` values instead of raw promises. This keeps Perforce calls easy to compose in Effect-based applications without writing your own bridge layer.
+
+## Example
+
+```ts
+import { Effect } from "effect";
+import { createP4Service } from "p4client-ts";
+
+const p4 = createP4Service({
+  cwd: "C:/work/project"
+});
+
+const program = Effect.gen(function* () {
+  const environment = yield* p4.getP4Environment();
+  const workspaces = yield* p4.listP4Workspaces();
+  const opened = yield* p4.getOpenedFiles({ change: "default" });
+
+  return {
+    environment,
+    workspaceCount: workspaces.length,
+    openedCount: opened.length
+  };
+});
+
+const summary = await Effect.runPromise(program);
+```
+
+## Relationship to `P4Client`
+
+- `P4Client` is the direct Promise-based API.
+- `createP4Service()` instantiates a `P4Client` under the hood.
+- Exported helper functions such as `getP4Environment()` and `previewSync()` use a shared default service instance.
+
+Use the [API Reference](/api/) when you need the exact input and output types for the service methods.

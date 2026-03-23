@@ -62,21 +62,10 @@ describe("parseP4JsonLines", () => {
 });
 
 describe("isLocalWorkspace", () => {
-  it("accepts host matches and local roots", () => {
-    const workspace = {
-      root: "C:\\work\\ManaBreak",
-      host: "DESKTOP-WORK-ARIF"
-    };
-    const otherWorkspace = {
-      root: "D:\\workspace\\MBResearch",
-      host: "RENDER-NODE"
-    };
-
-    expect(isLocalWorkspace(workspace, "DESKTOP-WORK-ARIF", () => false)).toBe(true);
-    expect(
-      isLocalWorkspace(otherWorkspace, "DESKTOP-WORK-ARIF", (root) => root === "D:\\workspace\\MBResearch")
-    ).toBe(true);
-    expect(isLocalWorkspace(otherWorkspace, "DESKTOP-WORK-ARIF", () => false)).toBe(false);
+  it("accepts only exact host matches", () => {
+    expect(isLocalWorkspace({ host: "DESKTOP-WORK-ARIF" }, "DESKTOP-WORK-ARIF")).toBe(true);
+    expect(isLocalWorkspace({ host: "RENDER-NODE" }, "DESKTOP-WORK-ARIF")).toBe(false);
+    expect(isLocalWorkspace({ host: null }, "DESKTOP-WORK-ARIF")).toBe(false);
   });
 });
 

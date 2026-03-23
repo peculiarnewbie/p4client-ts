@@ -45,8 +45,12 @@ const categoryPatterns: readonly { category: P4ErrorCategory; pattern: RegExp }[
 ];
 
 /**
- * Classify a Perforce command failure from its combined stderr + stdout text.
- * Returns `"command"` when no specific pattern matches.
+ * Classify a Perforce command failure from combined stderr/stdout text.
+ *
+ * This helper maps common Perforce CLI failures into coarse categories that are
+ * stable enough for UI and application error handling.
+ *
+ * @returns `"command"` when no more specific category matches.
  */
 export function classifyP4Error(text: string): P4ErrorCategory {
   for (const { category, pattern } of categoryPatterns) {
@@ -57,6 +61,13 @@ export function classifyP4Error(text: string): P4ErrorCategory {
   return "command";
 }
 
+/**
+ * Error thrown when a `p4` command exits non-zero and non-zero exits were not allowed.
+ *
+ * The raw {@link P4CommandResult} is preserved on {@link P4CommandError.result}
+ * for debugging, while {@link P4CommandError.category} provides a typed failure
+ * bucket for control flow.
+ */
 export class P4CommandError extends Error {
   readonly result: P4CommandResult;
 
@@ -66,6 +77,14 @@ export class P4CommandError extends Error {
    */
   readonly category: P4ErrorCategory;
 
+  /**
+   * Create a typed wrapper for a failed Perforce command result.
+   *
+   * @param message Human-readable failure message.
+   * @param result Raw command result including stdout, stderr, and exit code.
+   * @param category Optional explicit category. When omitted, the category is
+   * inferred from the message text.
+   */
   constructor(message: string, result: P4CommandResult, category?: P4ErrorCategory) {
     super(message);
     this.name = "P4CommandError";

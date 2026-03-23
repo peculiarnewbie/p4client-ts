@@ -1,0 +1,42 @@
+---
+title: Testing and Fixtures
+description: Test p4client-ts by injecting command runners locally and using the fixture stream for e2e scenarios.
+---
+
+## Unit Testing With Injection
+
+`P4Client` is designed to be testable without shelling out to a real Perforce server on every test run.
+
+You can inject:
+
+- `executor` to stub command execution
+- `env`, `cwd`, and `hostName` to pin process-dependent behavior
+
+```ts
+import { P4Client } from "p4client-ts";
+
+const p4 = new P4Client({
+  hostName: "build-host",
+  executor: async () => ({
+    command: "p4",
+    args: ["info"],
+    stdout: "Client host: build-host\nUser name: p4ts-e2e\n",
+    stderr: "",
+    exitCode: 0
+  })
+});
+
+const environment = await p4.getEnvironment();
+```
+
+## End-to-End Fixture Package
+
+This repository also includes `packages/test-stream`, which contains the canonical stream seed used by the e2e test harness.
+
+The e2e suite is intentionally manual:
+
+- set `P4_TS_E2E=1`
+- point the harness at a pre-provisioned workspace root
+- seed and submit the fixture content outside the test harness
+
+See the repository README files for the current environment variables and fixture requirements. Use the [API Reference](/api/) for exact shapes while building tests around the client.

@@ -2,6 +2,8 @@
 
 Typed TypeScript helpers for the Perforce `p4` CLI.
 
+The published package name is `p4client-ts`.
+
 - Run `p4` with a testable client abstraction
 - Parse classic tagged output and newline-delimited JSON
 - Query current Perforce environment with sensible fallbacks
@@ -11,7 +13,7 @@ Typed TypeScript helpers for the Perforce `p4` CLI.
 
 ## Scope
 
-This package is intended for read-only P4 workflows plus `sync`.
+This package is intended for read-only and preview-oriented P4 workflows.
 
 In scope:
 - Inspect current environment and workspace state
@@ -29,19 +31,16 @@ Out of scope:
 - Client or stream spec mutation
 - Server administration or other server-mutating workflows
 
-Planned next:
-- Actual `sync()` support within the same non-mutating-server boundary
-
 ## Install
 
 ```bash
-npm install p4-ts
+npm install p4client-ts
 ```
 
 ## Quick Start
 
 ```ts
-import { P4Client } from "p4-ts";
+import { P4Client } from "p4client-ts";
 
 const p4 = new P4Client();
 
@@ -57,95 +56,20 @@ const syncPreview = await p4.previewSync({
 });
 ```
 
-## API
+## Documentation
 
-### `new P4Client(options?)`
+This repository includes a Starlight docs app in `../www` with authored guides and generated API docs powered by TypeDoc.
 
-Creates a reusable wrapper around the `p4` executable.
+Run the docs site locally from the repo root:
 
-```ts
-const p4 = new P4Client({
-  executable: "p4",
-  cwd: "C:/work/project",
-});
+```bash
+bun run docs:dev
 ```
 
-### `run(args, options?)`
+Build the static docs site:
 
-Run a raw `p4` command.
-
-```ts
-const result = await p4.run(["info"]);
-console.log(result.stdout);
-```
-
-### `runTaggedJson(args, options?)`
-
-Run a command with `-Mj -z tag` and parse newline-delimited JSON output.
-
-```ts
-const clients = await p4.runTaggedJson(["clients", "-u", "builduser"]);
-```
-
-### `getEnvironment(options?)`
-
-Resolve common environment values from `p4 info` plus process env fallbacks.
-
-```ts
-const env = await p4.getEnvironment();
-// { hostName, p4Port, p4User, p4Client }
-```
-
-### `listWorkspaces(options?)`
-
-List user workspaces and, by default, keep only workspaces that appear local to the current machine.
-
-```ts
-const workspaces = await p4.listWorkspaces();
-```
-
-### `listPendingChangelists(options?)`
-
-List pending changelists for a user or client without mutating server-side state.
-
-```ts
-const pending = await p4.listPendingChangelists();
-```
-
-### `getOpenedFiles(options?)`
-
-List opened files as a flat typed array. Callers can group by changelist in the UI.
-
-```ts
-const opened = await p4.getOpenedFiles({ change: "default" });
-```
-
-### `getChangelistFiles(change, options?)`
-
-Shortcut for querying the files in a specific changelist.
-
-```ts
-const files = await p4.getChangelistFiles(12345);
-```
-
-### `previewReconcile(options?)`
-
-Preview reconcile results using `p4 reconcile -n`.
-
-```ts
-const preview = await p4.previewReconcile({
-  fileSpec: "C:/work/project/..."
-});
-```
-
-### `previewSync(options?)`
-
-Preview sync results using `p4 sync -n`.
-
-```ts
-const preview = await p4.previewSync({
-  fileSpec: "//Project/main/..."
-});
+```bash
+bun run docs:build
 ```
 
 ## Effect Service API
@@ -154,7 +78,7 @@ For [Effect](https://effect.website)-based codebases, `createP4Service` returns 
 
 ```ts
 import { Effect } from "effect";
-import { createP4Service } from "p4-ts";
+import { createP4Service } from "p4client-ts";
 
 const p4 = createP4Service();
 
@@ -172,6 +96,7 @@ bun run typecheck
 bun run test
 bun run test:e2e
 bun run build
+bun run docs:build
 ```
 
 ## End-to-End Tests

@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { hostname as getHostName } from "node:os";
 import { runCommand } from "../internal/command.js";
 import { P4CommandError } from "./errors.js";
@@ -32,26 +31,46 @@ import type {
   RunTaggedJsonOptions
 } from "./types.js";
 
+/**
+ * Thin, typed wrapper around the Perforce `p4` CLI.
+ *
+ * `P4Client` focuses on read-only inspection plus preview-style workflows such
+ * as `sync -n` and `reconcile -n`. The instance caches environment and workspace
+ * lookups unless a method is called with `refresh: true`.
+ */
 export class P4Client {
   readonly executable: string;
   readonly cwd: string | undefined;
   readonly env: NodeJS.ProcessEnv | undefined;
 
   private readonly executor;
-  private readonly pathExists;
   private readonly configuredHostName;
   private cachedEnvironment: P4EnvironmentSummary | null = null;
   private cachedWorkspaces: P4WorkspaceSummary[] | null = null;
 
+  /**
+   * Create a reusable Perforce client.
+   *
+   * @param options Command configuration, environment overrides, and testing
+   * hooks used by all later operations.
+   */
   constructor(options: P4ClientOptions = {}) {
     this.executable = options.executable ?? "p4";
     this.cwd = options.cwd;
     this.env = options.env;
     this.configuredHostName = options.hostName;
-    this.pathExists = options.pathExists ?? existsSync;
     this.executor = options.executor ?? runCommand;
   }
 
+  /**
+   * Run a raw `p4` command.
+   *
+   * Environment variables from the current process, client defaults, and
+   * per-call overrides are merged before execution.
+   *
+   * @throws {P4CommandError} When the command exits non-zero and
+   * `allowNonZeroExit` was not enabled.
+   */
   async run(args: string[], options: P4CommandOptions = {}): Promise<P4CommandResult> {
     const commandOptions: P4CommandOptions = {
       env: { ...process.env, ...this.env, ...options.env }
@@ -83,6 +102,13 @@ export class P4Client {
     return result;
   }
 
+  /**
+   * Run a command and parse newline-delimited tagged JSON output.
+   *
+   * By default this method prefixes `-Mj -z tag` to the provided arguments.
+   * Set `prefixTaggedJsonFlags` to `false` to pass fully-expanded arguments
+   * yourself.
+   */
   async runTaggedJson<T = Record<string, unknown>>(
     args: string[],
     options: RunTaggedJsonOptions = {}
@@ -94,6 +120,12 @@ export class P4Client {
     return parseP4JsonLines<T>(result.stdout);
   }
 
+  /**
+   * Resolve common environment values from `p4 info` plus process environment
+   * fallbacks.
+   *
+   * Results are cached per client instance unless `refresh` is requested.
+   */
   async getEnvironment(options: { refresh?: boolean } = {}): Promise<P4EnvironmentSummary> {
     if (!options.refresh && this.cachedEnvironment) {
       return this.cachedEnvironment;
@@ -113,6 +145,18 @@ export class P4Client {
     return environment;
   }
 
+  /**
+   * List Perforce workspaces for a user.
+   *
+   * By default only workspaces that appear local to the current machine are
+   * returned. Locality is determined from the workspace host or by checking
+   * whether the workspace root exists on disk.
+   *
+   * Results are cached when the default local-workspace query is used.
+   *
+   * @throws {Error} When no user can be resolved from the options or current
+   * environment.
+   */
   async listWorkspaces(options: ListWorkspacesOptions = {}): Promise<P4WorkspaceSummary[]> {
     if (!options.refresh && !options.user && !options.hostName && !options.includeNonLocal && this.cachedWorkspaces) {
       return this.cachedWorkspaces;
@@ -133,12 +177,8 @@ export class P4Client {
       .filter((workspace) => {
         if (options.includeNonLocal) return true;
         return isLocalWorkspace(
-          {
-            root: workspace.Root,
-            host: workspace.Host ?? null
-          },
-          hostName,
-          this.pathExists
+          { host: workspace.Host ?? null },
+          hostName
         );
       })
       .map((workspace) => this.toWorkspaceSummary(workspace, environment))
@@ -155,6 +195,13 @@ export class P4Client {
     return workspaces;
   }
 
+  /**
+   * List pending changelists for a user or client.
+   *
+   * When `includeDefault` is enabled, this method may synthesize a default
+   * changelist entry by querying `p4 opened -c default` if Perforce does not
+   * return it in the normal `changes` output.
+   */
   async listPendingChangelists(
     options: ListPendingChangelistsOptions = {}
   ): Promise<P4PendingChangelistSummary[]> {
@@ -207,6 +254,12 @@ export class P4Client {
     ];
   }
 
+  /**
+   * List opened files as a flat typed array.
+   *
+   * Callers can filter by user, client, changelist, or file spec and can
+   * regroup the returned rows in their own UI.
+   */
   async getOpenedFiles(options: GetOpenedFilesOptions = {}): Promise<P4OpenedFileSummary[]> {
     const commandArgs = ["opened"];
     if (options.user) {
@@ -224,6 +277,9 @@ export class P4Client {
     return files.map((file) => this.toOpenedFileSummary(file));
   }
 
+  /**
+   * List files opened in a specific changelist.
+   */
   async getChangelistFiles(
     change: number | "default",
     options: Omit<GetOpenedFilesOptions, "change"> = {}
@@ -231,6 +287,11 @@ export class P4Client {
     return this.getOpenedFiles({ ...options, change });
   }
 
+  /**
+   * Preview reconcile results using `p4 reconcile -n`.
+   *
+   * This method never performs the reconcile operation itself.
+   */
   async previewReconcile(
     options: PreviewReconcileOptions = {}
   ): Promise<P4ReconcilePreviewResult> {
@@ -263,6 +324,12 @@ export class P4Client {
     return result;
   }
 
+  /**
+   * Preview sync results using `p4 sync -n`.
+   *
+   * This method never performs the sync itself. The returned `totalCount`
+   * mirrors the number of preview rows emitted by Perforce.
+   */
   async previewSync(options: PreviewSyncOptions = {}): Promise<P4SyncPreviewResult> {
     const commandArgs = ["sync", "-n"];
     if (options.force) {

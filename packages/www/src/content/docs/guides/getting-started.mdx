@@ -1,0 +1,60 @@
+---
+title: Getting Started
+description: Install p4client-ts and start querying Perforce state from TypeScript.
+---
+
+## Install
+
+```bash
+npm install p4client-ts
+```
+
+## Create a Client
+
+`P4Client` wraps the `p4` executable and exposes typed helper methods for common read-only and preview workflows.
+
+```ts
+import { P4Client } from "p4client-ts";
+
+const p4 = new P4Client({
+  executable: "p4",
+  cwd: "C:/work/project"
+});
+```
+
+## Inspect Environment and Workspaces
+
+```ts
+const environment = await p4.getEnvironment();
+const workspaces = await p4.listWorkspaces();
+const pending = await p4.listPendingChangelists();
+const opened = await p4.getOpenedFiles({ change: "default" });
+```
+
+`getEnvironment()` and `listWorkspaces()` cache results on the client instance until you call them with `refresh: true`.
+
+## Preview Operations
+
+The library stays on the safe side of Perforce by focusing on inspection and preview methods.
+
+```ts
+const reconcilePreview = await p4.previewReconcile({
+  fileSpec: "C:/work/project/...",
+  includeWritable: true
+});
+
+const syncPreview = await p4.previewSync({
+  fileSpec: "//Project/main/...",
+  force: true
+});
+```
+
+Both helpers use preview-only commands:
+
+- `previewReconcile()` runs `p4 reconcile -n`
+- `previewSync()` runs `p4 sync -n`
+
+## Next
+
+- Use the [API Reference](/api/) for detailed method and type signatures.
+- Continue with the [Effect Service](/guides/effect-service/) guide if your codebase already uses `effect`.

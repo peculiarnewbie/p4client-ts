@@ -32,7 +32,7 @@ describe("P4Client", () => {
     });
   });
 
-  it("lists local workspaces using host and path matching", async () => {
+  it("lists only workspaces whose host matches the current machine", async () => {
     const calls: string[][] = [];
     const p4 = new P4Client({
       executor: createExecutor(async (command, args) => {
@@ -64,8 +64,7 @@ describe("P4Client", () => {
           stderr: "",
           exitCode: 0
         };
-      }),
-      pathExists: (path) => path === "E:\\tools\\Project"
+      })
     });
 
     await expect(p4.listWorkspaces()).resolves.toEqual([
@@ -78,16 +77,6 @@ describe("P4Client", () => {
         accessedAt: "1742266870",
         accessedAtIso: "2025-03-18T03:01:10.000Z",
         isCurrentClient: true
-      },
-      {
-        client: "Project_Tools",
-        stream: null,
-        root: "E:\\tools\\Project",
-        host: null,
-        owner: "surya",
-        accessedAt: "1742100000",
-        accessedAtIso: "2025-03-16T04:40:00.000Z",
-        isCurrentClient: false
       }
     ]);
 
