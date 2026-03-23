@@ -134,11 +134,21 @@ export class P4Client {
     const result = await this.run(["info"]);
     const info = parseP4KeyValueOutput(result.stdout);
 
+    // Effective env mirrors the same merge order used by run() so that what
+    // getEnvironment() reports matches what commands actually use.
+    const effectiveEnv = { ...process.env, ...this.env };
+
     const environment: P4EnvironmentSummary = {
       hostName: info["Client host"] ?? this.configuredHostName ?? getHostName(),
-      p4Port: info["Server address"] ?? this.env?.P4PORT ?? process.env.P4PORT ?? null,
-      p4User: info["User name"] ?? this.env?.P4USER ?? process.env.P4USER ?? null,
-      p4Client: info["Client name"] ?? this.env?.P4CLIENT ?? process.env.P4CLIENT ?? null
+      // "Server address" from p4 info is the resolved internal address which
+      // may not be reachable from the client (e.g. behind a proxy or using
+      // SSL).  The configured P4PORT is what actually works for connections.
+      p4Port: effectiveEnv.P4PORT ?? info["Server address"] ?? null,
+      // "User name" and "Client name" from p4 info are authoritative — the
+      // server resolved them from tickets, env, and client specs.  Env vars
+      // are only a last-resort fallback when the server doesn't report them.
+      p4User: info["User name"] ?? effectiveEnv.P4USER ?? null,
+      p4Client: info["Client name"] ?? effectiveEnv.P4CLIENT ?? null
     };
 
     this.cachedEnvironment = environment;

@@ -32,6 +32,55 @@ describe("P4Client", () => {
     });
   });
 
+  it("prefers env P4PORT over Server address from p4 info (proxy/SSL scenario)", async () => {
+    const p4 = new P4Client({
+      env: { P4PORT: "ssl:p4.stairwaygames.work:1666" },
+      executor: createExecutor(async (command, args) => ({
+        command,
+        args,
+        stdout: [
+          "User name: surya",
+          "Client name: Project_Main",
+          "Client host: DESKTOP-WORK-ARIF",
+          "Server address: perforce-main.asia-southeast2-a.c.internal:1666"
+        ].join("\n"),
+        stderr: "",
+        exitCode: 0
+      }))
+    });
+
+    const env = await p4.getEnvironment();
+    expect(env.p4Port).toBe("ssl:p4.stairwaygames.work:1666");
+  });
+
+  it("falls back to Server address when no P4PORT is configured", async () => {
+    const originalP4PORT = process.env.P4PORT;
+    delete process.env.P4PORT;
+    try {
+      const p4 = new P4Client({
+        executor: createExecutor(async (command, args) => ({
+          command,
+          args,
+          stdout: [
+            "User name: surya",
+            "Client name: Project_Main",
+            "Client host: DESKTOP-WORK-ARIF",
+            "Server address: ssl:perforce.example.com:1666"
+          ].join("\n"),
+          stderr: "",
+          exitCode: 0
+        }))
+      });
+
+      const env = await p4.getEnvironment();
+      expect(env.p4Port).toBe("ssl:perforce.example.com:1666");
+    } finally {
+      if (originalP4PORT !== undefined) {
+        process.env.P4PORT = originalP4PORT;
+      }
+    }
+  });
+
   it("lists only workspaces whose host matches the current machine", async () => {
     const calls: string[][] = [];
     const p4 = new P4Client({
