@@ -20,7 +20,7 @@
   "bugs": {
     "url": "https://github.com/peculiarnewbie/p4client-ts/issues"
   },
-  "homepage": "https://github.com/peculiarnewbie/p4client-ts#readme",
+  "homepage": "https://p4client-ts.peculiarnewbie.com",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

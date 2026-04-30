@@ -1,5 +1,8 @@
 {
   "name": "p4client-ts",
-  "pages_build_output_dir": "./dist",
-  "compatibility_date": "2026-03-31"
+  "compatibility_date": "2026-03-31",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  }
 }
