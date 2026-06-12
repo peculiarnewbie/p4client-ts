@@ -2,13 +2,17 @@ import { hostname as getHostName } from "node:os";
 import { runCommand, watchCommand } from "../internal/command.js";
 import { P4CommandError } from "./errors.js";
 import {
+  isBinaryP4Type,
   isLocalWorkspace,
   normalizeNullableNumber,
   normalizeNullableString,
   normalizeP4Change,
+  parseP4PrintHeader,
   parseP4ProgressLine,
   parseP4JsonLines,
   parseP4KeyValueOutput,
+  resolveDiffPlan,
+  summarizeUnifiedDiff,
   unixSecondsToIsoString
 } from "./helpers.js";
 import {
@@ -17,17 +21,26 @@ import {
   resolveP4SettingsWithDetails
 } from "./settings.js";
 import type {
+  DescribeChangelistOptions,
+  DiffFileOptions,
+  GetChangelistDiffSummaryOptions,
   GetEnvironmentOptions,
   GetOpenedFilesOptions,
   ListWorkspacesOptions,
   ListPendingChangelistsOptions,
+  P4ChangelistDescription,
+  P4ChangelistDiffFileSummary,
+  P4ChangelistDiffSummary,
   P4CliSettings,
+  P4DescribedFile,
+  P4FileDiffResult,
   P4PendingChangelistSummary,
   P4ClientOptions,
   P4CommandOptions,
   P4CommandResult,
   P4CommandStreamEvent,
   P4OperationHandle,
+  P4PrintResult,
   P4ReconcileProgressEvent,
   P4EnvironmentSummary,
   P4JsonWorkspace,
@@ -43,6 +56,7 @@ import type {
   P4WorkspaceSummary,
   PreviewReconcileOptions,
   PreviewSyncOptions,
+  PrintFileOptions,
   SyncOptions,
   RunTaggedJsonOptions,
   WatchP4CommandOptions
@@ -336,6 +350,154 @@ export class P4Client {
   }
 
   /**
+   * Describe a changelist and return its metadata plus file rows.
+   *
+   * Numbered changelists use `p4 describe -s`. The default changelist falls
+   * back to `p4 opened -c default` because `describe` does not apply there.
+   */
+  async describeChangelist(
+    change: number | "default",
+    options: DescribeChangelistOptions = {}
+  ): Promise<P4ChangelistDescription> {
+    if (change === "default") {
+      return this.describeDefaultChangelist(options);
+    }
+
+    const commandArgs = ["describe", "-s", String(change)];
+    const rows = await this.runTaggedJson<Record<string, unknown>>(commandArgs);
+    return this.toChangelistDescription(change, rows);
+  }
+
+  /**
+   * Return a unified diff for a changelist file.
+   *
+   * Pending changelists compare the workspace file against depot `#have` via
+   * `p4 diff`. Submitted changelists compare two depot revisions via
+   * `p4 diff2`, either inferred from `action`/`revision` or supplied through
+   * `fromRevision`/`toRevision`.
+   *
+   * `p4 diff` and `p4 diff2` exit with code `1` when differences exist. This
+   * method treats exit codes `0` and `1` as success and only throws for exit
+   * code `2` or higher.
+   */
+  async diffFile(options: DiffFileOptions): Promise<P4FileDiffResult> {
+    const allowBinary = options.allowBinary ?? true;
+    const isBinary = isBinaryP4Type(options.type);
+
+    if (!allowBinary && isBinary) {
+      return {
+        depotFile: options.depotFile,
+        localFile: options.localFile ?? null,
+        source: "workspace",
+        fromRevision: null,
+        toRevision: null,
+        unifiedDiff: "",
+        isBinary: true,
+        exitCode: 0,
+        additions: 0,
+        deletions: 0
+      };
+    }
+
+    const plan = resolveDiffPlan(options);
+    const result = await this.run([plan.command, ...plan.args], {
+      allowNonZeroExit: true
+    });
+
+    if (result.exitCode > 1) {
+      throw this.toCommandError([plan.command, ...plan.args], result);
+    }
+
+    const unifiedDiff = result.stdout;
+    const { additions, deletions } = summarizeUnifiedDiff(unifiedDiff);
+
+    return {
+      depotFile: options.depotFile,
+      localFile: options.localFile ?? null,
+      source: plan.source,
+      fromRevision: plan.fromRevision,
+      toRevision: plan.toRevision,
+      unifiedDiff,
+      isBinary: false,
+      exitCode: result.exitCode,
+      additions,
+      deletions
+    };
+  }
+
+  /**
+   * Print depot file content at a revision.
+   *
+   * Binary files return `isBinary: true` with empty `content`. Text files
+   * return UTF-8 string content with the `p4 print` header stripped.
+   */
+  async printFile(depotFile: string, options: PrintFileOptions = {}): Promise<P4PrintResult> {
+    const revision = options.revision ?? "have";
+    const filespec = `${depotFile}#${revision}`;
+    const result = await this.run(["print", "-q", filespec]);
+
+    return this.toPrintResult(depotFile, result.stdout);
+  }
+
+  /**
+   * Return a changelist file tree suitable for lazy diff loading.
+   *
+   * Patch bodies are not loaded unless `includeLineCounts` is enabled.
+   */
+  async getChangelistDiffSummary(
+    change: number | "default",
+    options: GetChangelistDiffSummaryOptions = {}
+  ): Promise<P4ChangelistDiffSummary> {
+    const changelist = await this.describeChangelist(change, options);
+    const openedLookup = await this.getOpenedFileLookup(change, options);
+    const includeLineCounts = options.includeLineCounts ?? false;
+    const concurrency = options.concurrency ?? 3;
+
+    const baseSummaries = changelist.files.map((file) =>
+      this.toChangelistDiffFileSummary(file, openedLookup.get(file.depotFile) ?? null)
+    );
+
+    if (!includeLineCounts) {
+      return { changelist, files: baseSummaries };
+    }
+
+    const files = await this.mapWithConcurrency(
+      baseSummaries,
+      concurrency,
+      async (summary) => {
+        if (summary.isBinary) {
+          return summary;
+        }
+
+        const describedFile = changelist.files.find((file) => file.depotFile === summary.depotFile);
+        const diffOptions: DiffFileOptions = {
+          depotFile: summary.depotFile,
+          type: summary.type,
+          allowBinary: false,
+          changelistStatus: changelist.status
+        };
+        if (summary.localFile) {
+          diffOptions.localFile = summary.localFile;
+        }
+        if (describedFile) {
+          diffOptions.action = describedFile.action;
+          diffOptions.revision = describedFile.revision;
+        }
+
+        const diff = await this.diffFile(diffOptions);
+
+        return {
+          ...summary,
+          additions: diff.additions,
+          deletions: diff.deletions
+        };
+      }
+    );
+
+    return { changelist, files };
+  }
+
+  /**
    * Preview reconcile results using `p4 reconcile -n`.
    *
    * This method never performs the reconcile operation itself.
@@ -530,6 +692,164 @@ export class P4Client {
       createdAtIso: unixSecondsToIsoString(createdAt),
       isDefault: normalizedChange === "default"
     };
+  }
+
+  private async describeDefaultChangelist(
+    options: DescribeChangelistOptions
+  ): Promise<P4ChangelistDescription> {
+    const openedOptions: GetOpenedFilesOptions = { change: "default" };
+    if (options.client !== undefined) {
+      openedOptions.client = options.client;
+    }
+
+    const openedFiles = await this.getOpenedFiles(openedOptions);
+    const first = openedFiles[0];
+
+    return {
+      change: "default",
+      user: first?.user ?? null,
+      client: options.client ?? first?.client ?? null,
+      description: first?.changelistDescription ?? "Default changelist",
+      createdAt: null,
+      createdAtIso: null,
+      status: "pending",
+      files: openedFiles
+        .filter((file) => file.depotFile !== null)
+        .map((file) => this.toDescribedFileFromOpened(file))
+    };
+  }
+
+  private toChangelistDescription(
+    change: number | "default",
+    rows: Record<string, unknown>[]
+  ): P4ChangelistDescription {
+    const metadata = rows.find((row) => row.change !== undefined) ?? rows[0];
+    if (!metadata) {
+      throw new Error(`Unable to parse changelist description for change ${String(change)}.`);
+    }
+
+    const normalizedChange = normalizeP4Change(metadata.change) ?? change;
+    const createdAt = normalizeNullableString(metadata.time);
+    const statusValue = normalizeNullableString(metadata.status)?.toLowerCase();
+
+    return {
+      change: normalizedChange,
+      user: normalizeNullableString(metadata.user),
+      client: normalizeNullableString(metadata.client),
+      description: normalizeNullableString(metadata.desc),
+      createdAt,
+      createdAtIso: unixSecondsToIsoString(createdAt),
+      status: statusValue === "submitted" ? "submitted" : "pending",
+      files: rows
+        .filter((row) => normalizeNullableString(row.depotFile) !== null)
+        .map((row) => this.toDescribedFile(row))
+    };
+  }
+
+  private toDescribedFile(row: Record<string, unknown>): P4DescribedFile {
+    const depotFile = normalizeNullableString(row.depotFile);
+    const action = normalizeNullableString(row.action);
+    if (!depotFile || !action) {
+      throw new Error(`Unable to parse described file from row: ${JSON.stringify(row)}`);
+    }
+
+    return {
+      depotFile,
+      action,
+      type: normalizeNullableString(row.type),
+      revision: normalizeNullableNumber(row.rev)
+    };
+  }
+
+  private toDescribedFileFromOpened(file: P4OpenedFileSummary): P4DescribedFile {
+    return {
+      depotFile: file.depotFile!,
+      action: file.action,
+      type: file.type,
+      revision: file.revision
+    };
+  }
+
+  private toPrintResult(requestedDepotFile: string, stdout: string): P4PrintResult {
+    const lines = stdout.split(/\r?\n/);
+    const headerLine = lines[0] ?? "";
+    const header = parseP4PrintHeader(headerLine);
+    const contentLines = header ? lines.slice(1) : lines;
+    const content = contentLines.join("\n");
+    const type = header?.type ?? null;
+    const isBinary = isBinaryP4Type(type);
+
+    return {
+      depotFile: header?.depotFile ?? requestedDepotFile,
+      revision: header?.revision ?? null,
+      content: isBinary ? "" : content,
+      isBinary,
+      type
+    };
+  }
+
+  private toChangelistDiffFileSummary(
+    file: P4DescribedFile,
+    opened: P4OpenedFileSummary | null
+  ): P4ChangelistDiffFileSummary {
+    const type = file.type ?? opened?.type ?? null;
+
+    return {
+      depotFile: file.depotFile,
+      localFile: opened?.localFile ?? null,
+      action: file.action,
+      type,
+      isBinary: isBinaryP4Type(type),
+      additions: null,
+      deletions: null,
+      patchLoadState: "deferred"
+    };
+  }
+
+  private async getOpenedFileLookup(
+    change: number | "default",
+    options: DescribeChangelistOptions
+  ): Promise<Map<string, P4OpenedFileSummary>> {
+    const openedOptions: GetOpenedFilesOptions = { change };
+    if (options.client !== undefined) {
+      openedOptions.client = options.client;
+    }
+
+    const openedFiles = await this.getOpenedFiles(openedOptions);
+    const lookup = new Map<string, P4OpenedFileSummary>();
+
+    for (const file of openedFiles) {
+      if (file.depotFile) {
+        lookup.set(file.depotFile, file);
+      }
+    }
+
+    return lookup;
+  }
+
+  private async mapWithConcurrency<TInput, TOutput>(
+    items: TInput[],
+    concurrency: number,
+    mapper: (item: TInput) => Promise<TOutput>
+  ): Promise<TOutput[]> {
+    if (items.length === 0) {
+      return [];
+    }
+
+    const limit = Math.max(1, concurrency);
+    const results = new Array<TOutput>(items.length);
+    let nextIndex = 0;
+
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await mapper(items[currentIndex]!);
+      }
+    });
+
+    await Promise.all(workers);
+    return results;
   }
 
   private toOpenedFileSummary(file: Record<string, unknown>): P4OpenedFileSummary {

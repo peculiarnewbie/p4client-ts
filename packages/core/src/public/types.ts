@@ -445,6 +445,192 @@ export interface P4ListWorkspaceResult {
 }
 
 /**
+ * Options for {@link P4Client.describeChangelist}.
+ */
+export interface DescribeChangelistOptions {
+  /** Override the client workspace used when resolving opened files. */
+  client?: string | null;
+  /** Reserved for API consistency with other higher-level methods. */
+  refresh?: boolean;
+}
+
+/**
+ * File row included in a changelist description.
+ */
+export interface P4DescribedFile {
+  /** Depot path for the file. */
+  depotFile: string;
+  /** Open or submit action such as `add`, `edit`, or `delete`. */
+  action: string;
+  /** Perforce file type when reported. */
+  type: string | null;
+  /** Depot revision when reported. */
+  revision: number | null;
+}
+
+/**
+ * Normalized changelist description returned by `describeChangelist()`.
+ */
+export interface P4ChangelistDescription {
+  change: number | "default";
+  user: string | null;
+  client: string | null;
+  description: string | null;
+  createdAt: string | null;
+  createdAtIso: string | null;
+  status: "pending" | "submitted";
+  files: P4DescribedFile[];
+}
+
+/**
+ * Whether a diff compared the workspace or two depot revisions.
+ */
+export type P4DiffSource = "workspace" | "depot";
+
+/**
+ * Options for {@link P4Client.diffFile}.
+ */
+export interface DiffFileOptions {
+  /** Depot path for the file being diffed. */
+  depotFile: string;
+  /** Local workspace path for the result; not passed to Perforce. */
+  localFile?: string;
+  /**
+   * Start revision for a depot-vs-depot comparison. Requires {@link toRevision}.
+   *
+   * Use `none` for a nonexistent revision, for example when diffing a newly
+   * added file.
+   */
+  fromRevision?: string | number;
+  /**
+   * End revision for a depot-vs-depot comparison. Requires {@link fromRevision}.
+   */
+  toRevision?: string | number;
+  /**
+   * Open/submit action used to infer depot revisions when {@link changelistStatus}
+   * is `submitted` and explicit revisions are omitted.
+   */
+  action?: string;
+  /**
+   * Submitted revision used with {@link action} for automatic depot-vs-depot
+   * diffs.
+   */
+  revision?: number | null;
+  /**
+   * When `submitted`, compares depot revisions instead of the workspace file.
+   * Pending changelists default to workspace diffs unless explicit revisions
+   * are provided.
+   */
+  changelistStatus?: "pending" | "submitted";
+  /** Diff flags passed to `p4 diff` or `p4 diff2`. Defaults to `-du` (unified). */
+  diffFlags?: string;
+  /**
+   * When `false`, binary files are detected from `type` and return an empty
+   * diff with `isBinary: true` without invoking Perforce.
+   */
+  allowBinary?: boolean;
+  /** Perforce file type used for binary detection when `allowBinary` is false. */
+  type?: string | null;
+}
+
+/**
+ * Unified diff result for a single file.
+ */
+export interface P4FileDiffResult {
+  depotFile: string;
+  localFile: string | null;
+  /** Whether the workspace or two depot revisions were compared. */
+  source: P4DiffSource;
+  /** Start revision when {@link source} is `depot`. */
+  fromRevision: string | number | null;
+  /** End revision when {@link source} is `depot`. */
+  toRevision: string | number | null;
+  /** Unified diff text. Empty for binary files or when no diff is emitted. */
+  unifiedDiff: string;
+  isBinary: boolean;
+  /**
+   * Process exit code from `p4 diff` or `p4 diff2`.
+   *
+   * Perforce returns `1` when differences exist. That exit code is treated as
+   * success by {@link P4Client.diffFile}; only exit codes `2` and above throw.
+   */
+  exitCode: number;
+  additions: number;
+  deletions: number;
+}
+
+/**
+ * Options for {@link P4Client.printFile}.
+ */
+export interface PrintFileOptions {
+  /** Depot revision to print. Defaults to `have`. */
+  revision?: string | number;
+}
+
+/**
+ * Depot file content returned by `printFile()`.
+ */
+export interface P4PrintResult {
+  depotFile: string;
+  revision: string | null;
+  /**
+   * Text content for non-binary files. Binary files return an empty string and
+   * set `isBinary: true`.
+   */
+  content: string;
+  isBinary: boolean;
+  type: string | null;
+}
+
+/**
+ * Parsed unified-diff hunk.
+ */
+export interface P4DiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  /** Raw diff body lines including context and `+`/`-` prefixes. */
+  lines: string[];
+}
+
+/**
+ * Per-file summary used by changelist diff views before patches are loaded.
+ */
+export interface P4ChangelistDiffFileSummary {
+  depotFile: string;
+  localFile: string | null;
+  action: string;
+  type: string | null;
+  isBinary: boolean;
+  additions: number | null;
+  deletions: number | null;
+  /** Patch bodies are always deferred in summary responses. */
+  patchLoadState: "deferred";
+}
+
+/**
+ * Changelist-level diff summary without per-file patch bodies.
+ */
+export interface P4ChangelistDiffSummary {
+  changelist: P4ChangelistDescription;
+  files: P4ChangelistDiffFileSummary[];
+}
+
+/**
+ * Options for {@link P4Client.getChangelistDiffSummary}.
+ */
+export interface GetChangelistDiffSummaryOptions extends DescribeChangelistOptions {
+  /**
+   * When enabled, runs `diffFile()` for each non-binary file to populate line
+   * counts. Defaults to `false` because large changelists can be slow.
+   */
+  includeLineCounts?: boolean;
+  /** Maximum concurrent `diffFile()` calls when `includeLineCounts` is enabled. */
+  concurrency?: number;
+}
+
+/**
  * Effect-based wrapper over the `P4Client` operations.
  */
 export interface P4Service {
@@ -474,4 +660,19 @@ export interface P4Service {
   sync: (
     options?: SyncOptions
   ) => import("effect").Effect.Effect<P4SyncResult, Error>;
+  describeChangelist: (
+    change: number | "default",
+    options?: DescribeChangelistOptions
+  ) => import("effect").Effect.Effect<P4ChangelistDescription, Error>;
+  diffFile: (
+    options: DiffFileOptions
+  ) => import("effect").Effect.Effect<P4FileDiffResult, Error>;
+  printFile: (
+    depotFile: string,
+    options?: PrintFileOptions
+  ) => import("effect").Effect.Effect<P4PrintResult, Error>;
+  getChangelistDiffSummary: (
+    change: number | "default",
+    options?: GetChangelistDiffSummaryOptions
+  ) => import("effect").Effect.Effect<P4ChangelistDiffSummary, Error>;
 }

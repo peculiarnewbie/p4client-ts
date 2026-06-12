@@ -1,4 +1,11 @@
-import type { LocalWorkspaceCandidate, P4ProgressSnapshot } from "./types.js";
+import type {
+  DiffFileOptions,
+  LocalWorkspaceCandidate,
+  P4DescribedFile,
+  P4DiffHunk,
+  P4DiffSource,
+  P4ProgressSnapshot
+} from "./types.js";
 
 /**
  * Parse classic `p4 info`-style `Key: Value` output into an object map.
@@ -134,4 +141,220 @@ export function unixSecondsToIsoString(value: string | null | undefined): string
   if (!Number.isFinite(seconds)) return null;
 
   return new Date(seconds * 1000).toISOString();
+}
+
+const HUNK_HEADER_PATTERN = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+
+/**
+ * Determine whether a Perforce file type should be treated as binary.
+ */
+export function isBinaryP4Type(type: string | null | undefined): boolean {
+  if (!type) return false;
+
+  const normalized = type.toLowerCase();
+  return normalized.includes("binary") || normalized.includes("xb");
+}
+
+/**
+ * Count addition and deletion lines in unified diff output.
+ */
+export function summarizeUnifiedDiff(stdout: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+
+  for (const rawLine of stdout.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    if (line.startsWith("+++") || line.startsWith("---")) {
+      continue;
+    }
+    if (line.startsWith("+")) {
+      additions += 1;
+      continue;
+    }
+    if (line.startsWith("-")) {
+      deletions += 1;
+    }
+  }
+
+  return { additions, deletions };
+}
+
+/**
+ * Parse unified diff output into hunk records.
+ *
+ * The parser is intentionally tolerant of Perforce's unified diff output.
+ */
+export function parseUnifiedDiff(stdout: string): P4DiffHunk[] {
+  const hunks: P4DiffHunk[] = [];
+  let current: P4DiffHunk | null = null;
+
+  for (const rawLine of stdout.split(/\r?\n/)) {
+    const headerMatch = HUNK_HEADER_PATTERN.exec(rawLine);
+    if (headerMatch) {
+      if (current) {
+        hunks.push(current);
+      }
+
+      current = {
+        oldStart: Number(headerMatch[1]),
+        oldLines: headerMatch[2] ? Number(headerMatch[2]) : 1,
+        newStart: Number(headerMatch[3]),
+        newLines: headerMatch[4] ? Number(headerMatch[4]) : 1,
+        lines: []
+      };
+      continue;
+    }
+
+    if (current) {
+      current.lines.push(rawLine);
+    }
+  }
+
+  if (current) {
+    hunks.push(current);
+  }
+
+  return hunks;
+}
+
+/**
+ * Parse the header line emitted by `p4 print`.
+ */
+/**
+ * Resolved diff invocation details for {@link P4Client.diffFile}.
+ */
+export interface ResolvedDiffPlan {
+  source: P4DiffSource;
+  command: "diff" | "diff2";
+  args: string[];
+  fromRevision: string | number | null;
+  toRevision: string | number | null;
+}
+
+/**
+ * Build a depot filespec for `p4 diff2` or `p4 print`.
+ */
+export function buildDepotDiffFilespec(
+  depotFile: string,
+  revision: string | number
+): string {
+  if (String(revision).toLowerCase() === "none") {
+    return `${depotFile}#none`;
+  }
+
+  return `${depotFile}#${revision}`;
+}
+
+/**
+ * Infer depot revision endpoints for a submitted changelist file.
+ */
+export function resolveDepotDiffRevisions(
+  file: Pick<P4DescribedFile, "depotFile" | "action" | "revision">
+): { fromRevision: string | number; toRevision: string | number } | null {
+  const action = file.action.toLowerCase();
+  const revision = file.revision;
+
+  if (action === "add") {
+    if (revision === null) {
+      return { fromRevision: "none", toRevision: "have" };
+    }
+
+    return { fromRevision: "none", toRevision: revision };
+  }
+
+  if (action === "delete") {
+    if (revision === null) {
+      return null;
+    }
+
+    return { fromRevision: revision, toRevision: "none" };
+  }
+
+  if (action === "edit" || action === "integrate" || action === "branch") {
+    if (revision === null || revision <= 1) {
+      return null;
+    }
+
+    return { fromRevision: revision - 1, toRevision: revision };
+  }
+
+  return null;
+}
+
+/**
+ * Decide whether `diffFile()` should compare the workspace or two depot revisions.
+ */
+export function resolveDiffPlan(options: DiffFileOptions): ResolvedDiffPlan {
+  const diffFlags = (options.diffFlags ?? "-du").trim().split(/\s+/).filter(Boolean);
+  const hasFrom = options.fromRevision !== undefined;
+  const hasTo = options.toRevision !== undefined;
+
+  if (hasFrom !== hasTo) {
+    throw new Error(
+      "diffFile() requires both fromRevision and toRevision for depot-vs-depot diffs."
+    );
+  }
+
+  if (hasFrom && hasTo) {
+    const fromRevision = options.fromRevision!;
+    const toRevision = options.toRevision!;
+    const left = buildDepotDiffFilespec(options.depotFile, fromRevision);
+    const right = buildDepotDiffFilespec(options.depotFile, toRevision);
+
+    return {
+      source: "depot",
+      command: "diff2",
+      args: [...diffFlags, left, right],
+      fromRevision,
+      toRevision
+    };
+  }
+
+  if (options.changelistStatus === "submitted") {
+    const revisions = resolveDepotDiffRevisions({
+      depotFile: options.depotFile,
+      action: options.action ?? "edit",
+      revision: options.revision ?? null
+    });
+
+    if (!revisions) {
+      throw new Error(
+        `Unable to infer depot revisions for submitted file ${options.depotFile}.`
+      );
+    }
+
+    const left = buildDepotDiffFilespec(options.depotFile, revisions.fromRevision);
+    const right = buildDepotDiffFilespec(options.depotFile, revisions.toRevision);
+
+    return {
+      source: "depot",
+      command: "diff2",
+      args: [...diffFlags, left, right],
+      fromRevision: revisions.fromRevision,
+      toRevision: revisions.toRevision
+    };
+  }
+
+  return {
+    source: "workspace",
+    command: "diff",
+    args: [...diffFlags, options.depotFile],
+    fromRevision: null,
+    toRevision: null
+  };
+}
+
+export function parseP4PrintHeader(line: string): {
+  depotFile: string;
+  revision: string | null;
+  type: string | null;
+} | null {
+  const match = /^(\/\/[^\s#]+)#(\S+)\s+-\s+(.+)$/.exec(line.trim());
+  if (!match) return null;
+
+  return {
+    depotFile: match[1]!,
+    revision: match[2]!,
+    type: match[3]!.trim() || null
+  };
 }

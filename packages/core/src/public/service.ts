@@ -40,7 +40,15 @@ export function createP4Service(options: P4ClientOptions = {}): P4Service {
     previewSync: (serviceOptions) =>
       Effect.promise(() => client.previewSync(serviceOptions)),
     sync: (serviceOptions) =>
-      Effect.promise(() => client.sync(serviceOptions))
+      Effect.promise(() => client.sync(serviceOptions)),
+    describeChangelist: (change, serviceOptions) =>
+      Effect.promise(() => client.describeChangelist(change, serviceOptions)),
+    diffFile: (serviceOptions) =>
+      Effect.promise(() => client.diffFile(serviceOptions)),
+    printFile: (depotFile, serviceOptions) =>
+      Effect.promise(() => client.printFile(depotFile, serviceOptions)),
+    getChangelistDiffSummary: (change, serviceOptions) =>
+      Effect.promise(() => client.getChangelistDiffSummary(change, serviceOptions))
   };
 }
 
@@ -112,4 +120,41 @@ export function previewSync(options?: Parameters<P4Service["previewSync"]>[0]) {
  */
 export function sync(options?: Parameters<P4Service["sync"]>[0]) {
   return defaultService.sync(options);
+}
+
+/**
+ * Describe a changelist using the default Effect service.
+ */
+export function describeChangelist(
+  change: Parameters<P4Service["describeChangelist"]>[0],
+  options?: Parameters<P4Service["describeChangelist"]>[1]
+) {
+  return defaultService.describeChangelist(change, options);
+}
+
+/**
+ * Diff a depot file against the workspace using the default Effect service.
+ */
+export function diffFile(options: Parameters<P4Service["diffFile"]>[0]) {
+  return defaultService.diffFile(options);
+}
+
+/**
+ * Print depot file content using the default Effect service.
+ */
+export function printFile(
+  depotFile: Parameters<P4Service["printFile"]>[0],
+  options?: Parameters<P4Service["printFile"]>[1]
+) {
+  return defaultService.printFile(depotFile, options);
+}
+
+/**
+ * Build a changelist diff summary using the default Effect service.
+ */
+export function getChangelistDiffSummary(
+  change: Parameters<P4Service["getChangelistDiffSummary"]>[0],
+  options?: Parameters<P4Service["getChangelistDiffSummary"]>[1]
+) {
+  return defaultService.getChangelistDiffSummary(change, options);
 }

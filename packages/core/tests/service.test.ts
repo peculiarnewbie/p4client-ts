@@ -295,4 +295,77 @@ describe("createP4Service", () => {
 
     expect(calls).toEqual([["set", "-q"]]);
   });
+
+  it("exposes diff inspection wrappers", async () => {
+    const service = createP4Service({
+      executor: async (command, args) => {
+        if (args.includes("describe")) {
+          return {
+            command,
+            args,
+            stdout: "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"desc\":\"Feature\",\"status\":\"pending\"}\n{\"depotFile\":\"//Project/main/foo.txt\",\"action\":\"edit\",\"type\":\"text\",\"rev\":\"7\"}",
+            stderr: "",
+            exitCode: 0
+          };
+        }
+
+        if (args[0] === "diff") {
+          return {
+            command,
+            args,
+            stdout: "@@ -1 +1,2 @@\n line\n+added\n",
+            stderr: "",
+            exitCode: 1
+          };
+        }
+
+        if (args[0] === "print") {
+          return {
+            command,
+            args,
+            stdout: "//Project/main/foo.txt#3 - text\nhello\n",
+            stderr: "",
+            exitCode: 0
+          };
+        }
+
+        if (args.includes("opened")) {
+          return {
+            command,
+            args,
+            stdout: "{\"depotFile\":\"//Project/main/foo.txt\",\"action\":\"edit\",\"type\":\"text\",\"change\":\"12345\",\"path\":\"C:\\\\work\\\\Project_Main\\\\foo.txt\"}",
+            stderr: "",
+            exitCode: 0
+          };
+        }
+
+        throw new Error(`Unexpected command: ${args.join(" ")}`);
+      }
+    });
+
+    await expect(Effect.runPromise(service.describeChangelist(12345))).resolves.toMatchObject({
+      change: 12345,
+      files: [{ depotFile: "//Project/main/foo.txt", action: "edit" }]
+    });
+
+    await expect(
+      Effect.runPromise(service.diffFile({ depotFile: "//Project/main/foo.txt" }))
+    ).resolves.toMatchObject({
+      exitCode: 1,
+      additions: 1
+    });
+
+    await expect(
+      Effect.runPromise(service.printFile("//Project/main/foo.txt", { revision: 3 }))
+    ).resolves.toMatchObject({
+      content: "hello\n",
+      isBinary: false
+    });
+
+    await expect(
+      Effect.runPromise(service.getChangelistDiffSummary(12345))
+    ).resolves.toMatchObject({
+      files: [{ patchLoadState: "deferred", additions: null }]
+    });
+  });
 });

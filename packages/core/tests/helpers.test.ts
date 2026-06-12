@@ -1,12 +1,19 @@
 import { describe, expect, it } from "bun:test";
 import {
+  buildDepotDiffFilespec,
+  isBinaryP4Type,
   isLocalWorkspace,
   normalizeNullableNumber,
   normalizeNullableString,
   normalizeP4Change,
   parseP4JsonLines,
   parseP4KeyValueOutput,
+  parseP4PrintHeader,
   parseP4ProgressLine,
+  parseUnifiedDiff,
+  resolveDepotDiffRevisions,
+  resolveDiffPlan,
+  summarizeUnifiedDiff,
   unixSecondsToIsoString
 } from "../src/public/helpers.js";
 import type { P4JsonWorkspace } from "../src/public/types.js";
@@ -122,5 +129,139 @@ describe("normalizeP4Change", () => {
   it("returns null for missing or invalid values", () => {
     expect(normalizeP4Change(undefined)).toBeNull();
     expect(normalizeP4Change("not-a-change")).toBeNull();
+  });
+});
+
+describe("isBinaryP4Type", () => {
+  it("detects binary and xbinary Perforce types", () => {
+    expect(isBinaryP4Type("binary")).toBe(true);
+    expect(isBinaryP4Type("xbinary")).toBe(true);
+    expect(isBinaryP4Type("text")).toBe(false);
+    expect(isBinaryP4Type(null)).toBe(false);
+  });
+});
+
+describe("summarizeUnifiedDiff", () => {
+  it("counts addition and deletion lines", () => {
+    const diff = [
+      "--- a/foo.txt",
+      "+++ b/foo.txt",
+      "@@ -1,2 +1,3 @@",
+      " context",
+      "-removed",
+      "+added",
+      "+another"
+    ].join("\n");
+
+    expect(summarizeUnifiedDiff(diff)).toEqual({
+      additions: 2,
+      deletions: 1
+    });
+  });
+});
+
+describe("parseUnifiedDiff", () => {
+  it("parses unified diff hunks", () => {
+    const diff = [
+      "--- a/foo.txt",
+      "+++ b/foo.txt",
+      "@@ -1,2 +1,3 @@",
+      " context",
+      "-removed",
+      "+added"
+    ].join("\n");
+
+    expect(parseUnifiedDiff(diff)).toEqual([
+      {
+        oldStart: 1,
+        oldLines: 2,
+        newStart: 1,
+        newLines: 3,
+        lines: [" context", "-removed", "+added"]
+      }
+    ]);
+  });
+});
+
+describe("parseP4PrintHeader", () => {
+  it("parses p4 print header lines", () => {
+    expect(parseP4PrintHeader("//Project/main/foo.txt#3 - text")).toEqual({
+      depotFile: "//Project/main/foo.txt",
+      revision: "3",
+      type: "text"
+    });
+  });
+});
+
+describe("resolveDepotDiffRevisions", () => {
+  it("maps submitted actions to revision endpoints", () => {
+    expect(
+      resolveDepotDiffRevisions({
+        depotFile: "//Project/main/foo.txt",
+        action: "add",
+        revision: 1
+      })
+    ).toEqual({ fromRevision: "none", toRevision: 1 });
+
+    expect(
+      resolveDepotDiffRevisions({
+        depotFile: "//Project/main/foo.txt",
+        action: "edit",
+        revision: 7
+      })
+    ).toEqual({ fromRevision: 6, toRevision: 7 });
+
+    expect(
+      resolveDepotDiffRevisions({
+        depotFile: "//Project/main/foo.txt",
+        action: "delete",
+        revision: 7
+      })
+    ).toEqual({ fromRevision: 7, toRevision: "none" });
+  });
+});
+
+describe("resolveDiffPlan", () => {
+  it("selects workspace diffs for pending changelists by default", () => {
+    expect(
+      resolveDiffPlan({
+        depotFile: "//Project/main/foo.txt",
+        changelistStatus: "pending"
+      })
+    ).toEqual({
+      source: "workspace",
+      command: "diff",
+      args: ["-du", "//Project/main/foo.txt"],
+      fromRevision: null,
+      toRevision: null
+    });
+  });
+
+  it("selects depot diffs for submitted changelists", () => {
+    expect(
+      resolveDiffPlan({
+        depotFile: "//Project/main/foo.txt",
+        action: "edit",
+        revision: 4,
+        changelistStatus: "submitted"
+      })
+    ).toEqual({
+      source: "depot",
+      command: "diff2",
+      args: ["-du", "//Project/main/foo.txt#3", "//Project/main/foo.txt#4"],
+      fromRevision: 3,
+      toRevision: 4
+    });
+  });
+});
+
+describe("buildDepotDiffFilespec", () => {
+  it("builds revision and none filespecs", () => {
+    expect(buildDepotDiffFilespec("//Project/main/foo.txt", 3)).toBe(
+      "//Project/main/foo.txt#3"
+    );
+    expect(buildDepotDiffFilespec("//Project/main/foo.txt", "none")).toBe(
+      "//Project/main/foo.txt#none"
+    );
   });
 });

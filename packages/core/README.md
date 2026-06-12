@@ -21,6 +21,9 @@ In scope:
 - Inspect current environment and workspace state
 - List relevant workspaces for the current machine
 - Inspect pending changelists and opened files
+- Describe changelists and build lazy-load diff summaries
+- Diff workspace files against depot revisions (`p4 diff`)
+- Print depot file content at a revision (`p4 print`)
 - Preview reconcile operations
 - Preview sync operations and apply sync when explicitly requested
 - Read file metadata and depot/local path mappings
@@ -77,6 +80,44 @@ for await (const event of reconcileOperation.events) {
 
 const reconcileWithProgress = await reconcileOperation.result;
 ```
+
+## Changelist Diff Inspection
+
+Use `describeChangelist()` for changelist metadata and file rows, then load
+patches on demand with `diffFile()`:
+
+```ts
+const description = await p4.describeChangelist(12345);
+const file = description.files[0];
+
+if (file && !isBinaryP4Type(file.type)) {
+  const diff = await p4.diffFile({
+    depotFile: file.depotFile,
+    localFile: opened.localFile ?? undefined,
+    action: file.action,
+    revision: file.revision,
+    changelistStatus: description.status,
+    type: file.type,
+    allowBinary: false
+  });
+
+  console.log(diff.source, diff.unifiedDiff);
+}
+
+const depotContent = await p4.printFile("//Project/main/foo.txt", {
+  revision: "have"
+});
+```
+
+`diffFile()` is the single entrypoint:
+
+- Pending changelists compare the workspace against depot `#have` via `p4 diff`.
+- Submitted changelists compare two depot revisions via `p4 diff2`, inferred
+  from `action`/`revision` or supplied through `fromRevision`/`toRevision`.
+
+`p4 diff` and `p4 diff2` exit with code `1` when differences exist. `diffFile()`
+treats exit codes `0` and `1` as success and only throws for exit code `2` or
+higher. Use a higher `timeoutMs` for diff operations on large files.
 
 ## Local Settings Resolution
 

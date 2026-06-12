@@ -926,4 +926,383 @@ describe("P4Client", () => {
 
     await expect(p4.sync()).rejects.toBeInstanceOf(P4CommandError);
   });
+
+  it("describes a numbered changelist from tagged JSON", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return {
+          command,
+          args,
+          stdout: [
+            "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"time\":\"1742266870\",\"desc\":\"Feature work\",\"status\":\"pending\"}",
+            "{\"depotFile\":\"//Project/main/foo.txt\",\"action\":\"edit\",\"type\":\"text\",\"rev\":\"7\"}"
+          ].join("\n"),
+          stderr: "",
+          exitCode: 0
+        };
+      })
+    });
+
+    await expect(p4.describeChangelist(12345)).resolves.toEqual({
+      change: 12345,
+      client: "Project_Main",
+      user: "surya",
+      description: "Feature work",
+      createdAt: "1742266870",
+      createdAtIso: "2025-03-18T03:01:10.000Z",
+      status: "pending",
+      files: [
+        {
+          depotFile: "//Project/main/foo.txt",
+          action: "edit",
+          type: "text",
+          revision: 7
+        }
+      ]
+    });
+
+    expect(calls).toEqual([
+      ["-Mj", "-z", "tag", "describe", "-s", "12345"]
+    ]);
+  });
+
+  it("describes the default changelist from opened files", async () => {
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        if (args.includes("opened")) {
+          return {
+            command,
+            args,
+            stdout: [
+              "{\"depotFile\":\"//Project/main/foo.txt\",\"action\":\"edit\",\"type\":\"text\",\"change\":\"default\",\"desc\":\"Default changelist\",\"user\":\"surya\",\"client\":\"Project_Main\",\"path\":\"C:\\\\work\\\\Project_Main\\\\foo.txt\",\"rev\":\"7\"}"
+            ].join("\n"),
+            stderr: "",
+            exitCode: 0
+          };
+        }
+
+        throw new Error(`Unexpected command: ${args.join(" ")}`);
+      })
+    });
+
+    await expect(p4.describeChangelist("default")).resolves.toEqual({
+      change: "default",
+      client: "Project_Main",
+      user: "surya",
+      description: "Default changelist",
+      createdAt: null,
+      createdAtIso: null,
+      status: "pending",
+      files: [
+        {
+          depotFile: "//Project/main/foo.txt",
+          action: "edit",
+          type: "text",
+          revision: 7
+        }
+      ]
+    });
+  });
+
+  it("treats p4 diff exit code 1 as a successful diff result", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return {
+          command,
+          args,
+          stdout: [
+            "--- //Project/main/foo.txt",
+            "+++ //Project/main/foo.txt",
+            "@@ -1 +1,2 @@",
+            " line",
+            "+added"
+          ].join("\n"),
+          stderr: "",
+          exitCode: 1
+        };
+      })
+    });
+
+    await expect(
+      p4.diffFile({ depotFile: "//Project/main/foo.txt", localFile: "C:/work/foo.txt" })
+    ).resolves.toEqual({
+      depotFile: "//Project/main/foo.txt",
+      localFile: "C:/work/foo.txt",
+      source: "workspace",
+      fromRevision: null,
+      toRevision: null,
+      unifiedDiff: [
+        "--- //Project/main/foo.txt",
+        "+++ //Project/main/foo.txt",
+        "@@ -1 +1,2 @@",
+        " line",
+        "+added"
+      ].join("\n"),
+      isBinary: false,
+      exitCode: 1,
+      additions: 1,
+      deletions: 0
+    });
+
+    expect(calls).toEqual([
+      ["diff", "-du", "//Project/main/foo.txt"]
+    ]);
+  });
+
+  it("compares depot revisions when fromRevision and toRevision are provided", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return {
+          command,
+          args,
+          stdout: "@@ -1,2 +1,3 @@\n context\n-removed\n+added\n",
+          stderr: "",
+          exitCode: 1
+        };
+      })
+    });
+
+    await expect(
+      p4.diffFile({
+        depotFile: "//Project/main/foo.txt",
+        fromRevision: 3,
+        toRevision: 4
+      })
+    ).resolves.toMatchObject({
+      source: "depot",
+      fromRevision: 3,
+      toRevision: 4,
+      exitCode: 1,
+      additions: 1,
+      deletions: 1
+    });
+
+    expect(calls).toEqual([
+      ["diff2", "-du", "//Project/main/foo.txt#3", "//Project/main/foo.txt#4"]
+    ]);
+  });
+
+  it("auto-routes submitted changelist files to depot-vs-depot diffs", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return {
+          command,
+          args,
+          stdout: "@@ -1 +1,2 @@\n line\n+added\n",
+          stderr: "",
+          exitCode: 1
+        };
+      })
+    });
+
+    await expect(
+      p4.diffFile({
+        depotFile: "//Project/main/foo.txt",
+        action: "edit",
+        revision: 7,
+        changelistStatus: "submitted"
+      })
+    ).resolves.toMatchObject({
+      source: "depot",
+      fromRevision: 6,
+      toRevision: 7
+    });
+
+    expect(calls).toEqual([
+      ["diff2", "-du", "//Project/main/foo.txt#6", "//Project/main/foo.txt#7"]
+    ]);
+  });
+
+  it("returns an empty diff for binary files when allowBinary is false", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return {
+          command,
+          args,
+          stdout: "",
+          stderr: "",
+          exitCode: 0
+        };
+      })
+    });
+
+    await expect(
+      p4.diffFile({
+        depotFile: "//Project/main/foo.uasset",
+        type: "binary",
+        allowBinary: false
+      })
+    ).resolves.toMatchObject({
+      depotFile: "//Project/main/foo.uasset",
+      unifiedDiff: "",
+      isBinary: true,
+      exitCode: 0,
+      additions: 0,
+      deletions: 0
+    });
+
+    expect(calls).toEqual([]);
+  });
+
+  it("throws when p4 diff exits with code 2 or higher", async () => {
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => ({
+        command,
+        args,
+        stdout: "",
+        stderr: "file(s) not opened on this client.",
+        exitCode: 2
+      }))
+    });
+
+    await expect(
+      p4.diffFile({ depotFile: "//Project/main/foo.txt" })
+    ).rejects.toBeInstanceOf(P4CommandError);
+  });
+
+  it("prints text depot content and strips the header line", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return {
+          command,
+          args,
+          stdout: "//Project/main/foo.txt#3 - text\nhello\nworld\n",
+          stderr: "",
+          exitCode: 0
+        };
+      })
+    });
+
+    await expect(p4.printFile("//Project/main/foo.txt", { revision: 3 })).resolves.toEqual({
+      depotFile: "//Project/main/foo.txt",
+      revision: "3",
+      content: "hello\nworld\n",
+      isBinary: false,
+      type: "text"
+    });
+
+    expect(calls).toEqual([
+      ["print", "-q", "//Project/main/foo.txt#3"]
+    ]);
+  });
+
+  it("marks binary print output without returning content", async () => {
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => ({
+        command,
+        args,
+        stdout: "//Project/main/foo.uasset#1 - binary\n\x00\x01\x02",
+        stderr: "",
+        exitCode: 0
+      }))
+    });
+
+    await expect(p4.printFile("//Project/main/foo.uasset")).resolves.toEqual({
+      depotFile: "//Project/main/foo.uasset",
+      revision: "1",
+      content: "",
+      isBinary: true,
+      type: "binary"
+    });
+  });
+
+  it("builds a changelist diff summary without running diff by default", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+
+        if (args.includes("describe")) {
+          return {
+            command,
+            args,
+            stdout: [
+              "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"time\":\"1742266870\",\"desc\":\"Feature work\",\"status\":\"pending\"}",
+              "{\"depotFile\":\"//Project/main/foo.txt\",\"action\":\"edit\",\"type\":\"text\",\"rev\":\"7\"}",
+              "{\"depotFile\":\"//Project/main/bar.uasset\",\"action\":\"edit\",\"type\":\"binary\",\"rev\":\"2\"}"
+            ].join("\n"),
+            stderr: "",
+            exitCode: 0
+          };
+        }
+
+        if (args.includes("opened")) {
+          return {
+            command,
+            args,
+            stdout: [
+              "{\"depotFile\":\"//Project/main/foo.txt\",\"action\":\"edit\",\"type\":\"text\",\"change\":\"12345\",\"path\":\"C:\\\\work\\\\Project_Main\\\\foo.txt\"}",
+              "{\"depotFile\":\"//Project/main/bar.uasset\",\"action\":\"edit\",\"type\":\"binary\",\"change\":\"12345\",\"path\":\"C:\\\\work\\\\Project_Main\\\\bar.uasset\"}"
+            ].join("\n"),
+            stderr: "",
+            exitCode: 0
+          };
+        }
+
+        throw new Error(`Unexpected command: ${args.join(" ")}`);
+      })
+    });
+
+    await expect(p4.getChangelistDiffSummary(12345)).resolves.toEqual({
+      changelist: {
+        change: 12345,
+        client: "Project_Main",
+        user: "surya",
+        description: "Feature work",
+        createdAt: "1742266870",
+        createdAtIso: "2025-03-18T03:01:10.000Z",
+        status: "pending",
+        files: [
+          {
+            depotFile: "//Project/main/foo.txt",
+            action: "edit",
+            type: "text",
+            revision: 7
+          },
+          {
+            depotFile: "//Project/main/bar.uasset",
+            action: "edit",
+            type: "binary",
+            revision: 2
+          }
+        ]
+      },
+      files: [
+        {
+          depotFile: "//Project/main/foo.txt",
+          localFile: "C:\\work\\Project_Main\\foo.txt",
+          action: "edit",
+          type: "text",
+          isBinary: false,
+          additions: null,
+          deletions: null,
+          patchLoadState: "deferred"
+        },
+        {
+          depotFile: "//Project/main/bar.uasset",
+          localFile: "C:\\work\\Project_Main\\bar.uasset",
+          action: "edit",
+          type: "binary",
+          isBinary: true,
+          additions: null,
+          deletions: null,
+          patchLoadState: "deferred"
+        }
+      ]
+    });
+
+    expect(calls.some((args) => args.includes("diff"))).toBe(false);
+  });
 });
