@@ -21,7 +21,8 @@ export default defineConfig({
           items: [
             { label: "Getting Started", link: "/guides/getting-started/" },
             { label: "Effect Service", link: "/guides/effect-service/" },
-            { label: "Testing and Fixtures", link: "/guides/testing-and-fixtures/" }
+            { label: "Testing and Fixtures", link: "/guides/testing-and-fixtures/" },
+            { label: "Changelog", link: "/changelog/" }
           ]
         },
         {

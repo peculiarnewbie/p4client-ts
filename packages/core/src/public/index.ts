@@ -71,6 +71,7 @@ export type {
   ListSubmittedChangelistsOptions,
   ListSubmittedChangelistsResult,
   LocalWorkspaceCandidate,
+  P4ChangelistListSummary,
   P4ChangelistListStatus,
   P4ChangelistDescription,
   P4ChangelistDiffFileSummary,
