@@ -472,6 +472,78 @@ describe("P4Client", () => {
     });
   });
 
+  it("lists shelved changelists with fileSpec pagination", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return {
+          command,
+          args,
+          stdout: [
+            "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"time\":\"1742266870\",\"desc\":\"Shelved review\",\"status\":\"pending\"}",
+            "{\"change\":\"12340\",\"client\":\"Project_Tools\",\"user\":\"maya\",\"time\":\"1742266000\",\"desc\":\"Tooling shelf\",\"status\":\"pending\"}"
+          ].join("\n"),
+          stderr: "",
+          exitCode: 0
+        };
+      })
+    });
+
+    await expect(
+      p4.listShelvedChangelists({
+        fileSpec: "//Project/main/...",
+        user: "surya",
+        client: "Project_Main",
+        limit: 2,
+        beforeChange: 12350
+      })
+    ).resolves.toEqual({
+      items: [
+        {
+          change: 12345,
+          client: "Project_Main",
+          user: "surya",
+          status: "shelved",
+          description: "Shelved review",
+          createdAt: "1742266870",
+          createdAtIso: "2025-03-18T03:01:10.000Z"
+        },
+        {
+          change: 12340,
+          client: "Project_Tools",
+          user: "maya",
+          status: "shelved",
+          description: "Tooling shelf",
+          createdAt: "1742266000",
+          createdAtIso: "2025-03-18T02:46:40.000Z"
+        }
+      ],
+      hasMore: true,
+      nextBeforeChange: 12339
+    });
+
+    expect(calls).toEqual([
+      [
+        "-Mj",
+        "-z",
+        "tag",
+        "changes",
+        "-s",
+        "shelved",
+        "-l",
+        "-u",
+        "surya",
+        "-c",
+        "Project_Main",
+        "-m",
+        "2",
+        "//Project/main/...",
+        "@12350"
+      ]
+    ]);
+  });
+
   it("unifies pending and submitted changelist listing", async () => {
     const p4 = new P4Client({
       executor: createExecutor(async (command, args) => ({
@@ -501,6 +573,44 @@ describe("P4Client", () => {
       hasMore: false,
       nextBeforeChange: null
     });
+  });
+
+  it("unifies shelved changelist listing", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return {
+          command,
+          args,
+          stdout: "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"status\":\"pending\"}",
+          stderr: "",
+          exitCode: 0
+        };
+      })
+    });
+
+    await expect(
+      p4.listChangelists({ status: "shelved", limit: 1 })
+    ).resolves.toEqual({
+      items: [
+        {
+          change: 12345,
+          client: "Project_Main",
+          user: "surya",
+          status: "shelved",
+          description: null,
+          createdAt: null,
+          createdAtIso: null
+        }
+      ],
+      hasMore: true,
+      nextBeforeChange: 12344
+    });
+
+    expect(calls).toEqual([
+      ["-Mj", "-z", "tag", "changes", "-s", "shelved", "-l", "-m", "1"]
+    ]);
   });
 
   it("sets the active client and invalidates cached environment", async () => {
@@ -1333,6 +1443,48 @@ describe("P4Client", () => {
     ]);
   });
 
+  it("describes shelved files from a numbered changelist", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return {
+          command,
+          args,
+          stdout: [
+            "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"time\":\"1742266870\",\"desc\":\"Feature work\",\"status\":\"pending\"}",
+            "{\"depotFile\":\"//Project/main/foo.txt\",\"action\":\"edit\",\"type\":\"text\",\"rev\":\"7\"}"
+          ].join("\n"),
+          stderr: "",
+          exitCode: 0
+        };
+      })
+    });
+
+    await expect(p4.describeChangelist(12345, { shelved: true })).resolves.toEqual({
+      change: 12345,
+      client: "Project_Main",
+      user: "surya",
+      description: "Feature work",
+      createdAt: "1742266870",
+      createdAtIso: "2025-03-18T03:01:10.000Z",
+      status: "pending",
+      contentSource: "shelved",
+      files: [
+        {
+          depotFile: "//Project/main/foo.txt",
+          action: "edit",
+          type: "text",
+          revision: 7
+        }
+      ]
+    });
+
+    expect(calls).toEqual([
+      ["-Mj", "-z", "tag", "describe", "-S", "-s", "12345"]
+    ]);
+  });
+
   it("describes a numbered changelist from numbered tagged describe fields", async () => {
     const p4 = new P4Client({
       executor: createExecutor(async (command, args) => ({
@@ -1532,6 +1684,40 @@ describe("P4Client", () => {
     ]);
   });
 
+  it("auto-routes shelved changelist files to depot-vs-shelf diffs", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return {
+          command,
+          args,
+          stdout: "@@ -1 +1,2 @@\n line\n+added\n",
+          stderr: "",
+          exitCode: 1
+        };
+      })
+    });
+
+    await expect(
+      p4.diffFile({
+        depotFile: "//Project/main/foo.txt",
+        action: "edit",
+        revision: 7,
+        changelistStatus: "shelved",
+        shelvedChange: 12345
+      })
+    ).resolves.toMatchObject({
+      source: "depot",
+      fromRevision: 6,
+      toRevision: "@=12345"
+    });
+
+    expect(calls).toEqual([
+      ["diff2", "-du", "//Project/main/foo.txt#6", "//Project/main/foo.txt@=12345"]
+    ]);
+  });
+
   it("returns an empty diff for binary files when allowBinary is false", async () => {
     const calls: string[][] = [];
     const p4 = new P4Client({
@@ -1715,5 +1901,135 @@ describe("P4Client", () => {
     });
 
     expect(calls.some((args) => args.includes("diff"))).toBe(false);
+  });
+
+  it("builds a shelved changelist diff summary without opened file lookup", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+
+        if (args.includes("describe")) {
+          return {
+            command,
+            args,
+            stdout: [
+              "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"time\":\"1742266870\",\"desc\":\"Shelved work\",\"status\":\"pending\"}",
+              "{\"depotFile\":\"//Project/main/foo.txt\",\"action\":\"edit\",\"type\":\"text\",\"rev\":\"7\"}",
+              "{\"depotFile\":\"//Project/main/bar.uasset\",\"action\":\"edit\",\"type\":\"binary\",\"rev\":\"2\"}"
+            ].join("\n"),
+            stderr: "",
+            exitCode: 0
+          };
+        }
+
+        throw new Error(`Unexpected command: ${args.join(" ")}`);
+      })
+    });
+
+    await expect(p4.getChangelistDiffSummary(12345, { shelved: true })).resolves.toEqual({
+      changelist: {
+        change: 12345,
+        client: "Project_Main",
+        user: "surya",
+        description: "Shelved work",
+        createdAt: "1742266870",
+        createdAtIso: "2025-03-18T03:01:10.000Z",
+        status: "pending",
+        contentSource: "shelved",
+        files: [
+          {
+            depotFile: "//Project/main/foo.txt",
+            action: "edit",
+            type: "text",
+            revision: 7
+          },
+          {
+            depotFile: "//Project/main/bar.uasset",
+            action: "edit",
+            type: "binary",
+            revision: 2
+          }
+        ]
+      },
+      files: [
+        {
+          depotFile: "//Project/main/foo.txt",
+          localFile: null,
+          action: "edit",
+          type: "text",
+          isBinary: false,
+          additions: null,
+          deletions: null,
+          patchLoadState: "deferred"
+        },
+        {
+          depotFile: "//Project/main/bar.uasset",
+          localFile: null,
+          action: "edit",
+          type: "binary",
+          isBinary: true,
+          additions: null,
+          deletions: null,
+          patchLoadState: "deferred"
+        }
+      ]
+    });
+
+    expect(calls).toEqual([
+      ["-Mj", "-z", "tag", "describe", "-S", "-s", "12345"]
+    ]);
+  });
+
+  it("builds shelved line counts with depot-vs-shelf diffs", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+
+        if (args.includes("describe")) {
+          return {
+            command,
+            args,
+            stdout: [
+              "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"time\":\"1742266870\",\"desc\":\"Shelved work\",\"status\":\"pending\"}",
+              "{\"depotFile\":\"//Project/main/foo.txt\",\"action\":\"edit\",\"type\":\"text\",\"rev\":\"7\"}"
+            ].join("\n"),
+            stderr: "",
+            exitCode: 0
+          };
+        }
+
+        if (args[0] === "diff2") {
+          return {
+            command,
+            args,
+            stdout: "@@ -1,2 +1,3 @@\n context\n-removed\n+added\n",
+            stderr: "",
+            exitCode: 1
+          };
+        }
+
+        throw new Error(`Unexpected command: ${args.join(" ")}`);
+      })
+    });
+
+    await expect(
+      p4.getChangelistDiffSummary(12345, { shelved: true, includeLineCounts: true })
+    ).resolves.toMatchObject({
+      files: [
+        {
+          depotFile: "//Project/main/foo.txt",
+          localFile: null,
+          additions: 1,
+          deletions: 1
+        }
+      ]
+    });
+
+    expect(calls).toEqual([
+      ["-Mj", "-z", "tag", "describe", "-S", "-s", "12345"],
+      ["diff2", "-du", "//Project/main/foo.txt#6", "//Project/main/foo.txt@=12345"]
+    ]);
   });
 });

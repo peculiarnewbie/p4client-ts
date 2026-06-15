@@ -323,16 +323,56 @@ export interface ListSubmittedChangelistsResult {
   nextBeforeChange: number | null;
 }
 
-export type P4ChangelistListStatus = "pending" | "submitted";
+/**
+ * Filters for listing shelved changelists.
+ */
+export interface ListShelvedChangelistsOptions {
+  /** Depot/stream file spec, for example `//Project/main/...`. */
+  fileSpec?: string | string[];
+  /** Filter by client workspace. Prefer `fileSpec` for team-wide stream views. */
+  client?: string | null;
+  user?: string;
+  /** Maximum rows to return. Defaults to 50. */
+  limit?: number;
+  /** Upper changelist cursor. Appended as `@<change>` for paging. */
+  beforeChange?: number;
+  /** Reserved for API consistency with cached methods. */
+  refresh?: boolean;
+}
+
+/**
+ * Normalized shelved changelist summary.
+ */
+export interface P4ShelvedChangelistSummary {
+  change: number;
+  client: string | null;
+  user: string | null;
+  status: "shelved";
+  description: string | null;
+  createdAt: string | null;
+  createdAtIso: string | null;
+}
+
+/**
+ * Paged shelved changelist list.
+ */
+export interface ListShelvedChangelistsResult {
+  items: P4ShelvedChangelistSummary[];
+  hasMore: boolean;
+  nextBeforeChange: number | null;
+}
+
+export type P4ChangelistListStatus = "pending" | "submitted" | "shelved";
 
 export type P4ChangelistListSummary =
   | P4PendingChangelistSummary
-  | P4SubmittedChangelistSummary;
+  | P4SubmittedChangelistSummary
+  | P4ShelvedChangelistSummary;
 
 /**
  * Filters for listing pending or submitted changelists through one endpoint.
  *
- * Pagination applies only when `status` is `submitted`.
+ * Pagination applies only when `status` is `submitted` or `shelved`.
  */
 export interface ListChangelistsOptions {
   status: P4ChangelistListStatus;
@@ -572,6 +612,8 @@ export interface P4ListWorkspaceResult {
 export interface DescribeChangelistOptions {
   /** Override the client workspace used when resolving opened files. */
   client?: string | null;
+  /** When true, describe shelved files via `p4 describe -S -s`. */
+  shelved?: boolean;
   /** Reserved for API consistency with other higher-level methods. */
   refresh?: boolean;
 }
@@ -601,6 +643,8 @@ export interface P4ChangelistDescription {
   createdAt: string | null;
   createdAtIso: string | null;
   status: "pending" | "submitted";
+  /** Present when the description was requested from opened or shelved content. */
+  contentSource?: "opened" | "shelved";
   files: P4DescribedFile[];
 }
 
@@ -630,7 +674,7 @@ export interface DiffFileOptions {
   toRevision?: string | number;
   /**
    * Open/submit action used to infer depot revisions when {@link changelistStatus}
-   * is `submitted` and explicit revisions are omitted.
+   * is `submitted` or `shelved` and explicit revisions are omitted.
    */
   action?: string;
   /**
@@ -639,11 +683,17 @@ export interface DiffFileOptions {
    */
   revision?: number | null;
   /**
-   * When `submitted`, compares depot revisions instead of the workspace file.
-   * Pending changelists default to workspace diffs unless explicit revisions
-   * are provided.
+   * When `submitted` or `shelved`, compares depot revisions instead of the
+   * workspace file. Pending changelists default to workspace diffs unless
+   * explicit revisions are provided.
    */
-  changelistStatus?: "pending" | "submitted";
+  changelistStatus?: "pending" | "submitted" | "shelved";
+  /**
+   * Shelved changelist number used to build `@=<change>` shelf revisions.
+   * Required when {@link changelistStatus} is `shelved` and explicit
+   * `fromRevision`/`toRevision` are omitted.
+   */
+  shelvedChange?: number;
   /** Diff flags passed to `p4 diff` or `p4 diff2`. Defaults to `-du` (unified). */
   diffFlags?: string;
   /**
@@ -766,6 +816,9 @@ export interface P4Service {
   listSubmittedChangelists: (
     options?: ListSubmittedChangelistsOptions
   ) => import("effect").Effect.Effect<ListSubmittedChangelistsResult, Error>;
+  listShelvedChangelists: (
+    options?: ListShelvedChangelistsOptions
+  ) => import("effect").Effect.Effect<ListShelvedChangelistsResult, Error>;
   listChangelists: (
     options: ListChangelistsOptions
   ) => import("effect").Effect.Effect<ListChangelistsResult, Error>;

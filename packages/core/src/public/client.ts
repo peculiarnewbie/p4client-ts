@@ -31,6 +31,8 @@ import type {
   ListChangelistsResult,
   ListWorkspacesOptions,
   ListPendingChangelistsOptions,
+  ListShelvedChangelistsOptions,
+  ListShelvedChangelistsResult,
   ListSubmittedChangelistsOptions,
   ListSubmittedChangelistsResult,
   P4ChangelistDescription,
@@ -40,6 +42,7 @@ import type {
   P4DescribedFile,
   P4FileDiffResult,
   P4PendingChangelistSummary,
+  P4ShelvedChangelistSummary,
   P4SubmittedChangelistSummary,
   P4ClientOptions,
   P4CommandOptions,
@@ -365,45 +368,37 @@ export class P4Client {
   async listSubmittedChangelists(
     options: ListSubmittedChangelistsOptions = {}
   ): Promise<ListSubmittedChangelistsResult> {
-    const limit = options.limit ?? 50;
-    const commandArgs = ["changes", "-s", "submitted", "-l"];
-    if (options.user) {
-      commandArgs.push("-u", options.user);
-    }
-    if (options.client) {
-      commandArgs.push("-c", options.client);
-    }
-    commandArgs.push("-m", String(limit));
-    this.appendFileSpecs(commandArgs, options.fileSpec);
-    if (options.beforeChange !== undefined) {
-      commandArgs.push(`@${options.beforeChange}`);
-    }
-
-    const rows = await this.runTaggedJson<Record<string, unknown>>(commandArgs);
-    const items = rows
-      .map((row) => this.toSubmittedChangelistSummary(row))
-      .filter((summary): summary is P4SubmittedChangelistSummary => summary !== null);
-    const oldestChange = items.reduce<number | null>(
-      (oldest, item) => oldest === null ? item.change : Math.min(oldest, item.change),
-      null
+    return this.listNumberedChangelists(
+      "submitted",
+      options,
+      (row) => this.toSubmittedChangelistSummary(row)
     );
-    const hasMore = oldestChange !== null && items.length >= limit && oldestChange > 1;
-
-    return {
-      items,
-      hasMore,
-      nextBeforeChange: hasMore ? oldestChange - 1 : null
-    };
   }
 
   /**
-   * List pending or submitted changelists through a single discriminated API.
+   * List shelved changelists for a user, client, or file spec.
+   */
+  async listShelvedChangelists(
+    options: ListShelvedChangelistsOptions = {}
+  ): Promise<ListShelvedChangelistsResult> {
+    return this.listNumberedChangelists(
+      "shelved",
+      options,
+      (row) => this.toShelvedChangelistSummary(row)
+    );
+  }
+
+  /**
+   * List pending, submitted, or shelved changelists through a single discriminated API.
    *
-   * Pagination fields are populated only for submitted changelists.
+   * Pagination fields are populated only for submitted and shelved changelists.
    */
   async listChangelists(options: ListChangelistsOptions): Promise<ListChangelistsResult> {
     if (options.status === "submitted") {
       return this.listSubmittedChangelists(options);
+    }
+    if (options.status === "shelved") {
+      return this.listShelvedChangelists(options);
     }
 
     const pendingOptions: ListPendingChangelistsOptions = {
@@ -467,12 +462,21 @@ export class P4Client {
     options: DescribeChangelistOptions = {}
   ): Promise<P4ChangelistDescription> {
     if (change === "default") {
+      if (options.shelved) {
+        throw new Error("Shelved changelist descriptions require a numbered changelist.");
+      }
       return this.describeDefaultChangelist(options);
     }
 
-    const commandArgs = ["describe", "-s", String(change)];
+    const commandArgs = options.shelved
+      ? ["describe", "-S", "-s", String(change)]
+      : ["describe", "-s", String(change)];
     const rows = await this.runTaggedJson<Record<string, unknown>>(commandArgs);
-    return this.toChangelistDescription(change, rows);
+    return this.toChangelistDescription(
+      change,
+      rows,
+      options.shelved ? "shelved" : undefined
+    );
   }
 
   /**
@@ -492,10 +496,17 @@ export class P4Client {
     const isBinary = isBinaryP4Type(options.type);
 
     if (!allowBinary && isBinary) {
+      const source: P4FileDiffResult["source"] =
+        options.changelistStatus === "submitted"
+        || options.changelistStatus === "shelved"
+        || (options.fromRevision !== undefined && options.toRevision !== undefined)
+          ? "depot"
+          : "workspace";
+
       return {
         depotFile: options.depotFile,
         localFile: options.localFile ?? null,
-        source: "workspace",
+        source,
         fromRevision: null,
         toRevision: null,
         unifiedDiff: "",
@@ -556,7 +567,9 @@ export class P4Client {
     options: GetChangelistDiffSummaryOptions = {}
   ): Promise<P4ChangelistDiffSummary> {
     const changelist = await this.describeChangelist(change, options);
-    const openedLookup = await this.getOpenedFileLookup(change, options);
+    const openedLookup = options.shelved
+      ? new Map<string, P4OpenedFileSummary>()
+      : await this.getOpenedFileLookup(change, options);
     const includeLineCounts = options.includeLineCounts ?? false;
     const concurrency = options.concurrency ?? 3;
 
@@ -581,8 +594,14 @@ export class P4Client {
           depotFile: summary.depotFile,
           type: summary.type,
           allowBinary: false,
-          changelistStatus: changelist.status
+          changelistStatus: options.shelved ? "shelved" : changelist.status
         };
+        if (options.shelved) {
+          if (typeof change !== "number") {
+            throw new Error("Shelved diff summaries require a numbered changelist.");
+          }
+          diffOptions.shelvedChange = change;
+        }
         if (summary.localFile) {
           diffOptions.localFile = summary.localFile;
         }
@@ -880,6 +899,46 @@ export class P4Client {
     };
   }
 
+  private async listNumberedChangelists<TSummary extends { change: number }>(
+    status: "submitted" | "shelved",
+    options: ListSubmittedChangelistsOptions | ListShelvedChangelistsOptions,
+    toSummary: (row: Record<string, unknown>) => TSummary | null
+  ): Promise<{
+    items: TSummary[];
+    hasMore: boolean;
+    nextBeforeChange: number | null;
+  }> {
+    const limit = options.limit ?? 50;
+    const commandArgs = ["changes", "-s", status, "-l"];
+    if (options.user) {
+      commandArgs.push("-u", options.user);
+    }
+    if (options.client) {
+      commandArgs.push("-c", options.client);
+    }
+    commandArgs.push("-m", String(limit));
+    this.appendFileSpecs(commandArgs, options.fileSpec);
+    if (options.beforeChange !== undefined) {
+      commandArgs.push(`@${options.beforeChange}`);
+    }
+
+    const rows = await this.runTaggedJson<Record<string, unknown>>(commandArgs);
+    const items = rows
+      .map((row) => toSummary(row))
+      .filter((summary): summary is TSummary => summary !== null);
+    const oldestChange = items.reduce<number | null>(
+      (oldest, item) => oldest === null ? item.change : Math.min(oldest, item.change),
+      null
+    );
+    const hasMore = oldestChange !== null && items.length >= limit && oldestChange > 1;
+
+    return {
+      items,
+      hasMore,
+      nextBeforeChange: hasMore ? oldestChange - 1 : null
+    };
+  }
+
   private toSubmittedChangelistSummary(
     change: Record<string, unknown>
   ): P4SubmittedChangelistSummary | null {
@@ -895,6 +954,27 @@ export class P4Client {
       client: normalizeNullableString(change.client),
       user: normalizeNullableString(change.user),
       status: "submitted",
+      description: normalizeNullableString(change.desc),
+      createdAt,
+      createdAtIso: unixSecondsToIsoString(createdAt)
+    };
+  }
+
+  private toShelvedChangelistSummary(
+    change: Record<string, unknown>
+  ): P4ShelvedChangelistSummary | null {
+    const normalizedChange = normalizeP4Change(change.change);
+    if (normalizedChange === null || normalizedChange === "default") {
+      return null;
+    }
+
+    const createdAt = normalizeNullableString(change.time);
+
+    return {
+      change: normalizedChange,
+      client: normalizeNullableString(change.client),
+      user: normalizeNullableString(change.user),
+      status: "shelved",
       description: normalizeNullableString(change.desc),
       createdAt,
       createdAtIso: unixSecondsToIsoString(createdAt)
@@ -928,7 +1008,8 @@ export class P4Client {
 
   private toChangelistDescription(
     change: number | "default",
-    rows: Record<string, unknown>[]
+    rows: Record<string, unknown>[],
+    contentSource?: "opened" | "shelved"
   ): P4ChangelistDescription {
     const metadata = rows.find((row) => row.change !== undefined) ?? rows[0];
     if (!metadata) {
@@ -939,7 +1020,7 @@ export class P4Client {
     const createdAt = normalizeNullableString(metadata.time);
     const statusValue = normalizeNullableString(metadata.status)?.toLowerCase();
 
-    return {
+    const description: P4ChangelistDescription = {
       change: normalizedChange,
       user: normalizeNullableString(metadata.user),
       client: normalizeNullableString(metadata.client),
@@ -949,6 +1030,11 @@ export class P4Client {
       status: statusValue === "submitted" ? "submitted" : "pending",
       files: this.toDescribedFiles(rows)
     };
+    if (contentSource !== undefined) {
+      description.contentSource = contentSource;
+    }
+
+    return description;
   }
 
   private toDescribedFiles(rows: Record<string, unknown>[]): P4DescribedFile[] {

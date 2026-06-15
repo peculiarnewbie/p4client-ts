@@ -20,9 +20,13 @@ This package is intended for inspection, preview-oriented workflows, and explici
 In scope:
 - Inspect current environment and workspace state
 - List relevant workspaces for the current machine
-- Inspect pending changelists and opened files
-- Describe changelists and build lazy-load diff summaries
+- Inspect pending, submitted, and shelved changelists
+- Inspect opened files
+- Describe changelists and build lazy-load diff summaries, including shelved
+  file rows via `p4 describe -S -s`
 - Diff workspace files against depot revisions (`p4 diff`)
+- Diff shelved files against their depot base without unshelving (`p4 diff2`
+  with `@=<change>`)
 - Print depot file content at a revision (`p4 print`)
 - Preview reconcile operations
 - Preview sync operations and apply sync when explicitly requested
@@ -30,7 +34,7 @@ In scope:
 
 Out of scope:
 - `submit`
-- `shelve` or `unshelve`
+- `shelve` or `unshelve` mutations
 - `edit`, `add`, `delete`, or other checkout/open-for-edit commands
 - `revert`, `lock`, `unlock`, `move`, `integrate`, or `resolve`
 - Changelist creation or mutation
@@ -54,6 +58,9 @@ const environment = await p4.getEnvironment();
 const localEnvironment = await p4.getEnvironment({ mode: "local" });
 const workspaces = await p4.listWorkspaces();
 const pending = await p4.listPendingChangelists();
+const shelved = await p4.listShelvedChangelists({
+  fileSpec: "//Project/main/..."
+});
 const opened = await p4.getOpenedFiles({ change: "default" });
 const reconcilePreview = await p4.previewReconcile({
   fileSpec: "C:/work/project/..."
@@ -114,6 +121,28 @@ const depotContent = await p4.printFile("//Project/main/foo.txt", {
 - Pending changelists compare the workspace against depot `#have` via `p4 diff`.
 - Submitted changelists compare two depot revisions via `p4 diff2`, inferred
   from `action`/`revision` or supplied through `fromRevision`/`toRevision`.
+- Shelved changelists compare depot base revisions against shelf revisions via
+  `p4 diff2`. Describe the shelf first, then pass `changelistStatus: "shelved"`
+  and `shelvedChange`.
+
+```ts
+const shelvedDescription = await p4.describeChangelist(12345, { shelved: true });
+const shelvedFile = shelvedDescription.files[0];
+
+if (shelvedFile && !isBinaryP4Type(shelvedFile.type)) {
+  const diff = await p4.diffFile({
+    depotFile: shelvedFile.depotFile,
+    action: shelvedFile.action,
+    revision: shelvedFile.revision,
+    changelistStatus: "shelved",
+    shelvedChange: 12345,
+    type: shelvedFile.type,
+    allowBinary: false
+  });
+
+  console.log(diff.source, diff.unifiedDiff);
+}
+```
 
 `p4 diff` and `p4 diff2` exit with code `1` when differences exist. `diffFile()`
 treats exit codes `0` and `1` as success and only throws for exit code `2` or

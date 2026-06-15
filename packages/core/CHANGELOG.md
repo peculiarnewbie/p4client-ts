@@ -4,6 +4,25 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
+## 0.7.0 - 2026-06-15
+
+### Added
+
+- Added `listShelvedChangelists()` and `listChangelists({ status: "shelved" })`
+  for paged shelved changelist listing.
+- Added `describeChangelist(change, { shelved: true })` for inspection-only
+  shelved file rows via `p4 describe -S -s`.
+- Added `diffFile()` support for shelved depot-vs-shelf diffs using
+  `changelistStatus: "shelved"` and `shelvedChange`.
+- Added shelved changelist diff summaries that avoid reviewer workspace opened
+  file lookups and can populate line counts through depot-side shelf diffs.
+- Added Effect service wrappers and exports for shelved changelist listing.
+
+### Notes
+
+- Shelved changelist inspection is in scope. `shelve`, `unshelve`, and other
+  shelf-mutating operations remain out of scope.
+
 ## 0.6.0 - 2026-06-15
 
 ### Added
@@ -34,4 +53,3 @@ This project follows semantic versioning.
 - For reconcile workflows, use `workspaceRootFileSpec(workspace)` or the
   `previewReconcile({ workspace })` convenience. Reconcile operates on the
   local workspace tree, not the stream path.
-

@@ -13,6 +13,7 @@ import {
   parseUnifiedDiff,
   resolveDepotDiffRevisions,
   resolveDiffPlan,
+  resolveShelvedDiffRevisions,
   summarizeUnifiedDiff,
   unixSecondsToIsoString,
   workspaceRootFileSpec,
@@ -280,6 +281,35 @@ describe("resolveDiffPlan", () => {
       toRevision: 4
     });
   });
+
+  it("selects depot diffs for shelved changelists", () => {
+    expect(
+      resolveDiffPlan({
+        depotFile: "//Project/main/foo.txt",
+        action: "edit",
+        revision: 4,
+        changelistStatus: "shelved",
+        shelvedChange: 12345
+      })
+    ).toEqual({
+      source: "depot",
+      command: "diff2",
+      args: ["-du", "//Project/main/foo.txt#3", "//Project/main/foo.txt@=12345"],
+      fromRevision: 3,
+      toRevision: "@=12345"
+    });
+  });
+
+  it("throws when shelved changelists omit the shelf change number", () => {
+    expect(() =>
+      resolveDiffPlan({
+        depotFile: "//Project/main/foo.txt",
+        action: "edit",
+        revision: 4,
+        changelistStatus: "shelved"
+      })
+    ).toThrow("shelvedChange");
+  });
 });
 
 describe("buildDepotDiffFilespec", () => {
@@ -290,5 +320,50 @@ describe("buildDepotDiffFilespec", () => {
     expect(buildDepotDiffFilespec("//Project/main/foo.txt", "none")).toBe(
       "//Project/main/foo.txt#none"
     );
+    expect(buildDepotDiffFilespec("//Project/main/foo.txt", "@=12345")).toBe(
+      "//Project/main/foo.txt@=12345"
+    );
+  });
+});
+
+describe("resolveShelvedDiffRevisions", () => {
+  it("maps shelved actions to revision endpoints", () => {
+    expect(
+      resolveShelvedDiffRevisions({
+        depotFile: "//Project/main/add.txt",
+        action: "add",
+        revision: null,
+        shelvedChange: 12345
+      })
+    ).toEqual({ fromRevision: "none", toRevision: "@=12345" });
+
+    expect(
+      resolveShelvedDiffRevisions({
+        depotFile: "//Project/main/edit.txt",
+        action: "edit",
+        revision: 7,
+        shelvedChange: 12345
+      })
+    ).toEqual({ fromRevision: 6, toRevision: "@=12345" });
+
+    expect(
+      resolveShelvedDiffRevisions({
+        depotFile: "//Project/main/delete.txt",
+        action: "delete",
+        revision: 7,
+        shelvedChange: 12345
+      })
+    ).toEqual({ fromRevision: 7, toRevision: "none" });
+  });
+
+  it("throws when a shelved edit has no prior revision", () => {
+    expect(() =>
+      resolveShelvedDiffRevisions({
+        depotFile: "//Project/main/edit.txt",
+        action: "edit",
+        revision: 1,
+        shelvedChange: 12345
+      })
+    ).toThrow("Unable to infer base revision");
   });
 });

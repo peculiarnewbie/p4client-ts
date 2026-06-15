@@ -274,11 +274,15 @@ export function buildDepotDiffFilespec(
   depotFile: string,
   revision: string | number
 ): string {
-  if (String(revision).toLowerCase() === "none") {
+  const revisionText = String(revision);
+  if (revisionText.toLowerCase() === "none") {
     return `${depotFile}#none`;
   }
+  if (revisionText.startsWith("#") || revisionText.startsWith("@")) {
+    return `${depotFile}${revisionText}`;
+  }
 
-  return `${depotFile}#${revision}`;
+  return `${depotFile}#${revisionText}`;
 }
 
 /**
@@ -318,6 +322,47 @@ export function resolveDepotDiffRevisions(
 }
 
 /**
+ * Infer depot revision endpoints for a shelved changelist file.
+ */
+export function resolveShelvedDiffRevisions(
+  file: Pick<P4DescribedFile, "depotFile" | "action" | "revision"> & {
+    shelvedChange: number;
+  }
+): { fromRevision: string | number; toRevision: string | number } {
+  const action = file.action.toLowerCase();
+  const revision = file.revision;
+  const shelfRevision = `@=${file.shelvedChange}`;
+
+  if (action === "add") {
+    return { fromRevision: "none", toRevision: shelfRevision };
+  }
+
+  if (action === "delete") {
+    if (revision === null) {
+      throw new Error(
+        `Unable to infer base revision for shelved delete ${file.depotFile}.`
+      );
+    }
+
+    return { fromRevision: revision, toRevision: "none" };
+  }
+
+  if (action === "edit" || action === "integrate" || action === "branch") {
+    if (revision === null || revision <= 1) {
+      throw new Error(
+        `Unable to infer base revision for shelved file ${file.depotFile}.`
+      );
+    }
+
+    return { fromRevision: revision - 1, toRevision: shelfRevision };
+  }
+
+  throw new Error(
+    `Unable to infer depot revisions for shelved ${action} file ${file.depotFile}.`
+  );
+}
+
+/**
  * Decide whether `diffFile()` should compare the workspace or two depot revisions.
  */
 export function resolveDiffPlan(options: DiffFileOptions): ResolvedDiffPlan {
@@ -343,6 +388,32 @@ export function resolveDiffPlan(options: DiffFileOptions): ResolvedDiffPlan {
       args: [...diffFlags, left, right],
       fromRevision,
       toRevision
+    };
+  }
+
+  if (options.changelistStatus === "shelved") {
+    const shelvedChange = options.shelvedChange;
+    if (shelvedChange === undefined) {
+      throw new Error(
+        'diffFile() requires shelvedChange when changelistStatus is "shelved".'
+      );
+    }
+
+    const revisions = resolveShelvedDiffRevisions({
+      depotFile: options.depotFile,
+      action: options.action ?? "edit",
+      revision: options.revision ?? null,
+      shelvedChange
+    });
+    const left = buildDepotDiffFilespec(options.depotFile, revisions.fromRevision);
+    const right = buildDepotDiffFilespec(options.depotFile, revisions.toRevision);
+
+    return {
+      source: "depot",
+      command: "diff2",
+      args: [...diffFlags, left, right],
+      fromRevision: revisions.fromRevision,
+      toRevision: revisions.toRevision
     };
   }
 

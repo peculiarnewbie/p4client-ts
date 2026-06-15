@@ -28,6 +28,8 @@ export function createP4Service(options: P4ClientOptions = {}): P4Service {
       Effect.promise(() => client.listPendingChangelists(serviceOptions)),
     listSubmittedChangelists: (serviceOptions) =>
       Effect.promise(() => client.listSubmittedChangelists(serviceOptions)),
+    listShelvedChangelists: (serviceOptions) =>
+      Effect.promise(() => client.listShelvedChangelists(serviceOptions)),
     listChangelists: (serviceOptions) =>
       Effect.promise(() => client.listChangelists(serviceOptions)),
     getOpenedFiles: (serviceOptions) =>
@@ -96,7 +98,14 @@ export function listSubmittedChangelists(options?: Parameters<P4Service["listSub
 }
 
 /**
- * List pending or submitted changelists using the default Effect service.
+ * List shelved changelists using the default Effect service.
+ */
+export function listShelvedChangelists(options?: Parameters<P4Service["listShelvedChangelists"]>[0]) {
+  return defaultService.listShelvedChangelists(options);
+}
+
+/**
+ * List pending, submitted, or shelved changelists using the default Effect service.
  */
 export function listChangelists(options: Parameters<P4Service["listChangelists"]>[0]) {
   return defaultService.listChangelists(options);

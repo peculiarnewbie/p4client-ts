@@ -265,7 +265,7 @@ describe("createP4Service", () => {
     ]);
   });
 
-  it("exposes submitted changelist, unified changelist, sync stream, and client switch wrappers", async () => {
+  it("exposes submitted/shelved changelist, unified changelist, sync stream, and client switch wrappers", async () => {
     const calls: string[][] = [];
     const service = createP4Service({
       executor: async (command, args) => {
@@ -311,6 +311,9 @@ describe("createP4Service", () => {
 
     await expect(Effect.runPromise(service.listSubmittedChangelists())).resolves.toMatchObject({
       items: [{ change: 12345, status: "submitted" }]
+    });
+    await expect(Effect.runPromise(service.listShelvedChangelists())).resolves.toMatchObject({
+      items: [{ change: 12345, status: "shelved" }]
     });
     await expect(
       Effect.runPromise(service.listChangelists({ status: "submitted" }))

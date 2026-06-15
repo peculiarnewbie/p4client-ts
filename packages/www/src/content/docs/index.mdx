@@ -28,6 +28,7 @@ const p4 = new P4Client();
 const environment = await p4.getEnvironment();
 const workspaces = await p4.listWorkspaces();
 const pending = await p4.listPendingChangelists();
+const shelved = await p4.listShelvedChangelists();
 const syncPreview = await p4.previewSync({ fileSpec: "//Project/main/..." });
 
 if (syncPreview.totalCount > 0) {
@@ -41,7 +42,8 @@ In scope:
 
 - Inspect current environment and workspace state
 - List relevant workspaces for the local machine
-- Inspect pending changelists and opened files
+- Inspect pending, submitted, and shelved changelists
+- Inspect opened files and lazy-load changelist diffs
 - Preview reconcile operations
 - Preview sync operations and apply sync explicitly
 - Compose the same operations through an Effect service wrapper
