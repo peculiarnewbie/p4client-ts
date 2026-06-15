@@ -26,6 +26,10 @@ export function createP4Service(options: P4ClientOptions = {}): P4Service {
       Effect.promise(() => client.listWorkspaces({ refresh })),
     listPendingChangelists: (serviceOptions) =>
       Effect.promise(() => client.listPendingChangelists(serviceOptions)),
+    listSubmittedChangelists: (serviceOptions) =>
+      Effect.promise(() => client.listSubmittedChangelists(serviceOptions)),
+    listChangelists: (serviceOptions) =>
+      Effect.promise(() => client.listChangelists(serviceOptions)),
     getOpenedFiles: (serviceOptions) =>
       Effect.promise(() => client.getOpenedFiles(serviceOptions)),
     getChangelistFiles: (change, serviceOptions) =>
@@ -41,6 +45,15 @@ export function createP4Service(options: P4ClientOptions = {}): P4Service {
       Effect.promise(() => client.previewSync(serviceOptions)),
     sync: (serviceOptions) =>
       Effect.promise(() => client.sync(serviceOptions)),
+    streamSync: (serviceOptions) =>
+      Stream.fromAsyncIterable(
+        client.watchSync(serviceOptions).events,
+        (error) => error instanceof Error ? error : new Error(String(error))
+      ),
+    setClient: (serviceOptions) =>
+      Effect.promise(() => client.setClient(serviceOptions)),
+    switchWorkspace: (clientName) =>
+      Effect.promise(() => client.switchWorkspace(clientName)),
     describeChangelist: (change, serviceOptions) =>
       Effect.promise(() => client.describeChangelist(change, serviceOptions)),
     diffFile: (serviceOptions) =>
@@ -73,6 +86,20 @@ export function listP4Workspaces(refresh = false) {
  */
 export function listPendingChangelists(options?: Parameters<P4Service["listPendingChangelists"]>[0]) {
   return defaultService.listPendingChangelists(options);
+}
+
+/**
+ * List submitted changelists using the default Effect service.
+ */
+export function listSubmittedChangelists(options?: Parameters<P4Service["listSubmittedChangelists"]>[0]) {
+  return defaultService.listSubmittedChangelists(options);
+}
+
+/**
+ * List pending or submitted changelists using the default Effect service.
+ */
+export function listChangelists(options: Parameters<P4Service["listChangelists"]>[0]) {
+  return defaultService.listChangelists(options);
 }
 
 /**
@@ -120,6 +147,27 @@ export function previewSync(options?: Parameters<P4Service["previewSync"]>[0]) {
  */
 export function sync(options?: Parameters<P4Service["sync"]>[0]) {
   return defaultService.sync(options);
+}
+
+/**
+ * Stream sync progress using the default Effect service.
+ */
+export function streamSync(options?: Parameters<P4Service["streamSync"]>[0]) {
+  return defaultService.streamSync(options);
+}
+
+/**
+ * Set the active Perforce client using the default Effect service.
+ */
+export function setClient(options: Parameters<P4Service["setClient"]>[0]) {
+  return defaultService.setClient(options);
+}
+
+/**
+ * Switch the active Perforce workspace using the default Effect service.
+ */
+export function switchWorkspace(client: Parameters<P4Service["switchWorkspace"]>[0]) {
+  return defaultService.switchWorkspace(client);
 }
 
 /**

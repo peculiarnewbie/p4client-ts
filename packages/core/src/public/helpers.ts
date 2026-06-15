@@ -132,6 +132,42 @@ export function isLocalWorkspace(
 }
 
 /**
+ * Build a recursive stream file spec, or return null for non-stream workspaces.
+ */
+export function workspaceStreamFileSpec(
+  workspace: Pick<import("./types.js").P4WorkspaceSummary, "stream">
+): string | null {
+  const stream = normalizeNullableString(workspace.stream);
+  if (!stream) return null;
+
+  return `${stream.replace(/\/+$/, "")}/...`;
+}
+
+/**
+ * Build a recursive stream file spec and throw when the workspace is not stream-based.
+ */
+export function requireWorkspaceStreamFileSpec(
+  workspace: Pick<import("./types.js").P4WorkspaceSummary, "stream">
+): string {
+  const fileSpec = workspaceStreamFileSpec(workspace);
+  if (!fileSpec) {
+    throw new Error("Workspace is not stream-based.");
+  }
+
+  return fileSpec;
+}
+
+/**
+ * Build a recursive local workspace-root file spec for commands such as reconcile.
+ */
+export function workspaceRootFileSpec(
+  workspace: Pick<import("./types.js").P4WorkspaceSummary, "root">
+): string {
+  const normalizedRoot = workspace.root.replace(/\\/g, "/").replace(/\/+$/, "");
+  return `${normalizedRoot}/...`;
+}
+
+/**
  * Convert a unix timestamp expressed in seconds to an ISO-8601 string.
  */
 export function unixSecondsToIsoString(value: string | null | undefined): string | null {

@@ -14,11 +14,16 @@ export {
   getChangelistFiles,
   getP4Environment,
   getOpenedFiles,
+  listChangelists,
   listPendingChangelists,
   listP4Workspaces,
+  listSubmittedChangelists,
   previewReconcile,
   printFile,
+  setClient,
   streamPreviewReconcile,
+  streamSync,
+  switchWorkspace,
   previewSync,
   sync
 } from "./service.js";
@@ -47,7 +52,10 @@ export {
   resolveDepotDiffRevisions,
   resolveDiffPlan,
   summarizeUnifiedDiff,
-  unixSecondsToIsoString
+  unixSecondsToIsoString,
+  requireWorkspaceStreamFileSpec,
+  workspaceRootFileSpec,
+  workspaceStreamFileSpec
 } from "./helpers.js";
 export type { ResolvedDiffPlan } from "./helpers.js";
 export type {
@@ -56,9 +64,14 @@ export type {
   GetChangelistDiffSummaryOptions,
   GetEnvironmentOptions,
   GetOpenedFilesOptions,
+  ListChangelistsOptions,
+  ListChangelistsResult,
   ListWorkspacesOptions,
   ListPendingChangelistsOptions,
+  ListSubmittedChangelistsOptions,
+  ListSubmittedChangelistsResult,
   LocalWorkspaceCandidate,
+  P4ChangelistListStatus,
   P4ChangelistDescription,
   P4ChangelistDiffFileSummary,
   P4ChangelistDiffSummary,
@@ -91,8 +104,12 @@ export type {
   P4SettingsContribution,
   P4SettingsSource,
   P4StreamingCommandExecutor,
+  P4SubmittedChangelistSummary,
+  P4SyncErrorItem,
   P4SyncItem,
+  P4SyncProgressEvent,
   P4SyncResult,
+  P4SyncResultWithErrors,
   P4SyncPreviewItem,
   P4SyncPreviewResult,
   P4WorkspaceSummary,
@@ -100,6 +117,8 @@ export type {
   PreviewSyncOptions,
   PrintFileOptions,
   ResolveP4SettingsOptions,
+  SetClientOptions,
+  SetClientResult,
   SyncOptions,
   RunTaggedJsonOptions,
   WatchP4CommandOptions

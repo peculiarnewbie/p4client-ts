@@ -14,7 +14,10 @@ import {
   resolveDepotDiffRevisions,
   resolveDiffPlan,
   summarizeUnifiedDiff,
-  unixSecondsToIsoString
+  unixSecondsToIsoString,
+  workspaceRootFileSpec,
+  workspaceStreamFileSpec,
+  requireWorkspaceStreamFileSpec
 } from "../src/public/helpers.js";
 import type { P4JsonWorkspace } from "../src/public/types.js";
 
@@ -86,6 +89,30 @@ describe("isLocalWorkspace", () => {
     expect(isLocalWorkspace({ host: "DESKTOP-WORK-ARIF" }, "DESKTOP-WORK-ARIF")).toBe(true);
     expect(isLocalWorkspace({ host: "RENDER-NODE" }, "DESKTOP-WORK-ARIF")).toBe(false);
     expect(isLocalWorkspace({ host: null }, "DESKTOP-WORK-ARIF")).toBe(false);
+  });
+});
+
+describe("workspaceStreamFileSpec", () => {
+  it("builds recursive stream specs and normalizes trailing slashes", () => {
+    expect(workspaceStreamFileSpec({ stream: "//Project/main" })).toBe("//Project/main/...");
+    expect(workspaceStreamFileSpec({ stream: "//Project/main/" })).toBe("//Project/main/...");
+  });
+
+  it("returns null for non-stream workspaces", () => {
+    expect(workspaceStreamFileSpec({ stream: null })).toBeNull();
+  });
+});
+
+describe("requireWorkspaceStreamFileSpec", () => {
+  it("throws for non-stream workspaces", () => {
+    expect(() => requireWorkspaceStreamFileSpec({ stream: null })).toThrow("not stream-based");
+  });
+});
+
+describe("workspaceRootFileSpec", () => {
+  it("builds recursive local root specs with forward slashes", () => {
+    expect(workspaceRootFileSpec({ root: "E:\\Game" })).toBe("E:/Game/...");
+    expect(workspaceRootFileSpec({ root: "/work/Game/" })).toBe("/work/Game/...");
   });
 });
 

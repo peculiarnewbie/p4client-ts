@@ -13,7 +13,8 @@ import {
   parseP4KeyValueOutput,
   resolveDiffPlan,
   summarizeUnifiedDiff,
-  unixSecondsToIsoString
+  unixSecondsToIsoString,
+  workspaceRootFileSpec
 } from "./helpers.js";
 import {
   mergeIncompleteSettings,
@@ -26,8 +27,12 @@ import type {
   GetChangelistDiffSummaryOptions,
   GetEnvironmentOptions,
   GetOpenedFilesOptions,
+  ListChangelistsOptions,
+  ListChangelistsResult,
   ListWorkspacesOptions,
   ListPendingChangelistsOptions,
+  ListSubmittedChangelistsOptions,
+  ListSubmittedChangelistsResult,
   P4ChangelistDescription,
   P4ChangelistDiffFileSummary,
   P4ChangelistDiffSummary,
@@ -35,6 +40,7 @@ import type {
   P4DescribedFile,
   P4FileDiffResult,
   P4PendingChangelistSummary,
+  P4SubmittedChangelistSummary,
   P4ClientOptions,
   P4CommandOptions,
   P4CommandResult,
@@ -50,13 +56,18 @@ import type {
   P4ReconcilePreviewResult,
   P4SettingsSource,
   P4SyncItem,
+  P4SyncErrorItem,
+  P4SyncProgressEvent,
   P4SyncResult,
+  P4SyncResultWithErrors,
   P4SyncPreviewItem,
   P4SyncPreviewResult,
   P4WorkspaceSummary,
   PreviewReconcileOptions,
   PreviewSyncOptions,
   PrintFileOptions,
+  SetClientOptions,
+  SetClientResult,
   SyncOptions,
   RunTaggedJsonOptions,
   WatchP4CommandOptions
@@ -258,6 +269,31 @@ export class P4Client {
   }
 
   /**
+   * Set the active Perforce client and clear cached client-derived state.
+   */
+  async setClient(options: SetClientOptions): Promise<SetClientResult> {
+    const environment = await this.getEnvironment();
+    await this.run(["set", `P4CLIENT=${options.client}`]);
+
+    if (options.invalidateCache !== false) {
+      this.clearCaches();
+    }
+
+    return {
+      ok: true,
+      previousClient: environment.p4Client,
+      newClient: options.client
+    };
+  }
+
+  /**
+   * Convenience alias for {@link setClient}.
+   */
+  async switchWorkspace(client: string): Promise<SetClientResult> {
+    return this.setClient({ client });
+  }
+
+  /**
    * List pending changelists for a user or client.
    *
    * When `includeDefault` is enabled, this method may synthesize a default
@@ -274,6 +310,7 @@ export class P4Client {
     if (options.client) {
       commandArgs.push("-c", options.client);
     }
+    this.appendFileSpecs(commandArgs, options.fileSpec);
 
     const changes = await this.runTaggedJson<Record<string, unknown>>(commandArgs);
     const summaries = changes.map((change) => this.toPendingChangelistSummary(change));
@@ -289,6 +326,9 @@ export class P4Client {
     }
     if (options.client !== undefined) {
       defaultOpenedOptions.client = options.client;
+    }
+    if (options.fileSpec !== undefined) {
+      defaultOpenedOptions.fileSpec = options.fileSpec;
     }
 
     const defaultOpened = await this.getOpenedFiles(defaultOpenedOptions);
@@ -314,6 +354,73 @@ export class P4Client {
       },
       ...summaries
     ];
+  }
+
+  /**
+   * List submitted changelists for a user, client, or file spec.
+   *
+   * For stream/team views, prefer `fileSpec` such as `//Project/main/...`
+   * instead of `client`, which scopes results to one workspace.
+   */
+  async listSubmittedChangelists(
+    options: ListSubmittedChangelistsOptions = {}
+  ): Promise<ListSubmittedChangelistsResult> {
+    const limit = options.limit ?? 50;
+    const commandArgs = ["changes", "-s", "submitted", "-l"];
+    if (options.user) {
+      commandArgs.push("-u", options.user);
+    }
+    if (options.client) {
+      commandArgs.push("-c", options.client);
+    }
+    commandArgs.push("-m", String(limit));
+    this.appendFileSpecs(commandArgs, options.fileSpec);
+    if (options.beforeChange !== undefined) {
+      commandArgs.push(`@${options.beforeChange}`);
+    }
+
+    const rows = await this.runTaggedJson<Record<string, unknown>>(commandArgs);
+    const items = rows
+      .map((row) => this.toSubmittedChangelistSummary(row))
+      .filter((summary): summary is P4SubmittedChangelistSummary => summary !== null);
+    const oldestChange = items.reduce<number | null>(
+      (oldest, item) => oldest === null ? item.change : Math.min(oldest, item.change),
+      null
+    );
+    const hasMore = oldestChange !== null && items.length >= limit && oldestChange > 1;
+
+    return {
+      items,
+      hasMore,
+      nextBeforeChange: hasMore ? oldestChange - 1 : null
+    };
+  }
+
+  /**
+   * List pending or submitted changelists through a single discriminated API.
+   *
+   * Pagination fields are populated only for submitted changelists.
+   */
+  async listChangelists(options: ListChangelistsOptions): Promise<ListChangelistsResult> {
+    if (options.status === "submitted") {
+      return this.listSubmittedChangelists(options);
+    }
+
+    const pendingOptions: ListPendingChangelistsOptions = {
+      status: "pending"
+    };
+    if (options.includeDefault !== undefined) pendingOptions.includeDefault = options.includeDefault;
+    if (options.user !== undefined) pendingOptions.user = options.user;
+    if (options.client !== undefined) pendingOptions.client = options.client;
+    if (options.fileSpec !== undefined) pendingOptions.fileSpec = options.fileSpec;
+    if (options.refresh !== undefined) pendingOptions.refresh = options.refresh;
+
+    const items = await this.listPendingChangelists(pendingOptions);
+    return {
+      items,
+      hasMore: false,
+      nextBeforeChange: null
+    };
   }
 
   /**
@@ -649,11 +756,90 @@ export class P4Client {
    * work, then call this method to apply the same file spec and flags.
    */
   async sync(options: SyncOptions = {}): Promise<P4SyncResult> {
-    const rows = await this.runTaggedJson<Record<string, unknown>>(
-      this.getSyncCommandArgs(options, false)
-    );
+    const commandArgs = ["-Mj", "-z", "tag", ...this.getSyncCommandArgs(options, false)];
+    const result = await this.run(commandArgs, { allowNonZeroExit: true });
+    const rows = parseP4JsonLines<Record<string, unknown>>(result.stdout);
+
+    if (result.exitCode !== 0 && rows.length === 0) {
+      throw this.toCommandError(commandArgs, result);
+    }
 
     return this.toSyncResult(rows);
+  }
+
+  /**
+   * Perform `p4 sync` while streaming typed progress and per-file error rows.
+   */
+  watchSync(options: SyncOptions = {}): P4OperationHandle<P4SyncProgressEvent, P4SyncResultWithErrors> {
+    const queue = this.createAsyncEventQueue<P4SyncProgressEvent>();
+    const args = ["-Mj", "-z", "tag", ...this.getSyncCommandArgs(options, false)];
+
+    queue.push({
+      type: "start",
+      command: this.executable,
+      args
+    });
+
+    const result = (async () => {
+      const items: P4SyncItem[] = [];
+      const errors: P4SyncErrorItem[] = [];
+      const handle = this.watch(args, { allowNonZeroExit: true });
+
+      for await (const event of handle.events) {
+        if (event.type !== "line" || event.source !== "stdout") {
+          continue;
+        }
+
+        const row = this.tryParseJsonLine(event.line);
+        if (!row) {
+          continue;
+        }
+
+        if (this.isSyncErrorRow(row)) {
+          const error = this.toSyncErrorItem(row);
+          errors.push(error);
+          queue.push({ type: "error-row", error });
+          continue;
+        }
+
+        if (row.action !== undefined || row.depotFile !== undefined) {
+          const item = this.toSyncItem(row);
+          items.push(item);
+          queue.push({
+            type: "progress",
+            item,
+            filesSynced: items.length
+          });
+        }
+      }
+
+      const commandResult = await handle.result;
+      if (commandResult.exitCode !== 0 && errors.length === 0) {
+        throw this.toCommandError(args, commandResult);
+      }
+
+      const syncResult: P4SyncResultWithErrors = {
+        items,
+        errors,
+        totalCount: items.length
+      };
+      queue.push({ type: "complete", result: syncResult });
+      return syncResult;
+    })();
+
+    void result.then(
+      () => {
+        queue.finish();
+      },
+      (error) => {
+        queue.fail(error);
+      }
+    );
+
+    return {
+      events: queue.iterable,
+      result
+    };
   }
 
   private toWorkspaceSummary(
@@ -691,6 +877,27 @@ export class P4Client {
       createdAt,
       createdAtIso: unixSecondsToIsoString(createdAt),
       isDefault: normalizedChange === "default"
+    };
+  }
+
+  private toSubmittedChangelistSummary(
+    change: Record<string, unknown>
+  ): P4SubmittedChangelistSummary | null {
+    const normalizedChange = normalizeP4Change(change.change);
+    if (normalizedChange === null || normalizedChange === "default") {
+      return null;
+    }
+
+    const createdAt = normalizeNullableString(change.time);
+
+    return {
+      change: normalizedChange,
+      client: normalizeNullableString(change.client),
+      user: normalizeNullableString(change.user),
+      status: "submitted",
+      description: normalizeNullableString(change.desc),
+      createdAt,
+      createdAtIso: unixSecondsToIsoString(createdAt)
     };
   }
 
@@ -952,12 +1159,27 @@ export class P4Client {
   }
 
   private toSyncResult(rows: Record<string, unknown>[]): P4SyncResult {
-    const items = rows.map((row) => this.toSyncItem(row));
+    const items: P4SyncItem[] = [];
+    const errors: P4SyncErrorItem[] = [];
 
-    return {
+    for (const row of rows) {
+      if (this.isSyncErrorRow(row)) {
+        errors.push(this.toSyncErrorItem(row));
+        continue;
+      }
+
+      items.push(this.toSyncItem(row));
+    }
+
+    const result: P4SyncResult = {
       items,
       totalCount: items.length
     };
+    if (errors.length > 0) {
+      result.errors = errors;
+    }
+
+    return result;
   }
 
   private toSyncItem(row: Record<string, unknown>): P4SyncItem {
@@ -969,6 +1191,38 @@ export class P4Client {
       action: normalizeNullableString(row.action),
       fileSize: normalizeNullableNumber(row.fileSize)
     };
+  }
+
+  private isSyncErrorRow(row: Record<string, unknown>): boolean {
+    const severity = normalizeNullableNumber(row.severity);
+    return severity !== null && severity >= 3;
+  }
+
+  private toSyncErrorItem(row: Record<string, unknown>): P4SyncErrorItem {
+    const data = normalizeNullableString(row.data);
+    const clientFile = normalizeNullableString(row.clientFile)
+      ?? normalizeNullableString(row.path)
+      ?? (data ? this.extractFilePathFromSyncErrorData(data) : null);
+
+    return {
+      clientFile,
+      depotFile: normalizeNullableString(row.depotFile),
+      message: data ?? normalizeNullableString(row.generic) ?? "Perforce sync failed."
+    };
+  }
+
+  private extractFilePathFromSyncErrorData(message: string): string | null {
+    const clobberMatch = /Can't clobber writable file\s+(.+)$/i.exec(message);
+    if (clobberMatch?.[1]) {
+      return clobberMatch[1].trim();
+    }
+
+    const overwriteMatch = /^(.+?)\s+-\s+can't overwrite existing file/i.exec(message);
+    if (overwriteMatch?.[1]) {
+      return overwriteMatch[1].trim();
+    }
+
+    return null;
   }
 
   private appendFileSpecs(commandArgs: string[], fileSpec: string | string[] | undefined) {
@@ -993,7 +1247,10 @@ export class P4Client {
     if (options.includeWritable) {
       commandArgs.push("-w");
     }
-    this.appendFileSpecs(commandArgs, options.fileSpec);
+    const fileSpec = options.fileSpec ?? (
+      options.workspace ? workspaceRootFileSpec(options.workspace) : undefined
+    );
+    this.appendFileSpecs(commandArgs, fileSpec);
     return commandArgs;
   }
 
@@ -1094,6 +1351,13 @@ export class P4Client {
 
   private getSettingsCacheKey(sources?: P4SettingsSource[]): string {
     return sources?.join("|") ?? "__default__";
+  }
+
+  private clearCaches(): void {
+    this.cachedEnvironment = null;
+    this.cachedWorkspaces = null;
+    this.cachedLocalEnvironment = null;
+    this.cachedResolvedSettings = null;
   }
 
   private toCommandError(args: string[], result: P4CommandResult): P4CommandError {

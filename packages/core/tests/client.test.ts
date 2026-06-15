@@ -384,6 +384,168 @@ describe("P4Client", () => {
     ]);
   });
 
+  it("lists submitted changelists with fileSpec pagination", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return {
+          command,
+          args,
+          stdout: [
+            "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"time\":\"1742266870\",\"desc\":\"Submitted feature\",\"status\":\"submitted\"}",
+            "{\"change\":\"12340\",\"client\":\"Project_Tools\",\"user\":\"maya\",\"time\":\"1742266000\",\"desc\":\"Tooling\",\"status\":\"submitted\"}",
+            "{\"change\":\"default\",\"desc\":\"ignored\"}",
+            "{\"change\":\"not-a-change\",\"desc\":\"ignored\"}"
+          ].join("\n"),
+          stderr: "",
+          exitCode: 0
+        };
+      })
+    });
+
+    await expect(
+      p4.listSubmittedChangelists({
+        fileSpec: "//Project/main/...",
+        user: "surya",
+        limit: 2,
+        beforeChange: 12350
+      })
+    ).resolves.toEqual({
+      items: [
+        {
+          change: 12345,
+          client: "Project_Main",
+          user: "surya",
+          status: "submitted",
+          description: "Submitted feature",
+          createdAt: "1742266870",
+          createdAtIso: "2025-03-18T03:01:10.000Z"
+        },
+        {
+          change: 12340,
+          client: "Project_Tools",
+          user: "maya",
+          status: "submitted",
+          description: "Tooling",
+          createdAt: "1742266000",
+          createdAtIso: "2025-03-18T02:46:40.000Z"
+        }
+      ],
+      hasMore: true,
+      nextBeforeChange: 12339
+    });
+
+    expect(calls).toEqual([
+      [
+        "-Mj",
+        "-z",
+        "tag",
+        "changes",
+        "-s",
+        "submitted",
+        "-l",
+        "-u",
+        "surya",
+        "-m",
+        "2",
+        "//Project/main/...",
+        "@12350"
+      ]
+    ]);
+  });
+
+  it("returns no submitted pagination cursor when the result is below the limit", async () => {
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => ({
+        command,
+        args,
+        stdout: "{\"change\":\"2\",\"client\":\"Project_Main\",\"user\":\"surya\"}",
+        stderr: "",
+        exitCode: 0
+      }))
+    });
+
+    await expect(p4.listSubmittedChangelists({ limit: 5 })).resolves.toMatchObject({
+      hasMore: false,
+      nextBeforeChange: null
+    });
+  });
+
+  it("unifies pending and submitted changelist listing", async () => {
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => ({
+        command,
+        args,
+        stdout: "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"status\":\"pending\"}",
+        stderr: "",
+        exitCode: 0
+      }))
+    });
+
+    await expect(
+      p4.listChangelists({ status: "pending", includeDefault: false })
+    ).resolves.toEqual({
+      items: [
+        {
+          change: 12345,
+          client: "Project_Main",
+          user: "surya",
+          status: "pending",
+          description: null,
+          createdAt: null,
+          createdAtIso: null,
+          isDefault: false
+        }
+      ],
+      hasMore: false,
+      nextBeforeChange: null
+    });
+  });
+
+  it("sets the active client and invalidates cached environment", async () => {
+    const calls: string[][] = [];
+    let infoCalls = 0;
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        if (args[0] === "set") {
+          return { command, args, stdout: "", stderr: "", exitCode: 0 };
+        }
+
+        infoCalls += 1;
+        return {
+          command,
+          args,
+          stdout: [
+            "User name: surya",
+            `Client name: ${infoCalls === 1 ? "Project_Old" : "Project_New"}`,
+            "Client host: DESKTOP-WORK-ARIF",
+            "Server address: ssl:perforce.example.com:1666"
+          ].join("\n"),
+          stderr: "",
+          exitCode: 0
+        };
+      })
+    });
+
+    await p4.getEnvironment();
+    await expect(p4.setClient({ client: "Project_New" })).resolves.toEqual({
+      ok: true,
+      previousClient: "Project_Old",
+      newClient: "Project_New"
+    });
+    await expect(p4.getEnvironment()).resolves.toMatchObject({
+      p4Client: "Project_New"
+    });
+
+    expect(calls).toEqual([
+      ["info"],
+      ["set", "P4CLIENT=Project_New"],
+      ["info"]
+    ]);
+  });
+
   it("returns opened files as a flat typed list", async () => {
     const p4 = new P4Client({
       executor: createExecutor(async (command, args) => ({
@@ -536,6 +698,53 @@ describe("P4Client", () => {
 
     expect(calls).toEqual([
       ["-Mj", "-z", "tag", "reconcile", "-n", "-m", "-w", "C:/work/Project_Main/..."]
+    ]);
+  });
+
+  it("derives reconcile fileSpec from workspace root when omitted", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return {
+          command,
+          args,
+          stdout: "",
+          stderr: "",
+          exitCode: 0
+        };
+      })
+    });
+
+    await expect(
+      p4.previewReconcile({ workspace: { root: "E:\\Game", stream: "//Project/main" } })
+    ).resolves.toEqual({
+      added: [],
+      edited: [],
+      deleted: []
+    });
+
+    expect(calls).toEqual([
+      ["-Mj", "-z", "tag", "reconcile", "-n", "E:/Game/..."]
+    ]);
+  });
+
+  it("prefers explicit reconcile fileSpec over workspace-derived fileSpec", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return { command, args, stdout: "", stderr: "", exitCode: 0 };
+      })
+    });
+
+    await p4.previewReconcile({
+      fileSpec: "//Project/main/...",
+      workspace: { root: "E:\\Game", stream: "//Project/main" }
+    });
+
+    expect(calls).toEqual([
+      ["-Mj", "-z", "tag", "reconcile", "-n", "//Project/main/..."]
     ]);
   });
 
@@ -893,6 +1102,162 @@ describe("P4Client", () => {
 
     expect(calls).toEqual([
       ["-Mj", "-z", "tag", "sync", "-f", "-k", "//Project/main/..."]
+    ]);
+  });
+
+  it("returns structured sync errors from tagged error rows", async () => {
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => ({
+        command,
+        args,
+        stdout: [
+          "{\"depotFile\":\"//Project/main/foo.txt\",\"path\":\"C:\\\\work\\\\Project_Main\\\\foo.txt\",\"rev\":\"8\",\"action\":\"refresh\"}",
+          "{\"severity\":\"3\",\"data\":\"Can't clobber writable file E:\\\\Game\\\\Content\\\\Asset.uasset\"}",
+          "{\"severity\":\"3\",\"data\":\"E:\\\\Game\\\\Content\\\\Map.umap - can't overwrite existing file\"}"
+        ].join("\n"),
+        stderr: "",
+        exitCode: 1
+      }))
+    });
+
+    await expect(p4.sync()).resolves.toEqual({
+      items: [
+        {
+          depotFile: "//Project/main/foo.txt",
+          clientFile: null,
+          localFile: "C:\\work\\Project_Main\\foo.txt",
+          revision: 8,
+          action: "refresh",
+          fileSize: null
+        }
+      ],
+      errors: [
+        {
+          clientFile: "E:\\Game\\Content\\Asset.uasset",
+          depotFile: null,
+          message: "Can't clobber writable file E:\\Game\\Content\\Asset.uasset"
+        },
+        {
+          clientFile: "E:\\Game\\Content\\Map.umap",
+          depotFile: null,
+          message: "E:\\Game\\Content\\Map.umap - can't overwrite existing file"
+        }
+      ],
+      totalCount: 1
+    });
+  });
+
+  it("streams sync progress and error rows", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      streamExecutor: createStreamingExecutor((command, args) => {
+        calls.push(args);
+        return createStreamHandle(
+          [
+            { type: "start", command, args },
+            {
+              type: "line",
+              source: "stdout",
+              line: "{\"depotFile\":\"//Project/main/foo.txt\",\"path\":\"C:\\\\work\\\\Project_Main\\\\foo.txt\",\"rev\":\"8\",\"action\":\"refresh\"}"
+            },
+            {
+              type: "line",
+              source: "stdout",
+              line: "{\"severity\":\"3\",\"data\":\"Can't clobber writable file E:\\\\Game\\\\Content\\\\Asset.uasset\"}"
+            },
+            { type: "exit", exitCode: 1 }
+          ],
+          {
+            command,
+            args,
+            stdout: "",
+            stderr: "",
+            exitCode: 1
+          }
+        );
+      })
+    });
+
+    const operation = p4.watchSync({ fileSpec: "//Project/main/..." });
+    const events = [];
+    for await (const event of operation.events) {
+      events.push(event);
+    }
+
+    await expect(operation.result).resolves.toEqual({
+      items: [
+        {
+          depotFile: "//Project/main/foo.txt",
+          clientFile: null,
+          localFile: "C:\\work\\Project_Main\\foo.txt",
+          revision: 8,
+          action: "refresh",
+          fileSize: null
+        }
+      ],
+      errors: [
+        {
+          clientFile: "E:\\Game\\Content\\Asset.uasset",
+          depotFile: null,
+          message: "Can't clobber writable file E:\\Game\\Content\\Asset.uasset"
+        }
+      ],
+      totalCount: 1
+    });
+
+    expect(events).toEqual([
+      {
+        type: "start",
+        command: "p4",
+        args: ["-Mj", "-z", "tag", "sync", "//Project/main/..."]
+      },
+      {
+        type: "progress",
+        item: {
+          depotFile: "//Project/main/foo.txt",
+          clientFile: null,
+          localFile: "C:\\work\\Project_Main\\foo.txt",
+          revision: 8,
+          action: "refresh",
+          fileSize: null
+        },
+        filesSynced: 1
+      },
+      {
+        type: "error-row",
+        error: {
+          clientFile: "E:\\Game\\Content\\Asset.uasset",
+          depotFile: null,
+          message: "Can't clobber writable file E:\\Game\\Content\\Asset.uasset"
+        }
+      },
+      {
+        type: "complete",
+        result: {
+          items: [
+            {
+              depotFile: "//Project/main/foo.txt",
+              clientFile: null,
+              localFile: "C:\\work\\Project_Main\\foo.txt",
+              revision: 8,
+              action: "refresh",
+              fileSize: null
+            }
+          ],
+          errors: [
+            {
+              clientFile: "E:\\Game\\Content\\Asset.uasset",
+              depotFile: null,
+              message: "Can't clobber writable file E:\\Game\\Content\\Asset.uasset"
+            }
+          ],
+          totalCount: 1
+        }
+      }
+    ]);
+
+    expect(calls).toEqual([
+      ["-Mj", "-z", "tag", "sync", "//Project/main/..."]
     ]);
   });
 

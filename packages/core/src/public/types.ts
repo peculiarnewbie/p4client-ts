@@ -261,6 +261,8 @@ export interface ListWorkspacesOptions {
 export interface ListPendingChangelistsOptions {
   user?: string;
   client?: string | null;
+  /** One or more file specs appended to the command. */
+  fileSpec?: string | string[];
   /** Include a synthesized default changelist entry when opened files exist. */
   includeDefault?: boolean;
   status?: "pending";
@@ -280,6 +282,76 @@ export interface P4PendingChangelistSummary {
   createdAt: string | null;
   createdAtIso: string | null;
   isDefault: boolean;
+}
+
+/**
+ * Filters for listing submitted changelists.
+ */
+export interface ListSubmittedChangelistsOptions {
+  /** Depot/stream file spec, for example `//Project/main/...`. */
+  fileSpec?: string | string[];
+  /** Filter by client workspace. Prefer `fileSpec` for team-wide stream views. */
+  client?: string | null;
+  user?: string;
+  /** Maximum rows to return. Defaults to 50. */
+  limit?: number;
+  /** Upper changelist cursor. Appended as `@<change>` for paging. */
+  beforeChange?: number;
+  /** Reserved for API consistency with cached methods. */
+  refresh?: boolean;
+}
+
+/**
+ * Normalized submitted changelist summary.
+ */
+export interface P4SubmittedChangelistSummary {
+  change: number;
+  client: string | null;
+  user: string | null;
+  status: "submitted";
+  description: string | null;
+  createdAt: string | null;
+  createdAtIso: string | null;
+}
+
+/**
+ * Paged submitted changelist list.
+ */
+export interface ListSubmittedChangelistsResult {
+  items: P4SubmittedChangelistSummary[];
+  hasMore: boolean;
+  nextBeforeChange: number | null;
+}
+
+export type P4ChangelistListStatus = "pending" | "submitted";
+
+export type P4ChangelistListSummary =
+  | P4PendingChangelistSummary
+  | P4SubmittedChangelistSummary;
+
+/**
+ * Filters for listing pending or submitted changelists through one endpoint.
+ *
+ * Pagination applies only when `status` is `submitted`.
+ */
+export interface ListChangelistsOptions {
+  status: P4ChangelistListStatus;
+  includeDefault?: boolean;
+  limit?: number;
+  beforeChange?: number;
+  user?: string;
+  client?: string | null;
+  fileSpec?: string | string[];
+  refresh?: boolean;
+}
+
+/**
+ * Unified changelist list result.
+ */
+export interface ListChangelistsResult {
+  items: P4ChangelistListSummary[];
+  hasMore: boolean;
+  nextBeforeChange: number | null;
 }
 
 /**
@@ -317,6 +389,8 @@ export interface P4OpenedFileSummary {
  */
 export interface PreviewReconcileOptions {
   fileSpec?: string | string[];
+  /** Workspace used to derive a local-root file spec when `fileSpec` is omitted. */
+  workspace?: Pick<P4WorkspaceSummary, "root" | "stream">;
   changelist?: number | "default";
   /** Pass `-m` to reconcile using file modification times. */
   useModTime?: boolean;
@@ -422,8 +496,56 @@ export interface P4SyncItem {
 export interface P4SyncResult {
   /** Individual sync rows emitted by Perforce. */
   items: P4SyncItem[];
+  /** Per-file sync failures emitted as tagged error rows. Present only when non-empty. */
+  errors?: P4SyncErrorItem[];
   /** Total number of sync rows. */
   totalCount: number;
+}
+
+/**
+ * Per-file sync error parsed from tagged Perforce output.
+ */
+export interface P4SyncErrorItem {
+  clientFile: string | null;
+  depotFile: string | null;
+  message: string;
+}
+
+/**
+ * Sync result shape that always includes parsed error rows.
+ */
+export interface P4SyncResultWithErrors {
+  items: P4SyncItem[];
+  errors: P4SyncErrorItem[];
+  totalCount: number;
+}
+
+/**
+ * Progress events emitted while performing `p4 sync`.
+ */
+export type P4SyncProgressEvent =
+  | { type: "start"; command: string; args: string[] }
+  | { type: "progress"; item: P4SyncItem; filesSynced: number }
+  | { type: "error-row"; error: P4SyncErrorItem }
+  | { type: "complete"; result: P4SyncResultWithErrors };
+
+/**
+ * Options for changing the active Perforce client setting.
+ */
+export interface SetClientOptions {
+  /** Client name to activate. */
+  client: string;
+  /** Clear cached environment/workspaces on this P4Client instance. Defaults to true. */
+  invalidateCache?: boolean;
+}
+
+/**
+ * Result returned by `setClient()`.
+ */
+export interface SetClientResult {
+  ok: true;
+  previousClient: string | null;
+  newClient: string;
 }
 
 /**
@@ -641,6 +763,12 @@ export interface P4Service {
   listPendingChangelists: (
     options?: ListPendingChangelistsOptions
   ) => import("effect").Effect.Effect<P4PendingChangelistSummary[], Error>;
+  listSubmittedChangelists: (
+    options?: ListSubmittedChangelistsOptions
+  ) => import("effect").Effect.Effect<ListSubmittedChangelistsResult, Error>;
+  listChangelists: (
+    options: ListChangelistsOptions
+  ) => import("effect").Effect.Effect<ListChangelistsResult, Error>;
   getOpenedFiles: (
     options?: GetOpenedFilesOptions
   ) => import("effect").Effect.Effect<P4OpenedFileSummary[], Error>;
@@ -660,6 +788,15 @@ export interface P4Service {
   sync: (
     options?: SyncOptions
   ) => import("effect").Effect.Effect<P4SyncResult, Error>;
+  streamSync: (
+    options?: SyncOptions
+  ) => import("effect").Stream.Stream<P4SyncProgressEvent, Error>;
+  setClient: (
+    options: SetClientOptions
+  ) => import("effect").Effect.Effect<SetClientResult, Error>;
+  switchWorkspace: (
+    client: string
+  ) => import("effect").Effect.Effect<SetClientResult, Error>;
   describeChangelist: (
     change: number | "default",
     options?: DescribeChangelistOptions

@@ -265,6 +265,105 @@ describe("createP4Service", () => {
     ]);
   });
 
+  it("exposes submitted changelist, unified changelist, sync stream, and client switch wrappers", async () => {
+    const calls: string[][] = [];
+    const service = createP4Service({
+      executor: async (command, args) => {
+        calls.push(args);
+        if (args[0] === "info") {
+          return {
+            command,
+            args,
+            stdout: [
+              "User name: surya",
+              "Client name: Project_Old",
+              "Client host: DESKTOP-WORK-ARIF",
+              "Server address: ssl:perforce.example.com:1666"
+            ].join("\n"),
+            stderr: "",
+            exitCode: 0
+          };
+        }
+        if (args[0] === "set") {
+          return { command, args, stdout: "", stderr: "", exitCode: 0 };
+        }
+        return {
+          command,
+          args,
+          stdout: "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"status\":\"submitted\"}",
+          stderr: "",
+          exitCode: 0
+        };
+      },
+      streamExecutor: (command, args) => ({
+        events: (async function*() {
+          yield { type: "start", command, args };
+          yield {
+            type: "line",
+            source: "stdout" as const,
+            line: "{\"depotFile\":\"//Project/main/foo.txt\",\"action\":\"refresh\"}"
+          };
+          yield { type: "exit", exitCode: 0 };
+        })(),
+        result: Promise.resolve({ command, args, stdout: "", stderr: "", exitCode: 0 })
+      })
+    });
+
+    await expect(Effect.runPromise(service.listSubmittedChangelists())).resolves.toMatchObject({
+      items: [{ change: 12345, status: "submitted" }]
+    });
+    await expect(
+      Effect.runPromise(service.listChangelists({ status: "submitted" }))
+    ).resolves.toMatchObject({
+      items: [{ change: 12345, status: "submitted" }]
+    });
+    await expect(Effect.runPromise(service.setClient({ client: "Project_New" }))).resolves.toEqual({
+      ok: true,
+      previousClient: "Project_Old",
+      newClient: "Project_New"
+    });
+
+    const events = await Effect.runPromise(service.streamSync().pipe(Stream.runCollect));
+    expect(Array.from(events)).toEqual([
+      {
+        type: "start",
+        command: "p4",
+        args: ["-Mj", "-z", "tag", "sync"]
+      },
+      {
+        type: "progress",
+        item: {
+          depotFile: "//Project/main/foo.txt",
+          clientFile: null,
+          localFile: null,
+          revision: null,
+          action: "refresh",
+          fileSize: null
+        },
+        filesSynced: 1
+      },
+      {
+        type: "complete",
+        result: {
+          items: [
+            {
+              depotFile: "//Project/main/foo.txt",
+              clientFile: null,
+              localFile: null,
+              revision: null,
+              action: "refresh",
+              fileSize: null
+            }
+          ],
+          errors: [],
+          totalCount: 1
+        }
+      }
+    ]);
+
+    expect(calls).toContainEqual(["set", "P4CLIENT=Project_New"]);
+  });
+
   it("passes structured environment options through the Effect service", async () => {
     const calls: string[][] = [];
     const service = createP4Service({
