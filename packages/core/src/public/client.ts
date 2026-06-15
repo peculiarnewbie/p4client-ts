@@ -740,10 +740,36 @@ export class P4Client {
       createdAt,
       createdAtIso: unixSecondsToIsoString(createdAt),
       status: statusValue === "submitted" ? "submitted" : "pending",
-      files: rows
-        .filter((row) => normalizeNullableString(row.depotFile) !== null)
-        .map((row) => this.toDescribedFile(row))
+      files: this.toDescribedFiles(rows)
     };
+  }
+
+  private toDescribedFiles(rows: Record<string, unknown>[]): P4DescribedFile[] {
+    const files: P4DescribedFile[] = [];
+
+    for (const row of rows) {
+      if (normalizeNullableString(row.depotFile) !== null) {
+        files.push(this.toDescribedFile(row));
+      }
+
+      const indexes = Object.keys(row)
+        .map((key) => /^depotFile(\d+)$/.exec(key)?.[1])
+        .filter((index): index is string => index !== undefined)
+        .map((index) => Number(index))
+        .filter((index) => Number.isInteger(index))
+        .sort((left, right) => left - right);
+
+      for (const index of indexes) {
+        files.push(this.toDescribedFile({
+          depotFile: row[`depotFile${index}`],
+          action: row[`action${index}`],
+          type: row[`type${index}`],
+          rev: row[`rev${index}`]
+        }));
+      }
+    }
+
+    return files;
   }
 
   private toDescribedFile(row: Record<string, unknown>): P4DescribedFile {

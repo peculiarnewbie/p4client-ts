@@ -968,6 +968,52 @@ describe("P4Client", () => {
     ]);
   });
 
+  it("describes a numbered changelist from numbered tagged describe fields", async () => {
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => ({
+        command,
+        args,
+        stdout: JSON.stringify({
+          change: "12345",
+          client: "Project_Main",
+          user: "surya",
+          time: "1742266870",
+          desc: "Feature work",
+          status: "pending",
+          depotFile0: "//Project/main/foo.txt",
+          action0: "edit",
+          type0: "text",
+          rev0: "7",
+          depotFile1: "//Project/main/deleted.txt",
+          action1: "delete",
+          type1: "text",
+          rev1: "3"
+        }),
+        stderr: "",
+        exitCode: 0
+      }))
+    });
+
+    await expect(p4.describeChangelist(12345)).resolves.toMatchObject({
+      change: 12345,
+      status: "pending",
+      files: [
+        {
+          depotFile: "//Project/main/foo.txt",
+          action: "edit",
+          type: "text",
+          revision: 7
+        },
+        {
+          depotFile: "//Project/main/deleted.txt",
+          action: "delete",
+          type: "text",
+          revision: 3
+        }
+      ]
+    });
+  });
+
   it("describes the default changelist from opened files", async () => {
     const p4 = new P4Client({
       executor: createExecutor(async (command, args) => {
