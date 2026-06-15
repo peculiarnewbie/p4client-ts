@@ -1,11 +1,14 @@
+import { Schema } from "effect";
+import { P4ParseError } from "./errors.js";
 import type {
   DiffFileOptions,
   LocalWorkspaceCandidate,
-  P4DescribedFile,
   P4DiffHunk,
   P4DiffSource,
   P4ProgressSnapshot
 } from "./types.js";
+
+const P4TaggedJsonRowSchema = Schema.Record(Schema.String, Schema.Unknown);
 
 /**
  * Parse classic `p4 info`-style `Key: Value` output into an object map.
@@ -39,7 +42,14 @@ export function parseP4JsonLines<T = Record<string, unknown>>(output: string): T
   return output
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as T);
+    .map((line) => {
+      try {
+        const parsed = JSON.parse(line);
+        return Schema.decodeUnknownSync(P4TaggedJsonRowSchema)(parsed) as T;
+      } catch (error) {
+        throw new P4ParseError("Unable to parse tagged Perforce JSON output.", line, error);
+      }
+    });
 }
 
 /**
@@ -289,7 +299,11 @@ export function buildDepotDiffFilespec(
  * Infer depot revision endpoints for a submitted changelist file.
  */
 export function resolveDepotDiffRevisions(
-  file: Pick<P4DescribedFile, "depotFile" | "action" | "revision">
+  file: {
+    depotFile: string;
+    action: string;
+    revision: number | null;
+  }
 ): { fromRevision: string | number; toRevision: string | number } | null {
   const action = file.action.toLowerCase();
   const revision = file.revision;
@@ -325,7 +339,10 @@ export function resolveDepotDiffRevisions(
  * Infer depot revision endpoints for a shelved changelist file.
  */
 export function resolveShelvedDiffRevisions(
-  file: Pick<P4DescribedFile, "depotFile" | "action" | "revision"> & {
+  file: {
+    depotFile: string;
+    action: string;
+    revision: number | null;
     shelvedChange: number;
   }
 ): { fromRevision: string | number; toRevision: string | number } {

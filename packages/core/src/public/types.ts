@@ -1,3 +1,6 @@
+import type { Brand } from "effect";
+import type { P4ServiceError } from "./errors.js";
+
 /**
  * JSON-compatible value used by tagged Perforce JSON output.
  */
@@ -8,6 +11,26 @@ export type P4JsonValue =
   | null
   | P4JsonValue[]
   | { [key: string]: P4JsonValue };
+
+/**
+ * Branded depot path parsed from Perforce output, for example `//depot/main/file.txt`.
+ */
+export type P4DepotPath = Brand.Branded<string, "P4DepotPath">;
+
+/**
+ * Branded client path parsed from Perforce output.
+ */
+export type P4ClientPath = Brand.Branded<string, "P4ClientPath">;
+
+/**
+ * Branded local filesystem path parsed from Perforce output.
+ */
+export type P4LocalPath = Brand.Branded<string, "P4LocalPath">;
+
+/**
+ * Branded Perforce file action parsed from CLI output.
+ */
+export type P4FileAction = Brand.Branded<string, "P4FileAction">;
 
 /**
  * Raw result returned by a `p4` command execution.
@@ -411,10 +434,10 @@ export interface GetOpenedFilesOptions {
  * Flat row returned by `getOpenedFiles()` and `getChangelistFiles()`.
  */
 export interface P4OpenedFileSummary {
-  depotFile: string | null;
-  clientFile: string | null;
-  localFile: string | null;
-  action: string;
+  depotFile: P4DepotPath | null;
+  clientFile: P4ClientPath | null;
+  localFile: P4LocalPath | null;
+  action: P4FileAction;
   type: string | null;
   changelist: number | "default";
   changelistDescription: string | null;
@@ -444,9 +467,9 @@ export interface PreviewReconcileOptions {
  * Normalized reconcile preview row.
  */
 export interface P4ReconcileCandidate {
-  depotFile: string | null;
-  clientFile: string | null;
-  localFile: string | null;
+  depotFile: P4DepotPath | null;
+  clientFile: P4ClientPath | null;
+  localFile: P4LocalPath | null;
   action: "add" | "edit" | "delete";
   type: string | null;
   changelist: number | "default" | null;
@@ -522,11 +545,11 @@ export interface SyncOptions {
  * Normalized sync row.
  */
 export interface P4SyncItem {
-  depotFile: string | null;
-  clientFile: string | null;
-  localFile: string | null;
+  depotFile: P4DepotPath | null;
+  clientFile: P4ClientPath | null;
+  localFile: P4LocalPath | null;
   revision: number | null;
-  action: string | null;
+  action: P4FileAction | null;
   fileSize: number | null;
 }
 
@@ -546,8 +569,8 @@ export interface P4SyncResult {
  * Per-file sync error parsed from tagged Perforce output.
  */
 export interface P4SyncErrorItem {
-  clientFile: string | null;
-  depotFile: string | null;
+  clientFile: P4ClientPath | P4LocalPath | null;
+  depotFile: P4DepotPath | null;
   message: string;
 }
 
@@ -623,9 +646,9 @@ export interface DescribeChangelistOptions {
  */
 export interface P4DescribedFile {
   /** Depot path for the file. */
-  depotFile: string;
+  depotFile: P4DepotPath;
   /** Open or submit action such as `add`, `edit`, or `delete`. */
-  action: string;
+  action: P4FileAction;
   /** Perforce file type when reported. */
   type: string | null;
   /** Depot revision when reported. */
@@ -709,8 +732,8 @@ export interface DiffFileOptions {
  * Unified diff result for a single file.
  */
 export interface P4FileDiffResult {
-  depotFile: string;
-  localFile: string | null;
+  depotFile: P4DepotPath;
+  localFile: P4LocalPath | null;
   /** Whether the workspace or two depot revisions were compared. */
   source: P4DiffSource;
   /** Start revision when {@link source} is `depot`. */
@@ -743,7 +766,7 @@ export interface PrintFileOptions {
  * Depot file content returned by `printFile()`.
  */
 export interface P4PrintResult {
-  depotFile: string;
+  depotFile: P4DepotPath;
   revision: string | null;
   /**
    * Text content for non-binary files. Binary files return an empty string and
@@ -770,9 +793,9 @@ export interface P4DiffHunk {
  * Per-file summary used by changelist diff views before patches are loaded.
  */
 export interface P4ChangelistDiffFileSummary {
-  depotFile: string;
-  localFile: string | null;
-  action: string;
+  depotFile: P4DepotPath;
+  localFile: P4LocalPath | null;
+  action: P4FileAction;
   type: string | null;
   isBinary: boolean;
   additions: number | null;
@@ -808,61 +831,61 @@ export interface GetChangelistDiffSummaryOptions extends DescribeChangelistOptio
 export interface P4Service {
   getP4Environment: (
     options?: boolean | GetEnvironmentOptions
-  ) => import("effect").Effect.Effect<P4EnvironmentSummary, Error>;
-  listP4Workspaces: (refresh?: boolean) => import("effect").Effect.Effect<P4WorkspaceSummary[], Error>;
+  ) => import("effect").Effect.Effect<P4EnvironmentSummary, P4ServiceError>;
+  listP4Workspaces: (refresh?: boolean) => import("effect").Effect.Effect<P4WorkspaceSummary[], P4ServiceError>;
   listPendingChangelists: (
     options?: ListPendingChangelistsOptions
-  ) => import("effect").Effect.Effect<P4PendingChangelistSummary[], Error>;
+  ) => import("effect").Effect.Effect<P4PendingChangelistSummary[], P4ServiceError>;
   listSubmittedChangelists: (
     options?: ListSubmittedChangelistsOptions
-  ) => import("effect").Effect.Effect<ListSubmittedChangelistsResult, Error>;
+  ) => import("effect").Effect.Effect<ListSubmittedChangelistsResult, P4ServiceError>;
   listShelvedChangelists: (
     options?: ListShelvedChangelistsOptions
-  ) => import("effect").Effect.Effect<ListShelvedChangelistsResult, Error>;
+  ) => import("effect").Effect.Effect<ListShelvedChangelistsResult, P4ServiceError>;
   listChangelists: (
     options: ListChangelistsOptions
-  ) => import("effect").Effect.Effect<ListChangelistsResult, Error>;
+  ) => import("effect").Effect.Effect<ListChangelistsResult, P4ServiceError>;
   getOpenedFiles: (
     options?: GetOpenedFilesOptions
-  ) => import("effect").Effect.Effect<P4OpenedFileSummary[], Error>;
+  ) => import("effect").Effect.Effect<P4OpenedFileSummary[], P4ServiceError>;
   getChangelistFiles: (
     change: number | "default",
     options?: Omit<GetOpenedFilesOptions, "change">
-  ) => import("effect").Effect.Effect<P4OpenedFileSummary[], Error>;
+  ) => import("effect").Effect.Effect<P4OpenedFileSummary[], P4ServiceError>;
   previewReconcile: (
     options?: PreviewReconcileOptions
-  ) => import("effect").Effect.Effect<P4ReconcilePreviewResult, Error>;
+  ) => import("effect").Effect.Effect<P4ReconcilePreviewResult, P4ServiceError>;
   streamPreviewReconcile: (
     options?: PreviewReconcileOptions
-  ) => import("effect").Stream.Stream<P4ReconcileProgressEvent, Error>;
+  ) => import("effect").Stream.Stream<P4ReconcileProgressEvent, P4ServiceError>;
   previewSync: (
     options?: PreviewSyncOptions
-  ) => import("effect").Effect.Effect<P4SyncPreviewResult, Error>;
+  ) => import("effect").Effect.Effect<P4SyncPreviewResult, P4ServiceError>;
   sync: (
     options?: SyncOptions
-  ) => import("effect").Effect.Effect<P4SyncResult, Error>;
+  ) => import("effect").Effect.Effect<P4SyncResult, P4ServiceError>;
   streamSync: (
     options?: SyncOptions
-  ) => import("effect").Stream.Stream<P4SyncProgressEvent, Error>;
+  ) => import("effect").Stream.Stream<P4SyncProgressEvent, P4ServiceError>;
   setClient: (
     options: SetClientOptions
-  ) => import("effect").Effect.Effect<SetClientResult, Error>;
+  ) => import("effect").Effect.Effect<SetClientResult, P4ServiceError>;
   switchWorkspace: (
     client: string
-  ) => import("effect").Effect.Effect<SetClientResult, Error>;
+  ) => import("effect").Effect.Effect<SetClientResult, P4ServiceError>;
   describeChangelist: (
     change: number | "default",
     options?: DescribeChangelistOptions
-  ) => import("effect").Effect.Effect<P4ChangelistDescription, Error>;
+  ) => import("effect").Effect.Effect<P4ChangelistDescription, P4ServiceError>;
   diffFile: (
     options: DiffFileOptions
-  ) => import("effect").Effect.Effect<P4FileDiffResult, Error>;
+  ) => import("effect").Effect.Effect<P4FileDiffResult, P4ServiceError>;
   printFile: (
     depotFile: string,
     options?: PrintFileOptions
-  ) => import("effect").Effect.Effect<P4PrintResult, Error>;
+  ) => import("effect").Effect.Effect<P4PrintResult, P4ServiceError>;
   getChangelistDiffSummary: (
     change: number | "default",
     options?: GetChangelistDiffSummaryOptions
-  ) => import("effect").Effect.Effect<P4ChangelistDiffSummary, Error>;
+  ) => import("effect").Effect.Effect<P4ChangelistDiffSummary, P4ServiceError>;
 }

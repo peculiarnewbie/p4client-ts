@@ -39,8 +39,12 @@ import type {
   P4ChangelistDiffFileSummary,
   P4ChangelistDiffSummary,
   P4CliSettings,
+  P4ClientPath,
   P4DescribedFile,
+  P4DepotPath,
+  P4FileAction,
   P4FileDiffResult,
+  P4LocalPath,
   P4PendingChangelistSummary,
   P4ShelvedChangelistSummary,
   P4SubmittedChangelistSummary,
@@ -504,8 +508,8 @@ export class P4Client {
           : "workspace";
 
       return {
-        depotFile: options.depotFile,
-        localFile: options.localFile ?? null,
+        depotFile: this.toDepotPath(options.depotFile)!,
+        localFile: this.toLocalPath(options.localFile),
         source,
         fromRevision: null,
         toRevision: null,
@@ -530,8 +534,8 @@ export class P4Client {
     const { additions, deletions } = summarizeUnifiedDiff(unifiedDiff);
 
     return {
-      depotFile: options.depotFile,
-      localFile: options.localFile ?? null,
+      depotFile: this.toDepotPath(options.depotFile)!,
+      localFile: this.toLocalPath(options.localFile),
       source: plan.source,
       fromRevision: plan.fromRevision,
       toRevision: plan.toRevision,
@@ -1066,8 +1070,8 @@ export class P4Client {
   }
 
   private toDescribedFile(row: Record<string, unknown>): P4DescribedFile {
-    const depotFile = normalizeNullableString(row.depotFile);
-    const action = normalizeNullableString(row.action);
+    const depotFile = this.toDepotPath(row.depotFile);
+    const action = this.toFileAction(row.action);
     if (!depotFile || !action) {
       throw new Error(`Unable to parse described file from row: ${JSON.stringify(row)}`);
     }
@@ -1099,7 +1103,7 @@ export class P4Client {
     const isBinary = isBinaryP4Type(type);
 
     return {
-      depotFile: header?.depotFile ?? requestedDepotFile,
+      depotFile: this.toDepotPath(header?.depotFile ?? requestedDepotFile)!,
       revision: header?.revision ?? null,
       content: isBinary ? "" : content,
       isBinary,
@@ -1173,15 +1177,15 @@ export class P4Client {
 
   private toOpenedFileSummary(file: Record<string, unknown>): P4OpenedFileSummary {
     const changelist = normalizeP4Change(file.change) ?? "default";
-    const action = normalizeNullableString(file.action);
+    const action = this.toFileAction(file.action);
     if (!action) {
       throw new Error(`Unable to parse opened file action from row: ${JSON.stringify(file)}`);
     }
 
     return {
-      depotFile: normalizeNullableString(file.depotFile),
-      clientFile: normalizeNullableString(file.clientFile),
-      localFile: normalizeNullableString(file.path),
+      depotFile: this.toDepotPath(file.depotFile),
+      clientFile: this.toClientPath(file.clientFile),
+      localFile: this.toLocalPath(file.path),
       action,
       type: normalizeNullableString(file.type),
       changelist,
@@ -1200,9 +1204,9 @@ export class P4Client {
     }
 
     return {
-      depotFile: normalizeNullableString(row.depotFile),
-      clientFile: normalizeNullableString(row.clientFile),
-      localFile: normalizeNullableString(row.path),
+      depotFile: this.toDepotPath(row.depotFile),
+      clientFile: this.toClientPath(row.clientFile),
+      localFile: this.toLocalPath(row.path),
       action,
       type: normalizeNullableString(row.type),
       changelist: normalizeP4Change(row.change)
@@ -1270,11 +1274,11 @@ export class P4Client {
 
   private toSyncItem(row: Record<string, unknown>): P4SyncItem {
     return {
-      depotFile: normalizeNullableString(row.depotFile),
-      clientFile: normalizeNullableString(row.clientFile),
-      localFile: normalizeNullableString(row.path),
+      depotFile: this.toDepotPath(row.depotFile),
+      clientFile: this.toClientPath(row.clientFile),
+      localFile: this.toLocalPath(row.path),
       revision: normalizeNullableNumber(row.rev),
-      action: normalizeNullableString(row.action),
+      action: this.toFileAction(row.action),
       fileSize: normalizeNullableNumber(row.fileSize)
     };
   }
@@ -1286,15 +1290,35 @@ export class P4Client {
 
   private toSyncErrorItem(row: Record<string, unknown>): P4SyncErrorItem {
     const data = normalizeNullableString(row.data);
-    const clientFile = normalizeNullableString(row.clientFile)
-      ?? normalizeNullableString(row.path)
-      ?? (data ? this.extractFilePathFromSyncErrorData(data) : null);
+    const clientFile = this.toClientPath(row.clientFile)
+      ?? this.toLocalPath(row.path)
+      ?? (data ? this.toLocalPath(this.extractFilePathFromSyncErrorData(data)) : null);
 
     return {
       clientFile,
-      depotFile: normalizeNullableString(row.depotFile),
+      depotFile: this.toDepotPath(row.depotFile),
       message: data ?? normalizeNullableString(row.generic) ?? "Perforce sync failed."
     };
+  }
+
+  private toDepotPath(value: unknown): P4DepotPath | null {
+    const normalized = normalizeNullableString(value);
+    return normalized ? normalized as P4DepotPath : null;
+  }
+
+  private toClientPath(value: unknown): P4ClientPath | null {
+    const normalized = normalizeNullableString(value);
+    return normalized ? normalized as P4ClientPath : null;
+  }
+
+  private toLocalPath(value: unknown): P4LocalPath | null {
+    const normalized = normalizeNullableString(value);
+    return normalized ? normalized as P4LocalPath : null;
+  }
+
+  private toFileAction(value: unknown): P4FileAction | null {
+    const normalized = normalizeNullableString(value);
+    return normalized ? normalized as P4FileAction : null;
   }
 
   private extractFilePathFromSyncErrorData(message: string): string | null {

@@ -18,6 +18,18 @@ This project follows semantic versioning.
   file lookups and can populate line counts through depot-side shelf diffs.
 - Added Effect service wrappers and exports for shelved changelist listing.
 
+### Improved
+
+- Improved Effect service error handling by using `Effect.tryPromise()` and a
+  tagged `P4ServiceError` union instead of treating rejecting client calls as
+  infallible promises.
+- Improved tagged JSON parsing with Effect Schema validation and a typed
+  `P4ParseError` for malformed Perforce output.
+- Improved public result types with branded parsed path/action aliases:
+  `P4DepotPath`, `P4ClientPath`, `P4LocalPath`, and `P4FileAction`.
+- Clarified mutation scope in docs: `sync()` mutates workspace contents, while
+  `setClient()` and `switchWorkspace()` update the local `P4CLIENT` setting.
+
 ### Notes
 
 - Shelved changelist inspection is in scope. `shelve`, `unshelve`, and other

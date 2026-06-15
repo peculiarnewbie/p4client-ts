@@ -22,10 +22,9 @@ Out of scope:
 - `edit`, `add`, `delete`, or other checkout/open-for-edit flows
 - `revert`, `lock`, `unlock`, `move`, `integrate`, or `resolve`
 - Changelist creation or mutation
-- Client, stream, or other spec mutation
 - Server administration or any workflow that mutates server-side state
 
-`sync()` is the only mutating workflow currently exposed, and the recommended pattern is still `previewSync()` first, then `sync()`.
+`sync()` is the only workspace-content mutation currently exposed, and the recommended pattern is still `previewSync()` first, then `sync()`. `setClient()` / `switchWorkspace()` only update the local `P4CLIENT` setting and clear this client's cached environment/workspace state.
 
 ## Packages
 

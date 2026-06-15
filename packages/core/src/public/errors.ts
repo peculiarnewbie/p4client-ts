@@ -93,6 +93,7 @@ export function isP4ConnectionError(error: unknown): boolean {
  * bucket for control flow.
  */
 export class P4CommandError extends Error {
+  readonly _tag = "P4CommandError";
   readonly result: P4CommandResult;
 
   /**
@@ -121,6 +122,7 @@ export class P4CommandError extends Error {
  * Error thrown when a child `p4` process exceeds a configured timeout.
  */
 export class P4TimeoutError extends Error {
+  readonly _tag = "P4TimeoutError";
   readonly command: string;
   readonly args: string[];
   readonly timeoutMs: number;
@@ -152,3 +154,52 @@ export class P4TimeoutError extends Error {
     this.stderr = stderr;
   }
 }
+
+/**
+ * Error thrown when Perforce tagged JSON output cannot be parsed or validated.
+ */
+export class P4ParseError extends Error {
+  readonly _tag = "P4ParseError";
+  readonly line: string;
+  readonly cause: unknown;
+
+  /**
+   * Create a typed parse error for malformed CLI output.
+   *
+   * @param message Human-readable parse failure.
+   * @param line Raw output line that failed parsing or validation.
+   * @param cause Original parser or schema error.
+   */
+  constructor(message: string, line: string, cause: unknown) {
+    super(message);
+    this.name = "P4ParseError";
+    this.line = line;
+    this.cause = cause;
+  }
+}
+
+/**
+ * Tagged wrapper for unexpected failures raised while bridging `P4Client` into Effect.
+ */
+export class P4ClientOperationError extends Error {
+  readonly _tag = "P4ClientOperationError";
+  readonly cause: unknown;
+
+  /**
+   * Create a tagged wrapper for an unexpected client operation failure.
+   */
+  constructor(message: string, cause: unknown) {
+    super(message);
+    this.name = "P4ClientOperationError";
+    this.cause = cause;
+  }
+}
+
+/**
+ * Tagged errors surfaced by the Effect service API.
+ */
+export type P4ServiceError =
+  | P4CommandError
+  | P4TimeoutError
+  | P4ParseError
+  | P4ClientOperationError;

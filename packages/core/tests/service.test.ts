@@ -1,8 +1,29 @@
 import { describe, expect, it } from "bun:test";
 import { Effect, Stream } from "effect";
+import { P4CommandError } from "../src/public/errors.js";
 import { createP4Service } from "../src/public/service.js";
 
 describe("createP4Service", () => {
+  it("keeps rejected client calls in the Effect error channel", async () => {
+    const service = createP4Service({
+      executor: async (command, args) => ({
+        command,
+        args,
+        stdout: "",
+        stderr: "Connect to server failed; check $P4PORT.",
+        exitCode: 1
+      })
+    });
+
+    const recovered = await Effect.runPromise(
+      service.getP4Environment().pipe(
+        Effect.catch((error) => Effect.succeed(error))
+      )
+    );
+
+    expect(recovered).toBeInstanceOf(P4CommandError);
+  });
+
   it("exposes Effect-based wrappers for service-oriented usage", async () => {
     const service = createP4Service({
       executor: async (command, args) => {

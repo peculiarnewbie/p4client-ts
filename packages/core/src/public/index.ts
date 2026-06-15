@@ -1,11 +1,14 @@
 export { P4Client } from "./client.js";
 export {
+  P4ClientOperationError,
   P4CommandError,
+  P4ParseError,
   P4TimeoutError,
   classifyP4Error,
   isP4ConnectionError
 } from "./errors.js";
 export type { P4ErrorCategory } from "./errors.js";
+export type { P4ServiceError } from "./errors.js";
 export {
   createP4Service,
   describeChangelist,
@@ -89,11 +92,15 @@ export type {
   P4DescribedFile,
   P4DiffHunk,
   P4DiffSource,
+  P4DepotPath,
   P4EnvironmentSummary,
+  P4FileAction,
   P4FileDiffResult,
+  P4ClientPath,
   P4JsonValue,
   P4JsonWorkspace,
   P4ListWorkspaceResult,
+  P4LocalPath,
   P4OperationHandle,
   P4OpenedFileSummary,
   P4PendingChangelistSummary,

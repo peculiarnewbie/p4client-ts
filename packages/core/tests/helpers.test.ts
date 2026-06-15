@@ -20,6 +20,7 @@ import {
   workspaceStreamFileSpec,
   requireWorkspaceStreamFileSpec
 } from "../src/public/helpers.js";
+import { P4ParseError } from "../src/public/errors.js";
 import type { P4JsonWorkspace } from "../src/public/types.js";
 
 describe("parseP4KeyValueOutput", () => {
@@ -70,6 +71,10 @@ describe("parseP4JsonLines", () => {
   it("handles empty lines", () => {
     expect(parseP4JsonLines("")).toEqual([]);
     expect(parseP4JsonLines("\n\n")).toEqual([]);
+  });
+
+  it("throws a typed parse error for malformed tagged JSON", () => {
+    expect(() => parseP4JsonLines("{not json}")).toThrow(P4ParseError);
   });
 });
 

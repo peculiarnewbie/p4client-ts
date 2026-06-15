@@ -1,6 +1,13 @@
 import { Effect, Stream } from "effect";
 import { P4Client } from "./client.js";
+import {
+  P4ClientOperationError,
+  P4CommandError,
+  P4ParseError,
+  P4TimeoutError
+} from "./errors.js";
 import type { GetEnvironmentOptions, P4ClientOptions, P4Service } from "./types.js";
+import type { P4ServiceError } from "./errors.js";
 
 function normalizeGetEnvironmentOptions(options?: boolean | GetEnvironmentOptions): GetEnvironmentOptions {
   if (typeof options === "boolean") {
@@ -8,6 +15,27 @@ function normalizeGetEnvironmentOptions(options?: boolean | GetEnvironmentOption
   }
 
   return options ?? {};
+}
+
+function toServiceError(error: unknown): P4ServiceError {
+  if (
+    error instanceof P4CommandError
+    || error instanceof P4TimeoutError
+    || error instanceof P4ParseError
+    || error instanceof P4ClientOperationError
+  ) {
+    return error;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return new P4ClientOperationError(message, error);
+}
+
+function tryClientPromise<T>(promise: () => Promise<T>) {
+  return Effect.tryPromise({
+    try: promise,
+    catch: toServiceError
+  });
 }
 
 /**
@@ -21,49 +49,49 @@ export function createP4Service(options: P4ClientOptions = {}): P4Service {
 
   return {
     getP4Environment: (options) =>
-      Effect.promise(() => client.getEnvironment(normalizeGetEnvironmentOptions(options))),
+      tryClientPromise(() => client.getEnvironment(normalizeGetEnvironmentOptions(options))),
     listP4Workspaces: (refresh = false) =>
-      Effect.promise(() => client.listWorkspaces({ refresh })),
+      tryClientPromise(() => client.listWorkspaces({ refresh })),
     listPendingChangelists: (serviceOptions) =>
-      Effect.promise(() => client.listPendingChangelists(serviceOptions)),
+      tryClientPromise(() => client.listPendingChangelists(serviceOptions)),
     listSubmittedChangelists: (serviceOptions) =>
-      Effect.promise(() => client.listSubmittedChangelists(serviceOptions)),
+      tryClientPromise(() => client.listSubmittedChangelists(serviceOptions)),
     listShelvedChangelists: (serviceOptions) =>
-      Effect.promise(() => client.listShelvedChangelists(serviceOptions)),
+      tryClientPromise(() => client.listShelvedChangelists(serviceOptions)),
     listChangelists: (serviceOptions) =>
-      Effect.promise(() => client.listChangelists(serviceOptions)),
+      tryClientPromise(() => client.listChangelists(serviceOptions)),
     getOpenedFiles: (serviceOptions) =>
-      Effect.promise(() => client.getOpenedFiles(serviceOptions)),
+      tryClientPromise(() => client.getOpenedFiles(serviceOptions)),
     getChangelistFiles: (change, serviceOptions) =>
-      Effect.promise(() => client.getChangelistFiles(change, serviceOptions)),
+      tryClientPromise(() => client.getChangelistFiles(change, serviceOptions)),
     previewReconcile: (serviceOptions) =>
-      Effect.promise(() => client.previewReconcile(serviceOptions)),
+      tryClientPromise(() => client.previewReconcile(serviceOptions)),
     streamPreviewReconcile: (serviceOptions) =>
       Stream.fromAsyncIterable(
         client.watchPreviewReconcile(serviceOptions).events,
-        (error) => error instanceof Error ? error : new Error(String(error))
+        toServiceError
       ),
     previewSync: (serviceOptions) =>
-      Effect.promise(() => client.previewSync(serviceOptions)),
+      tryClientPromise(() => client.previewSync(serviceOptions)),
     sync: (serviceOptions) =>
-      Effect.promise(() => client.sync(serviceOptions)),
+      tryClientPromise(() => client.sync(serviceOptions)),
     streamSync: (serviceOptions) =>
       Stream.fromAsyncIterable(
         client.watchSync(serviceOptions).events,
-        (error) => error instanceof Error ? error : new Error(String(error))
+        toServiceError
       ),
     setClient: (serviceOptions) =>
-      Effect.promise(() => client.setClient(serviceOptions)),
+      tryClientPromise(() => client.setClient(serviceOptions)),
     switchWorkspace: (clientName) =>
-      Effect.promise(() => client.switchWorkspace(clientName)),
+      tryClientPromise(() => client.switchWorkspace(clientName)),
     describeChangelist: (change, serviceOptions) =>
-      Effect.promise(() => client.describeChangelist(change, serviceOptions)),
+      tryClientPromise(() => client.describeChangelist(change, serviceOptions)),
     diffFile: (serviceOptions) =>
-      Effect.promise(() => client.diffFile(serviceOptions)),
+      tryClientPromise(() => client.diffFile(serviceOptions)),
     printFile: (depotFile, serviceOptions) =>
-      Effect.promise(() => client.printFile(depotFile, serviceOptions)),
+      tryClientPromise(() => client.printFile(depotFile, serviceOptions)),
     getChangelistDiffSummary: (change, serviceOptions) =>
-      Effect.promise(() => client.getChangelistDiffSummary(change, serviceOptions))
+      tryClientPromise(() => client.getChangelistDiffSummary(change, serviceOptions))
   };
 }
 

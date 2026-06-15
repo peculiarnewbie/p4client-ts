@@ -15,7 +15,7 @@ The published package name is `p4client-ts`.
 
 ## Scope
 
-This package is intended for inspection, preview-oriented workflows, and explicit `sync()` operations.
+This package is intended for inspection, preview-oriented workflows, explicit `sync()` operations, and local `P4CLIENT` switching.
 
 In scope:
 - Inspect current environment and workspace state
