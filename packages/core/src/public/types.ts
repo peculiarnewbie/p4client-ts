@@ -785,6 +785,77 @@ export interface P4PrintResult {
 }
 
 /**
+ * Options for {@link P4Client.listDepotFilesAtChange}.
+ */
+export interface ListDepotFilesAtChangeOptions {
+  /** Depot file or directory pattern, for example `//depot/main/...`. */
+  depotPath: string;
+  /** Submitted changelist whose depot state should be inspected. */
+  change: number;
+  /** Maximum number of revisions returned in one call. */
+  maxFiles: number;
+}
+
+/**
+ * Exact depot revision and basic submit metadata resolved at a changelist.
+ */
+export interface P4DepotFileRevision {
+  /** Depot path reported by Perforce. */
+  depotFile: P4DepotPath;
+  /** Exact numeric depot revision. */
+  revision: number;
+  /** Changelist that submitted this revision. */
+  changelist: number;
+  /** Submit action that produced this revision. */
+  action: P4FileAction;
+  /** Perforce file type, including any modifiers. */
+  type: string;
+}
+
+/**
+ * Bounded depot listing at a submitted changelist.
+ */
+export interface ListDepotFilesAtChangeResult {
+  items: P4DepotFileRevision[];
+  /** Whether another matching revision exists beyond {@link items}. */
+  hasMore: boolean;
+}
+
+/**
+ * Options for {@link P4Client.materializeDepotFiles}.
+ */
+export interface MaterializeDepotFilesOptions {
+  /** Exact revisions previously resolved from Perforce. */
+  files: readonly P4DepotFileRevision[];
+  /** Caller-provided temporary directory that receives the files. */
+  directory: string;
+  /** Hard upper bound on the number of files this call may download. */
+  maxFiles: number;
+  /** Maximum concurrent `p4 print` processes. Defaults to `4`. */
+  concurrency?: number;
+}
+
+/**
+ * One exact depot revision written beneath a materialization directory.
+ */
+export interface P4MaterializedFile {
+  /** Exact depot revision that was downloaded. */
+  file: P4DepotFileRevision;
+  /** Output path beneath the caller-provided directory. */
+  localPath: P4LocalPath;
+}
+
+/**
+ * Result returned by {@link P4Client.materializeDepotFiles}.
+ */
+export interface P4MaterializeResult {
+  /** Resolved caller-provided directory. */
+  directory: P4LocalPath;
+  items: P4MaterializedFile[];
+  totalCount: number;
+}
+
+/**
  * Parsed unified-diff hunk.
  */
 export interface P4DiffHunk {
@@ -891,6 +962,12 @@ export interface P4Service {
     depotFile: string,
     options?: PrintFileOptions
   ) => import("effect").Effect.Effect<P4PrintResult, P4ServiceError>;
+  listDepotFilesAtChange: (
+    options: ListDepotFilesAtChangeOptions
+  ) => import("effect").Effect.Effect<ListDepotFilesAtChangeResult, P4ServiceError>;
+  materializeDepotFiles: (
+    options: MaterializeDepotFilesOptions
+  ) => import("effect").Effect.Effect<P4MaterializeResult, P4ServiceError>;
   getChangelistDiffSummary: (
     change: number | "default",
     options?: GetChangelistDiffSummaryOptions

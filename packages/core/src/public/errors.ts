@@ -197,10 +197,39 @@ export class P4ClientOperationError extends Error {
 }
 
 /**
+ * Error raised before depot materialization when its bounded or filesystem
+ * safety invariants are not satisfied.
+ */
+export class P4MaterializationError extends Error {
+  readonly _tag = "P4MaterializationError";
+  readonly reason: "limit_exceeded" | "invalid_depot_path" | "invalid_destination";
+  readonly cause: unknown;
+
+  /**
+   * Create a typed materialization failure.
+   *
+   * @param message Human-readable failure description.
+   * @param reason Stable category suitable for caller control flow.
+   * @param cause Original validation or filesystem failure, when available.
+   */
+  constructor(
+    message: string,
+    reason: P4MaterializationError["reason"],
+    cause: unknown = null
+  ) {
+    super(message);
+    this.name = "P4MaterializationError";
+    this.reason = reason;
+    this.cause = cause;
+  }
+}
+
+/**
  * Tagged errors surfaced by the Effect service API.
  */
 export type P4ServiceError =
   | P4CommandError
   | P4TimeoutError
   | P4ParseError
+  | P4MaterializationError
   | P4ClientOperationError;

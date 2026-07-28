@@ -1,8 +1,15 @@
+import { mkdir, stat } from 'node:fs/promises';
 import { hostname as getHostName } from "node:os";
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { Schema } from 'effect';
 import { createAsyncEventQueue } from "../internal/async-queue.js";
 import { runCommand, watchCommand } from "../internal/command.js";
 import { formatCommandArgs, redactCommandArgs } from "./command-format.js";
-import { P4CommandError } from "./errors.js";
+import {
+  P4CommandError,
+  P4MaterializationError,
+  P4ParseError
+} from "./errors.js";
 import {
   isBinaryP4Type,
   isLocalWorkspace,
@@ -32,6 +39,8 @@ import type {
   GetChangelistDiffSummaryOptions,
   GetEnvironmentOptions,
   GetOpenedFilesOptions,
+  ListDepotFilesAtChangeOptions,
+  ListDepotFilesAtChangeResult,
   ListChangelistsOptions,
   ListChangelistsResult,
   ListWorkspacesOptions,
@@ -47,6 +56,7 @@ import type {
   P4ClientPath,
   P4DescribedFile,
   P4DepotPath,
+  P4DepotFileRevision,
   P4FileAction,
   P4FileDiffResult,
   P4LocalPath,
@@ -59,6 +69,7 @@ import type {
   P4CommandStreamEvent,
   P4OperationHandle,
   P4PrintResult,
+  P4MaterializeResult,
   P4ReconcileProgressEvent,
   P4EnvironmentSummary,
   P4JsonWorkspace,
@@ -78,12 +89,21 @@ import type {
   PreviewReconcileOptions,
   PreviewSyncOptions,
   PrintFileOptions,
+  MaterializeDepotFilesOptions,
   SetClientOptions,
   SetClientResult,
   SyncOptions,
   RunTaggedJsonOptions,
   WatchP4CommandOptions
 } from "./types.js";
+
+const P4DepotFileRevisionRowSchema = Schema.Struct({
+  depotFile: Schema.String,
+  rev: Schema.String,
+  change: Schema.String,
+  action: Schema.String,
+  type: Schema.String
+});
 
 /**
  * Thin, typed wrapper around the Perforce `p4` CLI.
@@ -603,6 +623,122 @@ export class P4Client {
       content: result.stdout,
       isBinary: false,
       type
+    };
+  }
+
+  /**
+   * List exact file revisions that existed beneath a depot path when a
+   * submitted changelist was created.
+   *
+   * The query uses `p4 files -e`, so deleted, purged, and archived revisions
+   * are omitted. One extra row is requested to report whether the bounded
+   * result was truncated.
+   *
+   * @param options Depot path, submitted changelist, and result bound.
+   * @returns Exact revisions plus a `hasMore` truncation indicator.
+   * @throws {P4ParseError} When Perforce returns malformed revision metadata.
+   */
+  async listDepotFilesAtChange(
+    options: ListDepotFilesAtChangeOptions
+  ): Promise<ListDepotFilesAtChangeResult> {
+    const maxFiles = requirePositiveInteger(options.maxFiles, "maxFiles");
+    const change = requirePositiveInteger(options.change, "change");
+    if (!Number.isSafeInteger(maxFiles) || maxFiles === Number.MAX_SAFE_INTEGER) {
+      throw new Error("maxFiles must be smaller than Number.MAX_SAFE_INTEGER.");
+    }
+    if (!options.depotPath.startsWith("//") || /[#@]/.test(options.depotPath)) {
+      throw new Error("depotPath must use depot syntax without a revision specifier.");
+    }
+
+    const rows = await this.runTaggedJson<Record<string, unknown>>([
+      "files",
+      "-e",
+      "-m",
+      String(maxFiles + 1),
+      `${options.depotPath}@${change}`
+    ]);
+    const hasMore = rows.length > maxFiles;
+    const items = rows
+      .slice(0, maxFiles)
+      .map((row) => this.toDepotFileRevision(row));
+
+    return { items, hasMore };
+  }
+
+  /**
+   * Download exact depot revisions into a caller-provided temporary directory.
+   *
+   * Each revision is written by `p4 print -o`, keeping file payloads out of
+   * this client's text stdout capture. Files are placed beneath
+   * `<directory>/<depot>/<path>` and no workspace sync or mutation command is
+   * used.
+   *
+   * @param options Exact revisions, destination directory, and hard file bound.
+   * @returns Local paths for all successfully materialized revisions.
+   * @throws {P4MaterializationError} When the bound, depot path, or destination
+   * directory is invalid.
+   */
+  async materializeDepotFiles(
+    options: MaterializeDepotFilesOptions
+  ): Promise<P4MaterializeResult> {
+    const maxFiles = requirePositiveInteger(options.maxFiles, "maxFiles");
+    const concurrency = requirePositiveInteger(options.concurrency ?? 4, "concurrency");
+    if (options.files.length > maxFiles) {
+      throw new P4MaterializationError(
+        `Refusing to materialize ${options.files.length} files; maxFiles is ${maxFiles}.`,
+        "limit_exceeded"
+      );
+    }
+
+    const destinationDirectory = resolve(this.cwd ?? process.cwd(), options.directory);
+    try {
+      const destinationStat = await stat(destinationDirectory);
+      if (!destinationStat.isDirectory()) {
+        throw new Error("Destination is not a directory.");
+      }
+    } catch (error) {
+      throw new P4MaterializationError(
+        `Materialization directory is unavailable: ${destinationDirectory}`,
+        "invalid_destination",
+        error
+      );
+    }
+
+    const seenTargets = new Set<string>();
+    const plans = options.files.map((file) => {
+      const outputPath = this.getMaterializedFilePath(destinationDirectory, file.depotFile);
+      const targetKey = process.platform === "win32" ? outputPath.toLowerCase() : outputPath;
+      if (seenTargets.has(targetKey)) {
+        throw new P4MaterializationError(
+          `Multiple revisions resolve to the same output path: ${file.depotFile}`,
+          "invalid_depot_path"
+        );
+      }
+      seenTargets.add(targetKey);
+      return { file, outputPath };
+    });
+
+    const items = await this.mapWithConcurrency(plans, concurrency, async (plan) => {
+      await mkdir(dirname(plan.outputPath), { recursive: true });
+      await this.run([
+        "print",
+        "-q",
+        "-K",
+        "-o",
+        plan.outputPath,
+        `${plan.file.depotFile}#${plan.file.revision}`
+      ]);
+
+      return {
+        file: plan.file,
+        localPath: this.toLocalPath(plan.outputPath)!
+      };
+    });
+
+    return {
+      directory: this.toLocalPath(destinationDirectory)!,
+      items,
+      totalCount: items.length
     };
   }
 
@@ -1223,6 +1359,61 @@ export class P4Client {
       revision: normalizeNullableNumber(file.rev),
       isDefaultChangelist: changelist === "default"
     };
+  }
+
+  private toDepotFileRevision(row: Record<string, unknown>): P4DepotFileRevision {
+    try {
+      const parsed = Schema.decodeUnknownSync(P4DepotFileRevisionRowSchema)(row);
+      return {
+        depotFile: this.toDepotPath(parsed.depotFile)!,
+        revision: requirePositiveInteger(Number(parsed.rev), "revision"),
+        changelist: requirePositiveInteger(Number(parsed.change), "changelist"),
+        action: this.toFileAction(parsed.action)!,
+        type: parsed.type
+      };
+    } catch (error) {
+      throw new P4ParseError(
+        "Unable to parse depot file revision metadata.",
+        JSON.stringify(row),
+        error
+      );
+    }
+  }
+
+  private getMaterializedFilePath(directory: string, depotFile: P4DepotPath): string {
+    if (!depotFile.startsWith("//")) {
+      throw new P4MaterializationError(
+        `Invalid depot path: ${depotFile}`,
+        "invalid_depot_path"
+      );
+    }
+
+    const segments = depotFile.slice(2).split("/");
+    if (
+      segments.length < 2
+      || segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")
+    ) {
+      throw new P4MaterializationError(
+        `Invalid depot path: ${depotFile}`,
+        "invalid_depot_path"
+      );
+    }
+
+    const outputPath = resolve(directory, ...segments);
+    const relativePath = relative(directory, outputPath);
+    if (
+      relativePath.length === 0
+      || relativePath.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)
+      || relativePath === ".."
+      || isAbsolute(relativePath)
+    ) {
+      throw new P4MaterializationError(
+        `Depot path escapes the materialization directory: ${depotFile}`,
+        "invalid_depot_path"
+      );
+    }
+
+    return outputPath;
   }
 
   private toReconcileCandidate(row: Record<string, unknown>): P4ReconcileCandidate {

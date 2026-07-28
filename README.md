@@ -15,6 +15,8 @@ In scope:
 - Preview reconcile operations
 - Preview sync operations and apply sync when the caller explicitly opts in
 - Read file metadata and depot/local path mappings
+- Inspect historical depot state and materialize bounded exact revisions
+  outside the workspace
 
 Out of scope:
 - `submit`

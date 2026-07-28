@@ -3,6 +3,7 @@ import { P4Client } from "./client.js";
 import {
   P4ClientOperationError,
   P4CommandError,
+  P4MaterializationError,
   P4ParseError,
   P4TimeoutError
 } from "./errors.js";
@@ -22,6 +23,7 @@ function toServiceError(error: unknown): P4ServiceError {
     error instanceof P4CommandError
     || error instanceof P4TimeoutError
     || error instanceof P4ParseError
+    || error instanceof P4MaterializationError
     || error instanceof P4ClientOperationError
   ) {
     return error;
@@ -98,6 +100,10 @@ export function createP4Service(options: P4ClientOptions = {}): P4Service {
       tryClientPromise(() => client.diffFile(serviceOptions)),
     printFile: (depotFile, serviceOptions) =>
       tryClientPromise(() => client.printFile(depotFile, serviceOptions)),
+    listDepotFilesAtChange: (serviceOptions) =>
+      tryClientPromise(() => client.listDepotFilesAtChange(serviceOptions)),
+    materializeDepotFiles: (serviceOptions) =>
+      tryClientPromise(() => client.materializeDepotFiles(serviceOptions)),
     getChangelistDiffSummary: (change, serviceOptions) =>
       tryClientPromise(() => client.getChangelistDiffSummary(change, serviceOptions))
   };
@@ -240,6 +246,25 @@ export function printFile(
   options?: Parameters<P4Service["printFile"]>[1]
 ) {
   return defaultService.printFile(depotFile, options);
+}
+
+/**
+ * List exact depot revisions at a submitted changelist using the default
+ * Effect service.
+ */
+export function listDepotFilesAtChange(
+  options: Parameters<P4Service["listDepotFilesAtChange"]>[0]
+) {
+  return defaultService.listDepotFilesAtChange(options);
+}
+
+/**
+ * Materialize exact depot revisions using the default Effect service.
+ */
+export function materializeDepotFiles(
+  options: Parameters<P4Service["materializeDepotFiles"]>[0]
+) {
+  return defaultService.materializeDepotFiles(options);
 }
 
 /**

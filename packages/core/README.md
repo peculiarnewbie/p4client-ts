@@ -28,6 +28,8 @@ In scope:
 - Diff shelved files against their depot base without unshelving (`p4 diff2`
   with `@=<change>`)
 - Print depot file content at a revision (`p4 print`)
+- List exact depot revisions at a submitted changelist and materialize a
+  bounded set outside the workspace (`p4 files` plus `p4 print -o`)
 - Preview reconcile operations
 - Preview sync operations and apply sync when explicitly requested
 - Read file metadata and depot/local path mappings
@@ -150,6 +152,36 @@ if (shelvedFile && !isBinaryP4Type(shelvedFile.type)) {
 `p4 diff` and `p4 diff2` exit with code `1` when differences exist. `diffFile()`
 treats exit codes `0` and `1` as success and only throws for exit code `2` or
 higher. Use a higher `timeoutMs` for diff operations on large files.
+
+## Historical Depot Materialization
+
+Use `listDepotFilesAtChange()` to resolve the files that existed under a depot
+path at a submitted changelist. The required `maxFiles` bound also reports
+`hasMore` when the result is truncated:
+
+```ts
+const snapshot = await p4.listDepotFilesAtChange({
+  depotPath: "//Project/main/Content/...",
+  change: 12345,
+  maxFiles: 100
+});
+```
+
+Materialize a selected, bounded set into an existing temporary directory:
+
+```ts
+const materialized = await p4.materializeDepotFiles({
+  files: snapshot.items.filter((file) => file.type.startsWith("binary")),
+  directory: temporaryDirectory,
+  maxFiles: 25,
+  concurrency: 4
+});
+```
+
+Files are written beneath `<directory>/<depot>/<path>` using their exact
+numeric revisions. `materializeDepotFiles()` uses `p4 print -q -K -o`, so
+binary payloads bypass the text-based command result and `printFile()` remains
+compatible. It does not run `p4 sync` or modify the active workspace.
 
 ## Local Settings Resolution
 

@@ -526,4 +526,37 @@ describe("createP4Service", () => {
       files: [{ patchLoadState: "deferred", additions: null }]
     });
   });
+
+  it("exposes bounded historical depot listing through Effect", async () => {
+    const service = createP4Service({
+      executor: async (command, args) => ({
+        command,
+        args,
+        stdout: "{\"depotFile\":\"//Project/main/a.uasset\",\"rev\":\"7\",\"change\":\"120\",\"action\":\"edit\",\"type\":\"binary\"}",
+        stderr: "",
+        exitCode: 0
+      })
+    });
+
+    await expect(
+      Effect.runPromise(
+        service.listDepotFilesAtChange({
+          depotPath: "//Project/main/...",
+          change: 123,
+          maxFiles: 10
+        })
+      )
+    ).resolves.toEqual({
+      items: [
+        {
+          depotFile: "//Project/main/a.uasset",
+          revision: 7,
+          changelist: 120,
+          action: "edit",
+          type: "binary"
+        }
+      ],
+      hasMore: false
+    });
+  });
 });

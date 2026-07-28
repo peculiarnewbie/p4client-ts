@@ -1,10 +1,15 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { P4Client } from "../src/public/client.js";
-import { P4CommandError } from "../src/public/errors.js";
+import { P4CommandError, P4MaterializationError } from "../src/public/errors.js";
 import type {
   P4CommandExecutor,
   P4CommandResult,
   P4CommandStreamEvent,
+  P4DepotPath,
+  P4FileAction,
   P4OperationHandle,
   P4StreamingCommandExecutor
 } from "../src/public/types.js";
@@ -1897,6 +1902,159 @@ describe("P4Client", () => {
     expect(calls).toEqual([
       ["-Mj", "-z", "tag", "files", "//Project/main/foo.uasset#have"]
     ]);
+  });
+
+  it("lists a bounded depot snapshot with exact revisions at a changelist", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return {
+          command,
+          args,
+          stdout: [
+            "{\"depotFile\":\"//Project/main/a.uasset\",\"rev\":\"7\",\"change\":\"120\",\"action\":\"edit\",\"type\":\"binary+l\"}",
+            "{\"depotFile\":\"//Project/main/b.uasset\",\"rev\":\"2\",\"change\":\"118\",\"action\":\"add\",\"type\":\"binary\"}",
+            "{\"depotFile\":\"//Project/main/c.uasset\",\"rev\":\"4\",\"change\":\"119\",\"action\":\"branch\",\"type\":\"binary\"}"
+          ].join("\n"),
+          stderr: "",
+          exitCode: 0
+        };
+      })
+    });
+
+    await expect(
+      p4.listDepotFilesAtChange({
+        depotPath: "//Project/main/...",
+        change: 123,
+        maxFiles: 2
+      })
+    ).resolves.toEqual({
+      items: [
+        {
+          depotFile: "//Project/main/a.uasset",
+          revision: 7,
+          changelist: 120,
+          action: "edit",
+          type: "binary+l"
+        },
+        {
+          depotFile: "//Project/main/b.uasset",
+          revision: 2,
+          changelist: 118,
+          action: "add",
+          type: "binary"
+        }
+      ],
+      hasMore: true
+    });
+
+    expect(calls).toEqual([
+      [
+        "-Mj",
+        "-z",
+        "tag",
+        "files",
+        "-e",
+        "-m",
+        "3",
+        "//Project/main/...@123"
+      ]
+    ]);
+  });
+
+  it("materializes exact binary revisions without capturing their bytes as text", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "p4-ts-materialize-"));
+    const bytes = Uint8Array.from([0, 255, 117, 97, 115, 115, 101, 116, 0, 128]);
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        const outputIndex = args.indexOf("-o");
+        if (outputIndex >= 0) {
+          await writeFile(args[outputIndex + 1]!, bytes);
+        }
+        return {
+          command,
+          args,
+          stdout: "",
+          stderr: "",
+          exitCode: 0
+        };
+      })
+    });
+
+    try {
+      const result = await p4.materializeDepotFiles({
+        files: [
+          {
+            depotFile: "//Project/main/Content/a.uasset" as P4DepotPath,
+            revision: 7,
+            changelist: 120,
+            action: "edit" as P4FileAction,
+            type: "binary+l"
+          }
+        ],
+        directory,
+        maxFiles: 1
+      });
+
+      expect(result).toMatchObject({
+        directory,
+        totalCount: 1,
+        items: [
+          {
+            file: {
+              depotFile: "//Project/main/Content/a.uasset",
+              revision: 7
+            }
+          }
+        ]
+      });
+      expect(Array.from(await readFile(result.items[0]!.localPath))).toEqual(Array.from(bytes));
+      expect(calls).toEqual([
+        [
+          "print",
+          "-q",
+          "-K",
+          "-o",
+          join(directory, "Project", "main", "Content", "a.uasset"),
+          "//Project/main/Content/a.uasset#7"
+        ]
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects materialization requests that exceed the caller's bound", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "p4-ts-materialize-limit-"));
+    const p4 = new P4Client();
+    const file = {
+      depotFile: "//Project/main/a.uasset" as P4DepotPath,
+      revision: 1,
+      changelist: 1,
+      action: "add" as P4FileAction,
+      type: "binary"
+    };
+
+    try {
+      await expect(
+        p4.materializeDepotFiles({
+          files: [
+            file,
+            { ...file, depotFile: "//Project/main/b.uasset" as P4DepotPath }
+          ],
+          directory,
+          maxFiles: 1
+        })
+      ).rejects.toMatchObject({
+        name: "P4MaterializationError",
+        reason: "limit_exceeded"
+      } satisfies Partial<P4MaterializationError>);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("builds a changelist diff summary without running diff by default", async () => {

@@ -4,6 +4,16 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
+## Unreleased
+
+### Added
+
+- Added bounded `listDepotFilesAtChange()` snapshot listing with exact revision,
+  changelist, action, and file-type metadata.
+- Added binary-safe `materializeDepotFiles()` downloads through
+  `p4 print -q -K -o`, without syncing or routing payloads through text stdout.
+- Added matching Effect service operations and typed materialization failures.
+
 ## 0.7.0 - 2026-06-15
 
 ### Added
