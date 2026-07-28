@@ -27,10 +27,9 @@ syncDescribe("p4-ts e2e sync preview", () => {
     const preview = await harness.previewSync();
 
     if (preview.items.length === 0) {
-      console.warn(
-        "Skipping sync-preview assertions because the configured fixture workspace is already at head revision."
+      throw new Error(
+        "Fixture workspace is already at head; sync-preview e2e requires a behind-head workspace."
       );
-      return;
     }
 
     expect(preview.totalCount).toBe(preview.items.length);

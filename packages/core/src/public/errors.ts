@@ -1,3 +1,4 @@
+import { formatCommandArgs, redactCommandArgs } from "./command-format.js";
 import type { P4CommandResult } from "./types.js";
 
 /**
@@ -145,10 +146,10 @@ export class P4TimeoutError extends Error {
     stdout = "",
     stderr = ""
   ) {
-    super(`${command} ${args.join(" ")} timed out after ${timeoutMs}ms.`);
+    super(`${command} ${formatCommandArgs(args)} timed out after ${timeoutMs}ms.`);
     this.name = "P4TimeoutError";
     this.command = command;
-    this.args = args;
+    this.args = redactCommandArgs(args);
     this.timeoutMs = timeoutMs;
     this.stdout = stdout;
     this.stderr = stderr;

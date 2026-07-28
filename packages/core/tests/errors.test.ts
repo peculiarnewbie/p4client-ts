@@ -257,4 +257,11 @@ describe("P4Client error classification", () => {
       expect(p4err.result.args).toContain("Arif_DESKTOP_WORK_SubwayMain");
     }
   });
+
+  it("redacts password-like arguments from timeout error messages", () => {
+    const error = new P4TimeoutError("p4", ["-P", "s3cret", "info"], 1000);
+    expect(error.message).toContain("-P ***");
+    expect(error.message).not.toContain("s3cret");
+    expect(error.args).toEqual(["-P", "***", "info"]);
+  });
 });

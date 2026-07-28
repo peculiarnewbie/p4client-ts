@@ -232,6 +232,8 @@ export interface P4JsonWorkspace {
  */
 export interface LocalWorkspaceCandidate {
   host: string | null;
+  /** Local client root used for hostless locality checks. */
+  root?: string | null;
 }
 
 /**
@@ -289,6 +291,11 @@ export interface ListPendingChangelistsOptions {
   /** Include a synthesized default changelist entry when opened files exist. */
   includeDefault?: boolean;
   status?: "pending";
+  /**
+   * Optional maximum number of pending changelists to request via `p4 changes -m`.
+   * Omit for the historical unbounded listing (prefer setting a limit on shared servers).
+   */
+  limit?: number;
   /** Reserved for API consistency with other cached methods. */
   refresh?: boolean;
 }

@@ -395,6 +395,7 @@ describe("P4Client", () => {
           stdout: [
             "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"time\":\"1742266870\",\"desc\":\"Submitted feature\",\"status\":\"submitted\"}",
             "{\"change\":\"12340\",\"client\":\"Project_Tools\",\"user\":\"maya\",\"time\":\"1742266000\",\"desc\":\"Tooling\",\"status\":\"submitted\"}",
+            "{\"change\":\"12330\",\"client\":\"Project_Main\",\"user\":\"surya\",\"time\":\"1742265000\",\"desc\":\"Earlier\",\"status\":\"submitted\"}",
             "{\"change\":\"default\",\"desc\":\"ignored\"}",
             "{\"change\":\"not-a-change\",\"desc\":\"ignored\"}"
           ].join("\n"),
@@ -448,11 +449,32 @@ describe("P4Client", () => {
         "-u",
         "surya",
         "-m",
-        "2",
+        "3",
         "//Project/main/...",
         "@12350"
       ]
     ]);
+  });
+
+  it("reports hasMore=false when an exact-limit final page has no extra row", async () => {
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => ({
+        command,
+        args,
+        stdout: [
+          "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\"}",
+          "{\"change\":\"12340\",\"client\":\"Project_Main\",\"user\":\"surya\"}"
+        ].join("\n"),
+        stderr: "",
+        exitCode: 0
+      }))
+    });
+
+    await expect(p4.listSubmittedChangelists({ limit: 2 })).resolves.toMatchObject({
+      items: [{ change: 12345 }, { change: 12340 }],
+      hasMore: false,
+      nextBeforeChange: null
+    });
   });
 
   it("returns no submitted pagination cursor when the result is below the limit", async () => {
@@ -482,7 +504,8 @@ describe("P4Client", () => {
           args,
           stdout: [
             "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"time\":\"1742266870\",\"desc\":\"Shelved review\",\"status\":\"pending\"}",
-            "{\"change\":\"12340\",\"client\":\"Project_Tools\",\"user\":\"maya\",\"time\":\"1742266000\",\"desc\":\"Tooling shelf\",\"status\":\"pending\"}"
+            "{\"change\":\"12340\",\"client\":\"Project_Tools\",\"user\":\"maya\",\"time\":\"1742266000\",\"desc\":\"Tooling shelf\",\"status\":\"pending\"}",
+            "{\"change\":\"12330\",\"client\":\"Project_Main\",\"user\":\"surya\",\"time\":\"1742265000\",\"desc\":\"Earlier shelf\",\"status\":\"pending\"}"
           ].join("\n"),
           stderr: "",
           exitCode: 0
@@ -537,7 +560,7 @@ describe("P4Client", () => {
         "-c",
         "Project_Main",
         "-m",
-        "2",
+        "3",
         "//Project/main/...",
         "@12350"
       ]
@@ -583,7 +606,10 @@ describe("P4Client", () => {
         return {
           command,
           args,
-          stdout: "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"status\":\"pending\"}",
+          stdout: [
+            "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"status\":\"pending\"}",
+            "{\"change\":\"12340\",\"client\":\"Project_Main\",\"user\":\"surya\",\"status\":\"pending\"}"
+          ].join("\n"),
           stderr: "",
           exitCode: 0
         };
@@ -609,7 +635,7 @@ describe("P4Client", () => {
     });
 
     expect(calls).toEqual([
-      ["-Mj", "-z", "tag", "changes", "-s", "shelved", "-l", "-m", "1"]
+      ["-Mj", "-z", "tag", "changes", "-s", "shelved", "-l", "-m", "2"]
     ]);
   });
 
@@ -653,6 +679,46 @@ describe("P4Client", () => {
       ["info"],
       ["set", "P4CLIENT=Project_New"],
       ["info"]
+    ]);
+  });
+
+  it("applies setClient as an instance override over constructor env P4CLIENT", async () => {
+    const seenClients: Array<string | undefined> = [];
+    const p4 = new P4Client({
+      env: { P4CLIENT: "Project_Old" },
+      executor: createExecutor(async (command, args, options) => {
+        seenClients.push(options.env?.P4CLIENT);
+        if (args[0] === "set") {
+          return { command, args, stdout: "", stderr: "", exitCode: 0 };
+        }
+        if (args[0] === "info") {
+          return {
+            command,
+            args,
+            stdout: [
+              "User name: surya",
+              `Client name: ${options.env?.P4CLIENT ?? "unknown"}`,
+              "Client host: DESKTOP-WORK-ARIF",
+              "Server address: ssl:perforce.example.com:1666"
+            ].join("\n"),
+            stderr: "",
+            exitCode: 0
+          };
+        }
+        return { command, args, stdout: "", stderr: "", exitCode: 0 };
+      })
+    });
+
+    await expect(p4.getEnvironment()).resolves.toMatchObject({ p4Client: "Project_Old" });
+    await p4.setClient({ client: "Project_New" });
+    await expect(p4.run(["info"])).resolves.toMatchObject({ exitCode: 0 });
+    await expect(p4.getEnvironment()).resolves.toMatchObject({ p4Client: "Project_New" });
+
+    expect(seenClients).toEqual([
+      "Project_Old",
+      "Project_Old",
+      "Project_New",
+      "Project_New"
     ]);
   });
 
@@ -1767,15 +1833,24 @@ describe("P4Client", () => {
     ).rejects.toBeInstanceOf(P4CommandError);
   });
 
-  it("prints text depot content and strips the header line", async () => {
+  it("prints text depot content after resolving file metadata", async () => {
     const calls: string[][] = [];
     const p4 = new P4Client({
       executor: createExecutor(async (command, args) => {
         calls.push(args);
+        if (args.includes("files")) {
+          return {
+            command,
+            args,
+            stdout: "{\"depotFile\":\"//Project/main/foo.txt\",\"rev\":\"3\",\"type\":\"text\"}",
+            stderr: "",
+            exitCode: 0
+          };
+        }
         return {
           command,
           args,
-          stdout: "//Project/main/foo.txt#3 - text\nhello\nworld\n",
+          stdout: "hello\nworld\n",
           stderr: "",
           exitCode: 0
         };
@@ -1791,19 +1866,24 @@ describe("P4Client", () => {
     });
 
     expect(calls).toEqual([
+      ["-Mj", "-z", "tag", "files", "//Project/main/foo.txt#3"],
       ["print", "-q", "//Project/main/foo.txt#3"]
     ]);
   });
 
-  it("marks binary print output without returning content", async () => {
+  it("marks binary print output without fetching content", async () => {
+    const calls: string[][] = [];
     const p4 = new P4Client({
-      executor: createExecutor(async (command, args) => ({
-        command,
-        args,
-        stdout: "//Project/main/foo.uasset#1 - binary\n\x00\x01\x02",
-        stderr: "",
-        exitCode: 0
-      }))
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return {
+          command,
+          args,
+          stdout: "{\"depotFile\":\"//Project/main/foo.uasset\",\"rev\":\"1\",\"type\":\"binary\"}",
+          stderr: "",
+          exitCode: 0
+        };
+      })
     });
 
     await expect(p4.printFile("//Project/main/foo.uasset")).resolves.toEqual({
@@ -1813,6 +1893,10 @@ describe("P4Client", () => {
       isBinary: true,
       type: "binary"
     });
+
+    expect(calls).toEqual([
+      ["-Mj", "-z", "tag", "files", "//Project/main/foo.uasset#have"]
+    ]);
   });
 
   it("builds a changelist diff summary without running diff by default", async () => {
@@ -1901,6 +1985,37 @@ describe("P4Client", () => {
     });
 
     expect(calls.some((args) => args.includes("diff"))).toBe(false);
+  });
+
+  it("skips opened lookup for submitted changelist diff summaries", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+
+        if (args.includes("describe")) {
+          return {
+            command,
+            args,
+            stdout: [
+              "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"time\":\"1742266870\",\"desc\":\"Submitted\",\"status\":\"submitted\"}",
+              "{\"depotFile\":\"//Project/main/foo.txt\",\"action\":\"edit\",\"type\":\"text\",\"rev\":\"7\"}"
+            ].join("\n"),
+            stderr: "",
+            exitCode: 0
+          };
+        }
+
+        throw new Error(`Unexpected command: ${args.join(" ")}`);
+      })
+    });
+
+    await expect(p4.getChangelistDiffSummary(12345)).resolves.toMatchObject({
+      changelist: { status: "submitted" },
+      files: [{ depotFile: "//Project/main/foo.txt", localFile: null }]
+    });
+
+    expect(calls.some((args) => args.includes("opened"))).toBe(false);
   });
 
   it("builds a shelved changelist diff summary without opened file lookup", async () => {
@@ -2031,5 +2146,76 @@ describe("P4Client", () => {
       ["-Mj", "-z", "tag", "describe", "-S", "-s", "12345"],
       ["diff2", "-du", "//Project/main/foo.txt#6", "//Project/main/foo.txt@=12345"]
     ]);
+  });
+
+  it("fails streamed sync when tagged JSON is malformed", async () => {
+    const p4 = new P4Client({
+      streamExecutor: createStreamingExecutor((command, args) =>
+        createStreamHandle(
+          [
+            { type: "start", command, args },
+            { type: "line", source: "stdout", line: "{\"depotFile\":" },
+            { type: "exit", exitCode: 0 }
+          ],
+          { command, args, stdout: "", stderr: "", exitCode: 0 }
+        )
+      )
+    });
+
+    const operation = p4.watchSync();
+    await expect(operation.result).rejects.toMatchObject({
+      name: "P4ParseError"
+    });
+  });
+
+  it("rejects non-positive concurrency for changelist diff summaries", async () => {
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        if (args.includes("describe")) {
+          return {
+            command,
+            args,
+            stdout: [
+              "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"status\":\"pending\"}",
+              "{\"depotFile\":\"//Project/main/foo.txt\",\"action\":\"edit\",\"type\":\"text\",\"rev\":\"7\"}"
+            ].join("\n"),
+            stderr: "",
+            exitCode: 0
+          };
+        }
+
+        if (args.includes("opened")) {
+          return { command, args, stdout: "", stderr: "", exitCode: 0 };
+        }
+
+        throw new Error(`Unexpected command: ${args.join(" ")}`);
+      })
+    });
+
+    await expect(
+      p4.getChangelistDiffSummary(12345, { includeLineCounts: true, concurrency: Number.NaN })
+    ).rejects.toThrow(/concurrency must be a positive finite integer/);
+  });
+
+  it("prefers configured hostName over p4 info for environment locality", async () => {
+    const p4 = new P4Client({
+      hostName: "OVERRIDE-HOST",
+      executor: createExecutor(async (command, args) => ({
+        command,
+        args,
+        stdout: [
+          "User name: surya",
+          "Client name: Project_Main",
+          "Client host: DESKTOP-WORK-ARIF",
+          "Server address: ssl:perforce.example.com:1666"
+        ].join("\n"),
+        stderr: "",
+        exitCode: 0
+      }))
+    });
+
+    await expect(p4.getEnvironment()).resolves.toMatchObject({
+      hostName: "OVERRIDE-HOST"
+    });
   });
 });

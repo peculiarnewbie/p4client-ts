@@ -1,5 +1,7 @@
 import { hostname as getHostName } from "node:os";
+import { createAsyncEventQueue } from "../internal/async-queue.js";
 import { runCommand, watchCommand } from "../internal/command.js";
+import { formatCommandArgs, redactCommandArgs } from "./command-format.js";
 import { P4CommandError } from "./errors.js";
 import {
   isBinaryP4Type,
@@ -7,10 +9,13 @@ import {
   normalizeNullableNumber,
   normalizeNullableString,
   normalizeP4Change,
-  parseP4PrintHeader,
   parseP4ProgressLine,
   parseP4JsonLines,
   parseP4KeyValueOutput,
+  parseTaggedJsonLine,
+  requireNonNegativeInteger,
+  requirePositiveInteger,
+  requirePositiveTimeoutMs,
   resolveDiffPlan,
   summarizeUnifiedDiff,
   unixSecondsToIsoString,
@@ -96,6 +101,8 @@ export class P4Client {
   private readonly executor;
   private readonly streamExecutor;
   private readonly configuredHostName;
+  private activeClient: string | null = null;
+  private cacheEpoch = 0;
   private cachedEnvironment: P4EnvironmentSummary | null = null;
   private cachedWorkspaces: P4WorkspaceSummary[] | null = null;
   private cachedLocalEnvironment: { cacheKey: string; environment: P4EnvironmentSummary } | null = null;
@@ -192,9 +199,10 @@ export class P4Client {
 
     const shouldResolveSettings = options.resolveSettings === true || options.settingsSources !== undefined;
     if (!options.refresh && !shouldResolveSettings && this.cachedEnvironment) {
-      return this.cachedEnvironment;
+      return { ...this.cachedEnvironment };
     }
 
+    const epoch = this.cacheEpoch;
     const resolvedSettings = shouldResolveSettings
       ? await this.resolveLocalSettings(options)
       : null;
@@ -203,10 +211,11 @@ export class P4Client {
 
     // Effective env mirrors the same merge order used by run() so that what
     // getEnvironment() reports matches what commands actually use.
-    const effectiveEnv = { ...process.env, ...this.env };
+    const effectiveEnv = this.getMergedEnv();
 
     const environment: P4EnvironmentSummary = {
-      hostName: info["Client host"] ?? this.configuredHostName ?? getHostName(),
+      // Explicit constructor hostName wins over p4 info for locality overrides.
+      hostName: this.configuredHostName ?? info["Client host"] ?? getHostName(),
       // "Server address" from p4 info is the resolved internal address which
       // may not be reachable from the client (e.g. behind a proxy or using
       // SSL).  The configured P4PORT is what actually works for connections.
@@ -218,19 +227,20 @@ export class P4Client {
       p4Client: info["Client name"] ?? resolvedSettings?.settings.P4CLIENT ?? effectiveEnv.P4CLIENT ?? null
     };
 
-    if (!shouldResolveSettings) {
+    if (!shouldResolveSettings && epoch === this.cacheEpoch) {
       this.cachedEnvironment = environment;
     }
 
-    return environment;
+    return { ...environment };
   }
 
   /**
    * List Perforce workspaces for a user.
    *
    * By default only workspaces that appear local to the current machine are
-   * returned. Locality is determined from the workspace host or by checking
-   * whether the workspace root exists on disk.
+   * returned. Locality uses an exact host match when the client spec has a
+   * `Host`, and for hostless specs checks whether the workspace root exists
+   * on disk (hostless clients are otherwise usable from any machine).
    *
    * Results are cached when the default local-workspace query is used.
    *
@@ -239,9 +249,10 @@ export class P4Client {
    */
   async listWorkspaces(options: ListWorkspacesOptions = {}): Promise<P4WorkspaceSummary[]> {
     if (!options.refresh && !options.user && !options.hostName && !options.includeNonLocal && this.cachedWorkspaces) {
-      return this.cachedWorkspaces;
+      return this.cachedWorkspaces.map((workspace) => ({ ...workspace }));
     }
 
+    const epoch = this.cacheEpoch;
     const environment = options.refresh === undefined
       ? await this.getEnvironment()
       : await this.getEnvironment({ refresh: options.refresh });
@@ -257,7 +268,7 @@ export class P4Client {
       .filter((workspace) => {
         if (options.includeNonLocal) return true;
         return isLocalWorkspace(
-          { host: workspace.Host ?? null },
+          { host: workspace.Host ?? null, root: workspace.Root ?? null },
           hostName
         );
       })
@@ -268,19 +279,24 @@ export class P4Client {
         return left.client.localeCompare(right.client);
       });
 
-    if (!options.user && !options.hostName && !options.includeNonLocal) {
+    if (!options.user && !options.hostName && !options.includeNonLocal && epoch === this.cacheEpoch) {
       this.cachedWorkspaces = workspaces;
     }
 
-    return workspaces;
+    return workspaces.map((workspace) => ({ ...workspace }));
   }
 
   /**
-   * Set the active Perforce client and clear cached client-derived state.
+   * Switch the active client for this `P4Client` instance.
+   *
+   * Persists `P4CLIENT` via `p4 set` and also applies an instance-local
+   * override so later commands use the new client even when constructor `env`
+   * or `P4CONFIG` would otherwise take precedence over `p4 set` values.
    */
   async setClient(options: SetClientOptions): Promise<SetClientResult> {
     const environment = await this.getEnvironment();
     await this.run(["set", `P4CLIENT=${options.client}`]);
+    this.activeClient = options.client;
 
     if (options.invalidateCache !== false) {
       this.clearCaches();
@@ -311,6 +327,9 @@ export class P4Client {
     options: ListPendingChangelistsOptions = {}
   ): Promise<P4PendingChangelistSummary[]> {
     const commandArgs = ["changes", "-s", options.status ?? "pending"];
+    if (options.limit !== undefined) {
+      commandArgs.push("-m", String(requirePositiveInteger(options.limit, "limit")));
+    }
     if (options.user) {
       commandArgs.push("-u", options.user);
     }
@@ -550,15 +569,41 @@ export class P4Client {
   /**
    * Print depot file content at a revision.
    *
-   * Binary files return `isBinary: true` with empty `content`. Text files
-   * return UTF-8 string content with the `p4 print` header stripped.
+   * Binary files return `isBinary: true` with empty `content` without fetching
+   * the payload. Text files return UTF-8 string content from a quiet print.
    */
   async printFile(depotFile: string, options: PrintFileOptions = {}): Promise<P4PrintResult> {
     const revision = options.revision ?? "have";
     const filespec = `${depotFile}#${revision}`;
-    const result = await this.run(["print", "-q", filespec]);
+    const fileRows = await this.runTaggedJson<Record<string, unknown>>(["files", filespec]);
+    const meta = fileRows[0];
+    if (!meta) {
+      throw new Error(`Unable to resolve depot file metadata for ${filespec}.`);
+    }
 
-    return this.toPrintResult(depotFile, result.stdout);
+    const type = normalizeNullableString(meta.type);
+    const resolvedDepotFile = this.toDepotPath(meta.depotFile) ?? this.toDepotPath(depotFile)!;
+    const resolvedRevision = normalizeNullableString(meta.rev)
+      ?? (typeof revision === "number" || revision !== "have" ? String(revision) : null);
+
+    if (isBinaryP4Type(type)) {
+      return {
+        depotFile: resolvedDepotFile,
+        revision: resolvedRevision,
+        content: "",
+        isBinary: true,
+        type
+      };
+    }
+
+    const result = await this.run(["print", "-q", filespec]);
+    return {
+      depotFile: resolvedDepotFile,
+      revision: resolvedRevision,
+      content: result.stdout,
+      isBinary: false,
+      type
+    };
   }
 
   /**
@@ -571,11 +616,11 @@ export class P4Client {
     options: GetChangelistDiffSummaryOptions = {}
   ): Promise<P4ChangelistDiffSummary> {
     const changelist = await this.describeChangelist(change, options);
-    const openedLookup = options.shelved
+    const openedLookup = options.shelved || changelist.status === "submitted"
       ? new Map<string, P4OpenedFileSummary>()
       : await this.getOpenedFileLookup(change, options);
     const includeLineCounts = options.includeLineCounts ?? false;
-    const concurrency = options.concurrency ?? 3;
+    const concurrency = requirePositiveInteger(options.concurrency ?? 3, "concurrency");
 
     const baseSummaries = changelist.files.map((file) =>
       this.toChangelistDiffFileSummary(file, openedLookup.get(file.depotFile) ?? null)
@@ -656,7 +701,7 @@ export class P4Client {
     queue.push({
       type: "start",
       command: this.executable,
-      args: argsWithProgress,
+      args: redactCommandArgs(argsWithProgress),
       progressRequested: true
     });
 
@@ -694,7 +739,7 @@ export class P4Client {
         const commandResult = await handle.result;
         if (commandResult.exitCode !== 0) {
           throw new P4CommandError(
-            `${this.executable} ${args.join(" ")} exited with ${commandResult.exitCode}: ${
+            `${this.executable} ${formatCommandArgs(args)} exited with ${commandResult.exitCode}: ${
               commandResult.stderr.trim() || commandResult.stdout.trim() || "Unknown error"
             }`,
             commandResult
@@ -800,7 +845,7 @@ export class P4Client {
     queue.push({
       type: "start",
       command: this.executable,
-      args
+      args: redactCommandArgs(args)
     });
 
     const result = (async () => {
@@ -912,7 +957,7 @@ export class P4Client {
     hasMore: boolean;
     nextBeforeChange: number | null;
   }> {
-    const limit = options.limit ?? 50;
+    const limit = requirePositiveInteger(options.limit ?? 50, "limit");
     const commandArgs = ["changes", "-s", status, "-l"];
     if (options.user) {
       commandArgs.push("-u", options.user);
@@ -920,26 +965,27 @@ export class P4Client {
     if (options.client) {
       commandArgs.push("-c", options.client);
     }
-    commandArgs.push("-m", String(limit));
+    commandArgs.push("-m", String(limit + 1));
     this.appendFileSpecs(commandArgs, options.fileSpec);
     if (options.beforeChange !== undefined) {
-      commandArgs.push(`@${options.beforeChange}`);
+      commandArgs.push(`@${requireNonNegativeInteger(options.beforeChange, "beforeChange")}`);
     }
 
     const rows = await this.runTaggedJson<Record<string, unknown>>(commandArgs);
-    const items = rows
+    const summaries = rows
       .map((row) => toSummary(row))
       .filter((summary): summary is TSummary => summary !== null);
+    const hasMore = summaries.length > limit;
+    const items = hasMore ? summaries.slice(0, limit) : summaries;
     const oldestChange = items.reduce<number | null>(
       (oldest, item) => oldest === null ? item.change : Math.min(oldest, item.change),
       null
     );
-    const hasMore = oldestChange !== null && items.length >= limit && oldestChange > 1;
 
     return {
       items,
       hasMore,
-      nextBeforeChange: hasMore ? oldestChange - 1 : null
+      nextBeforeChange: hasMore && oldestChange !== null ? oldestChange - 1 : null
     };
   }
 
@@ -1093,24 +1139,6 @@ export class P4Client {
     };
   }
 
-  private toPrintResult(requestedDepotFile: string, stdout: string): P4PrintResult {
-    const lines = stdout.split(/\r?\n/);
-    const headerLine = lines[0] ?? "";
-    const header = parseP4PrintHeader(headerLine);
-    const contentLines = header ? lines.slice(1) : lines;
-    const content = contentLines.join("\n");
-    const type = header?.type ?? null;
-    const isBinary = isBinaryP4Type(type);
-
-    return {
-      depotFile: this.toDepotPath(header?.depotFile ?? requestedDepotFile)!,
-      revision: header?.revision ?? null,
-      content: isBinary ? "" : content,
-      isBinary,
-      type
-    };
-  }
-
   private toChangelistDiffFileSummary(
     file: P4DescribedFile,
     opened: P4OpenedFileSummary | null
@@ -1159,7 +1187,7 @@ export class P4Client {
       return [];
     }
 
-    const limit = Math.max(1, concurrency);
+    const limit = requirePositiveInteger(concurrency, "concurrency");
     const results = new Array<TOutput>(items.length);
     let nextIndex = 0;
 
@@ -1366,7 +1394,7 @@ export class P4Client {
 
   private buildCommandOptions(options: P4CommandOptions): P4CommandOptions {
     const commandOptions: P4CommandOptions = {
-      env: { ...process.env, ...this.env, ...options.env }
+      env: this.getMergedEnv(options.env)
     };
 
     const cwd = options.cwd ?? this.cwd;
@@ -1380,7 +1408,7 @@ export class P4Client {
 
     const timeoutMs = options.timeoutMs ?? this.timeoutMs;
     if (timeoutMs !== undefined) {
-      commandOptions.timeoutMs = timeoutMs;
+      commandOptions.timeoutMs = requirePositiveTimeoutMs(timeoutMs);
     }
 
     if (options.allowNonZeroExit !== undefined) {
@@ -1390,12 +1418,27 @@ export class P4Client {
     return commandOptions;
   }
 
+  private getMergedEnv(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      ...this.env,
+      ...overrides
+    };
+
+    if (this.activeClient !== null && overrides?.P4CLIENT === undefined) {
+      env.P4CLIENT = this.activeClient;
+    }
+
+    return env;
+  }
+
   private async getLocalEnvironment(options: GetEnvironmentOptions): Promise<P4EnvironmentSummary> {
     const cacheKey = this.getSettingsCacheKey(options.settingsSources);
     if (!options.refresh && this.cachedLocalEnvironment?.cacheKey === cacheKey) {
-      return this.cachedLocalEnvironment.environment;
+      return { ...this.cachedLocalEnvironment.environment };
     }
 
+    const epoch = this.cacheEpoch;
     const resolved = await this.resolveLocalSettings(options);
     const environment: P4EnvironmentSummary = {
       hostName: this.configuredHostName ?? getHostName(),
@@ -1404,8 +1447,10 @@ export class P4Client {
       p4Client: resolved.settings.P4CLIENT ?? null
     };
 
-    this.cachedLocalEnvironment = { cacheKey, environment };
-    return environment;
+    if (epoch === this.cacheEpoch) {
+      this.cachedLocalEnvironment = { cacheKey, environment };
+    }
+    return { ...environment };
   }
 
   private async resolveLocalSettings(
@@ -1413,17 +1458,32 @@ export class P4Client {
   ): Promise<P4ResolvedSettings> {
     const cacheKey = this.getSettingsCacheKey(options.settingsSources);
     if (!options.refresh && this.cachedResolvedSettings?.cacheKey === cacheKey) {
-      return this.cachedResolvedSettings.resolved;
+      return {
+        settings: { ...this.cachedResolvedSettings.resolved.settings },
+        contributions: this.cachedResolvedSettings.resolved.contributions.map((entry) => ({
+          ...entry,
+          keys: [...entry.keys]
+        }))
+      };
     }
 
+    const epoch = this.cacheEpoch;
     const cliSettings = await this.readCliSettings(options.settingsSources);
     const resolveOptions = options.settingsSources !== undefined
       ? { sources: options.settingsSources }
       : {};
     const resolved = await resolveP4SettingsWithDetails(cliSettings, resolveOptions);
 
-    this.cachedResolvedSettings = { cacheKey, resolved };
-    return resolved;
+    if (epoch === this.cacheEpoch) {
+      this.cachedResolvedSettings = { cacheKey, resolved };
+    }
+    return {
+      settings: { ...resolved.settings },
+      contributions: resolved.contributions.map((entry) => ({
+        ...entry,
+        keys: [...entry.keys]
+      }))
+    };
   }
 
   private async readCliSettings(sources?: P4SettingsSource[]): Promise<P4CliSettings> {
@@ -1443,7 +1503,7 @@ export class P4Client {
   }
 
   private getEffectiveCliSettings(): P4CliSettings {
-    const effectiveEnv = { ...process.env, ...this.env };
+    const effectiveEnv = this.getMergedEnv();
     const settings: P4CliSettings = {};
 
     if (effectiveEnv.P4PORT) {
@@ -1464,6 +1524,7 @@ export class P4Client {
   }
 
   private clearCaches(): void {
+    this.cacheEpoch += 1;
     this.cachedEnvironment = null;
     this.cachedWorkspaces = null;
     this.cachedLocalEnvironment = null;
@@ -1473,25 +1534,13 @@ export class P4Client {
   private toCommandError(args: string[], result: P4CommandResult): P4CommandError {
     const details = result.stderr.trim() || result.stdout.trim() || "Unknown error";
     return new P4CommandError(
-      `${this.executable} ${args.join(" ")} exited with ${result.exitCode}: ${details}`,
+      `${this.executable} ${formatCommandArgs(args)} exited with ${result.exitCode}: ${details}`,
       result
     );
   }
 
   private tryParseJsonLine(line: string): Record<string, unknown> | null {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("{")) {
-      return null;
-    }
-
-    try {
-      const parsed = JSON.parse(trimmed);
-      return parsed !== null && typeof parsed === "object"
-        ? parsed as Record<string, unknown>
-        : null;
-    } catch {
-      return null;
-    }
+    return parseTaggedJsonLine(line);
   }
 
   private isUnsupportedProgressError(result: P4CommandResult): boolean {
@@ -1514,59 +1563,6 @@ export class P4Client {
     fail: (error: unknown) => void;
     finish: () => void;
   } {
-    const values: T[] = [];
-    const waiters: Array<{
-      resolve: (result: IteratorResult<T>) => void;
-      reject: (error: unknown) => void;
-    }> = [];
-    let error: unknown = null;
-    let done = false;
-
-    return {
-      iterable: {
-        [Symbol.asyncIterator]() {
-          return {
-            next() {
-              if (values.length > 0) {
-                return Promise.resolve({ done: false, value: values.shift()! });
-              }
-              if (error !== null) {
-                return Promise.reject(error);
-              }
-              if (done) {
-                return Promise.resolve({ done: true, value: undefined });
-              }
-
-              return new Promise<IteratorResult<T>>((resolve, reject) => {
-                waiters.push({ resolve, reject });
-              });
-            }
-          };
-        }
-      },
-      push(event: T) {
-        if (done || error !== null) return;
-        const waiter = waiters.shift();
-        if (waiter) {
-          waiter.resolve({ done: false, value: event });
-          return;
-        }
-        values.push(event);
-      },
-      fail(nextError: unknown) {
-        if (done || error !== null) return;
-        error = nextError;
-        while (waiters.length > 0) {
-          waiters.shift()!.reject(nextError);
-        }
-      },
-      finish() {
-        if (done || error !== null) return;
-        done = true;
-        while (waiters.length > 0) {
-          waiters.shift()!.resolve({ done: true, value: undefined });
-        }
-      }
-    };
+    return createAsyncEventQueue<T>();
   }
 }

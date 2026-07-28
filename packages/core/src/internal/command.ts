@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
+import { createAsyncEventQueue } from "./async-queue.js";
 import { P4TimeoutError } from "../public/errors.js";
+import { redactCommandArgs } from "../public/command-format.js";
 import type {
   P4CommandOptions,
   P4CommandResult,
@@ -7,75 +9,6 @@ import type {
   P4OperationHandle,
   P4CommandStreamSource
 } from "../public/types.js";
-
-function createAsyncEventQueue<T>(): {
-  iterable: AsyncIterable<T>;
-  push: (event: T) => void;
-  fail: (error: unknown) => void;
-  finish: () => void;
-} {
-  const values: T[] = [];
-  const waiters: Array<{
-    resolve: (result: IteratorResult<T>) => void;
-    reject: (error: unknown) => void;
-  }> = [];
-  let error: unknown = null;
-  let done = false;
-
-  const iterable: AsyncIterable<T> = {
-    [Symbol.asyncIterator]() {
-      return {
-        next() {
-          if (values.length > 0) {
-            return Promise.resolve({ done: false, value: values.shift()! });
-          }
-          if (error !== null) {
-            return Promise.reject(error);
-          }
-          if (done) {
-            return Promise.resolve({ done: true, value: undefined });
-          }
-
-          return new Promise<IteratorResult<T>>((resolve, reject) => {
-            waiters.push({ resolve, reject });
-          });
-        }
-      };
-    }
-  };
-
-  const push = (event: T) => {
-    if (done || error !== null) return;
-
-    const waiter = waiters.shift();
-    if (waiter) {
-      waiter.resolve({ done: false, value: event });
-      return;
-    }
-
-    values.push(event);
-  };
-
-  const fail = (nextError: unknown) => {
-    if (done || error !== null) return;
-
-    error = nextError;
-    while (waiters.length > 0) {
-      waiters.shift()!.reject(nextError);
-    }
-  };
-
-  const finish = () => {
-    if (done || error !== null) return;
-
-    done = true;
-    while (waiters.length > 0) {
-      waiters.shift()!.resolve({ done: true, value: undefined });
-    }
-  };
-
-  return { iterable, push, fail, finish };
-}
 
 function flushCompleteLines(
   source: P4CommandStreamSource,
@@ -136,7 +69,7 @@ export function watchCommand(
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
 
-    queue.push({ type: "start", command, args });
+    queue.push({ type: "start", command, args: redactCommandArgs(args) });
 
     const clearCommandTimeout = () => {
       if (timeout) {

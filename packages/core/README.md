@@ -98,9 +98,12 @@ const description = await p4.describeChangelist(12345);
 const file = description.files[0];
 
 if (file && !isBinaryP4Type(file.type)) {
+  const summary = await p4.getChangelistDiffSummary(12345);
+  const fileSummary = summary.files.find((entry) => entry.depotFile === file.depotFile);
+
   const diff = await p4.diffFile({
     depotFile: file.depotFile,
-    localFile: opened.localFile ?? undefined,
+    localFile: fileSummary?.localFile ?? undefined,
     action: file.action,
     revision: file.revision,
     changelistStatus: description.status,

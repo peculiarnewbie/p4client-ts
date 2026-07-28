@@ -52,7 +52,11 @@ export {
   parseP4PrintHeader,
   parseP4ProgressLine,
   parseP4KeyValueOutput,
+  parseTaggedJsonLine,
   parseUnifiedDiff,
+  requireNonNegativeInteger,
+  requirePositiveInteger,
+  requirePositiveTimeoutMs,
   resolveDepotDiffRevisions,
   resolveDiffPlan,
   resolveShelvedDiffRevisions,
@@ -62,6 +66,7 @@ export {
   workspaceRootFileSpec,
   workspaceStreamFileSpec
 } from "./helpers.js";
+export { formatCommandArgs, redactCommandArgs } from "./command-format.js";
 export type { ResolvedDiffPlan } from "./helpers.js";
 export type {
   DescribeChangelistOptions,

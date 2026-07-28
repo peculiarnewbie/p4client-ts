@@ -61,7 +61,10 @@ Command mapping:
 - `previewReconcile()` runs `p4 reconcile -n`
 - `previewSync()` runs `p4 sync -n`
 - `sync()` runs `p4 sync`
-- `setClient()` / `switchWorkspace()` run `p4 set P4CLIENT=...`
+- `setClient()` / `switchWorkspace()` persist `P4CLIENT` via `p4 set` and also
+  apply an instance-local override so later commands on that `P4Client` use the
+  new client even when constructor `env` or `P4CONFIG` would otherwise win over
+  `p4 set` alone.
 
 `previewReconcile()` remains preview-only in this version of the library.
 

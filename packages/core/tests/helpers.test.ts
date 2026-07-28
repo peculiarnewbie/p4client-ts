@@ -20,6 +20,7 @@ import {
   workspaceStreamFileSpec,
   requireWorkspaceStreamFileSpec
 } from "../src/public/helpers.js";
+import { formatCommandArgs } from "../src/public/command-format.js";
 import { P4ParseError } from "../src/public/errors.js";
 import type { P4JsonWorkspace } from "../src/public/types.js";
 
@@ -91,10 +92,23 @@ describe("parseP4ProgressLine", () => {
 });
 
 describe("isLocalWorkspace", () => {
-  it("accepts only exact host matches", () => {
+  it("accepts exact host matches and hostless roots that exist", () => {
     expect(isLocalWorkspace({ host: "DESKTOP-WORK-ARIF" }, "DESKTOP-WORK-ARIF")).toBe(true);
     expect(isLocalWorkspace({ host: "RENDER-NODE" }, "DESKTOP-WORK-ARIF")).toBe(false);
-    expect(isLocalWorkspace({ host: null }, "DESKTOP-WORK-ARIF")).toBe(false);
+    expect(
+      isLocalWorkspace(
+        { host: null, root: "C:\\work\\Project" },
+        "DESKTOP-WORK-ARIF",
+        { rootExists: () => true }
+      )
+    ).toBe(true);
+    expect(
+      isLocalWorkspace(
+        { host: null, root: "C:\\missing" },
+        "DESKTOP-WORK-ARIF",
+        { rootExists: () => false }
+      )
+    ).toBe(false);
   });
 });
 
@@ -166,10 +180,14 @@ describe("normalizeP4Change", () => {
 });
 
 describe("isBinaryP4Type", () => {
-  it("detects binary and xbinary Perforce types", () => {
+  it("detects non-text Perforce base types and modifiers", () => {
     expect(isBinaryP4Type("binary")).toBe(true);
+    expect(isBinaryP4Type("binary+F")).toBe(true);
     expect(isBinaryP4Type("xbinary")).toBe(true);
+    expect(isBinaryP4Type("apple")).toBe(true);
+    expect(isBinaryP4Type("resource")).toBe(true);
     expect(isBinaryP4Type("text")).toBe(false);
+    expect(isBinaryP4Type("utf8")).toBe(false);
     expect(isBinaryP4Type(null)).toBe(false);
   });
 });
@@ -370,5 +388,12 @@ describe("resolveShelvedDiffRevisions", () => {
         shelvedChange: 12345
       })
     ).toThrow("Unable to infer base revision");
+  });
+});
+
+describe("formatCommandArgs", () => {
+  it("redacts password flags and P4PASSWD assignments", () => {
+    expect(formatCommandArgs(["-P", "s3cret", "info"])).toBe("-P *** info");
+    expect(formatCommandArgs(["P4PASSWD=s3cret", "set"])).toBe("P4PASSWD=*** set");
   });
 });

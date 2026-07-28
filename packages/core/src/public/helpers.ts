@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { Schema } from "effect";
 import { P4ParseError } from "./errors.js";
 import type {
@@ -34,6 +35,31 @@ export function parseP4KeyValueOutput(output: string): Record<string, string> {
 }
 
 /**
+ * Parse a single tagged JSON line from Perforce `-Mj` output.
+ *
+ * @returns `null` for blank lines or non-JSON progress text.
+ * @throws {P4ParseError} When the line looks like JSON but cannot be parsed or
+ * validated as an object row.
+ */
+export function parseTaggedJsonLine(line: string): Record<string, unknown> | null {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (!trimmed.startsWith("{")) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    return Schema.decodeUnknownSync(P4TaggedJsonRowSchema)(parsed);
+  } catch (error) {
+    throw new P4ParseError("Unable to parse tagged Perforce JSON output.", line, error);
+  }
+}
+
+/**
  * Parse newline-delimited JSON emitted by commands such as `p4 -Mj -z tag`.
  *
  * Empty lines are ignored before parsing.
@@ -43,12 +69,11 @@ export function parseP4JsonLines<T = Record<string, unknown>>(output: string): T
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
     .map((line) => {
-      try {
-        const parsed = JSON.parse(line);
-        return Schema.decodeUnknownSync(P4TaggedJsonRowSchema)(parsed) as T;
-      } catch (error) {
-        throw new P4ParseError("Unable to parse tagged Perforce JSON output.", line, error);
+      const parsed = parseTaggedJsonLine(line);
+      if (!parsed) {
+        throw new P4ParseError("Unable to parse tagged Perforce JSON output.", line, null);
       }
+      return parsed as T;
     });
 }
 
@@ -131,14 +156,41 @@ export function normalizeP4Change(value: unknown): number | "default" | null {
 /**
  * Determine whether a workspace belongs to the current machine.
  *
- * A workspace is treated as local only when its configured host matches the
- * requested host name exactly.
+ * - Host-restricted workspaces are local only when `host` matches exactly.
+ * - Hostless workspaces (no `Host` field) are usable from any machine; they
+ *   are treated as local when `root` exists on disk (or when no root is
+ *   available to check).
  */
 export function isLocalWorkspace(
   workspace: LocalWorkspaceCandidate,
-  hostName: string
+  hostName: string,
+  options: {
+    rootExists?: (root: string) => boolean;
+  } = {}
 ): boolean {
-  return workspace.host === hostName;
+  if (workspace.host === hostName) {
+    return true;
+  }
+
+  if (workspace.host !== null && workspace.host !== "") {
+    return false;
+  }
+
+  const root = workspace.root;
+  if (!root) {
+    return true;
+  }
+
+  const rootExists = options.rootExists ?? defaultRootExists;
+  return rootExists(root);
+}
+
+function defaultRootExists(root: string): boolean {
+  try {
+    return existsSync(root);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -191,14 +243,69 @@ export function unixSecondsToIsoString(value: string | null | undefined): string
 
 const HUNK_HEADER_PATTERN = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
+const NON_TEXT_BASE_TYPES = new Set([
+  "binary",
+  "apple",
+  "resource",
+  "xb",
+  "xbinary"
+]);
+
 /**
- * Determine whether a Perforce file type should be treated as binary.
+ * Determine whether a Perforce file type should be treated as non-text.
+ *
+ * Recognizes base types `binary`, `apple`, and `resource`, plus historical
+ * `xb`/`xbinary` spellings and `+` modifiers (for example `binary+F`).
  */
 export function isBinaryP4Type(type: string | null | undefined): boolean {
   if (!type) return false;
 
   const normalized = type.toLowerCase();
-  return normalized.includes("binary") || normalized.includes("xb");
+  const base = normalized.split("+", 1)[0] ?? normalized;
+  if (NON_TEXT_BASE_TYPES.has(base)) {
+    return true;
+  }
+
+  return base.includes("binary") || base.includes("xb");
+}
+
+/**
+ * Assert a positive finite integer suitable for limits and concurrency.
+ *
+ * @throws {Error} When the value is not a positive finite integer.
+ */
+export function requirePositiveInteger(value: number, name: string): number {
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 1) {
+    throw new Error(`${name} must be a positive finite integer, received ${String(value)}.`);
+  }
+
+  return value;
+}
+
+/**
+ * Assert a non-negative finite integer suitable for changelist cursors.
+ *
+ * @throws {Error} When the value is not a non-negative finite integer.
+ */
+export function requireNonNegativeInteger(value: number, name: string): number {
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative finite integer, received ${String(value)}.`);
+  }
+
+  return value;
+}
+
+/**
+ * Assert a positive finite timeout duration in milliseconds.
+ *
+ * @throws {Error} When the value is not a positive finite number.
+ */
+export function requirePositiveTimeoutMs(value: number, name = "timeoutMs"): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be a positive finite number of milliseconds, received ${String(value)}.`);
+  }
+
+  return value;
 }
 
 /**

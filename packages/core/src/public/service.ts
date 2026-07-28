@@ -67,18 +67,26 @@ export function createP4Service(options: P4ClientOptions = {}): P4Service {
     previewReconcile: (serviceOptions) =>
       tryClientPromise(() => client.previewReconcile(serviceOptions)),
     streamPreviewReconcile: (serviceOptions) =>
-      Stream.fromAsyncIterable(
-        client.watchPreviewReconcile(serviceOptions).events,
-        toServiceError
+      Stream.unwrap(
+        Effect.sync(() =>
+          Stream.fromAsyncIterable(
+            client.watchPreviewReconcile(serviceOptions).events,
+            toServiceError
+          )
+        )
       ),
     previewSync: (serviceOptions) =>
       tryClientPromise(() => client.previewSync(serviceOptions)),
     sync: (serviceOptions) =>
       tryClientPromise(() => client.sync(serviceOptions)),
     streamSync: (serviceOptions) =>
-      Stream.fromAsyncIterable(
-        client.watchSync(serviceOptions).events,
-        toServiceError
+      Stream.unwrap(
+        Effect.sync(() =>
+          Stream.fromAsyncIterable(
+            client.watchSync(serviceOptions).events,
+            toServiceError
+          )
+        )
       ),
     setClient: (serviceOptions) =>
       tryClientPromise(() => client.setClient(serviceOptions)),

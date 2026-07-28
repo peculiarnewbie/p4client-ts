@@ -388,6 +388,31 @@ describe("createP4Service", () => {
     expect(calls).toContainEqual(["set", "P4CLIENT=Project_New"]);
   });
 
+  it("defers streamSync command construction until the stream is consumed", async () => {
+    let streamStarts = 0;
+    const service = createP4Service({
+      streamExecutor: (command, args) => {
+        streamStarts += 1;
+        return {
+          events: (async function*() {
+            yield { type: "start", command, args };
+            yield { type: "exit", exitCode: 0 };
+          })(),
+          result: Promise.resolve({ command, args, stdout: "", stderr: "", exitCode: 0 })
+        };
+      }
+    });
+
+    const stream = service.streamSync();
+    expect(streamStarts).toBe(0);
+
+    await Effect.runPromise(stream.pipe(Stream.runCollect));
+    expect(streamStarts).toBe(1);
+
+    await Effect.runPromise(stream.pipe(Stream.runCollect));
+    expect(streamStarts).toBe(2);
+  });
+
   it("passes structured environment options through the Effect service", async () => {
     const calls: string[][] = [];
     const service = createP4Service({
@@ -442,11 +467,21 @@ describe("createP4Service", () => {
           };
         }
 
+        if (args.includes("files")) {
+          return {
+            command,
+            args,
+            stdout: "{\"depotFile\":\"//Project/main/foo.txt\",\"rev\":\"3\",\"type\":\"text\"}",
+            stderr: "",
+            exitCode: 0
+          };
+        }
+
         if (args[0] === "print") {
           return {
             command,
             args,
-            stdout: "//Project/main/foo.txt#3 - text\nhello\n",
+            stdout: "hello\n",
             stderr: "",
             exitCode: 0
           };

@@ -48,13 +48,10 @@ export function loadE2EConfig(): E2EConfigState {
   const stream = readOptionalEnv("P4_TS_E2E_STREAM");
 
   if (!workspaceRoot || !client || !stream) {
-    return {
-      enabled: false,
-      reason: [
-        "P4_TS_E2E is enabled but the fixture target is incomplete.",
-        "Required: P4_TS_E2E_WORKSPACE_ROOT, P4_TS_E2E_CLIENT, P4_TS_E2E_STREAM."
-      ].join(" ")
-    };
+    throw new Error([
+      "P4_TS_E2E=1 requires a complete fixture target.",
+      "Set P4_TS_E2E_WORKSPACE_ROOT, P4_TS_E2E_CLIENT, and P4_TS_E2E_STREAM."
+    ].join(" "));
   }
 
   const repoRoot = resolve(import.meta.dir, "../../../../");

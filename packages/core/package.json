@@ -46,7 +46,7 @@
     "docs:api": "typedoc --options typedoc.json",
     "docs:api:check": "typedoc --options typedoc.json",
     "pack:check": "npm pack --dry-run",
-    "prepublishOnly": "bun run clean && bun run typecheck && bun run build"
+    "prepublishOnly": "bun run clean && bun run typecheck && bun run test && bun run build"
   },
   "dependencies": {
     "effect": "^4.0.0-beta.37"
