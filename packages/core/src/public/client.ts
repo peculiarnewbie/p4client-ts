@@ -41,6 +41,28 @@ import type {
   GetOpenedFilesOptions,
   ListDepotFilesAtChangeOptions,
   ListDepotFilesAtChangeResult,
+  ListDepotsOptions,
+  ListDepotDirsOptions,
+  ListDepotDirsResult,
+  ListDepotFilesOptions,
+  ListDepotFilesResult,
+  P4Depot,
+  P4DepotDir,
+  P4DepotFileListing,
+  P4FileStat,
+  StatFilesOptions,
+  WhereFilesOptions,
+  P4WhereMapping,
+  GetFileHistoryOptions,
+  P4FileHistory,
+  P4FileRevision,
+  ListUsersOptions,
+  P4User,
+  ListStreamsOptions,
+  P4Stream,
+  AnnotateFileOptions,
+  P4AnnotationResult,
+  P4AnnotatedLine,
   ListChangelistsOptions,
   ListChangelistsResult,
   ListWorkspacesOptions,
@@ -663,6 +685,286 @@ export class P4Client {
       .map((row) => this.toDepotFileRevision(row));
 
     return { items, hasMore };
+  }
+
+  /**
+   * List the top-level depots on the server via `p4 depots`.
+   *
+   * These are the roots of the depot tree that {@link listDepotDirs} and
+   * {@link listDepotFiles} expand.
+   */
+  async listDepots(options: ListDepotsOptions = {}): Promise<P4Depot[]> {
+    const args = ["-Mj", "-z", "tag", "depots"];
+    const result = await this.runBrowse(args, options.signal);
+    const rows = this.selectDataRows(args, result, (row) => normalizeNullableString(row.name) !== null);
+    return rows.map((row) => this.toDepot(row));
+  }
+
+  /**
+   * List the immediate subdirectories beneath a depot path via `p4 dirs`.
+   *
+   * This is the primitive for lazy tree expansion: one call returns the folder
+   * nodes at a single level without pulling the recursive subtree. `p4 dirs`
+   * has no server-side limit, so `maxResults` is applied client-side.
+   *
+   * An empty or non-existent directory resolves to an empty list rather than
+   * throwing.
+   */
+  async listDepotDirs(options: ListDepotDirsOptions): Promise<ListDepotDirsResult> {
+    const base = this.normalizeBrowseDir(options.depotPath);
+    const spec = this.appendAtChange(`${base}/*`, options.atChange);
+    const args = ["-Mj", "-z", "tag", "dirs", spec];
+    const result = await this.runBrowse(args, options.signal);
+    const rows = this.selectDataRows(args, result, (row) => normalizeNullableString(row.dir) !== null);
+
+    const allItems = rows.map((row) => this.toDepotDir(row));
+    if (options.maxResults === undefined) {
+      return { items: allItems, hasMore: false };
+    }
+
+    const maxResults = requirePositiveInteger(options.maxResults, "maxResults");
+    return {
+      items: allItems.slice(0, maxResults),
+      hasMore: allItems.length > maxResults
+    };
+  }
+
+  /**
+   * List the immediate files beneath a depot path via `p4 files`.
+   *
+   * The single-level `/*` wildcard keeps the listing to one directory level.
+   * Head-deleted files are excluded by default; see
+   * {@link ListDepotFilesOptions.deletedFiles}. An empty or non-existent
+   * directory resolves to an empty list rather than throwing.
+   */
+  async listDepotFiles(options: ListDepotFilesOptions): Promise<ListDepotFilesResult> {
+    const base = this.normalizeBrowseDir(options.depotPath);
+    const spec = this.appendAtChange(`${base}/*`, options.atChange);
+    const deletedFiles = options.deletedFiles ?? "exclude";
+    const maxResults = options.maxResults === undefined
+      ? undefined
+      : requirePositiveInteger(options.maxResults, "maxResults");
+
+    const args = ["-Mj", "-z", "tag", "files"];
+    // `p4 files -m` counts head-deleted revisions, so a server-side bound only
+    // stays exact when no client-side delete filtering follows. When filtering,
+    // list the whole level and bound client-side (single-level, so bounded in
+    // practice) to keep both items and hasMore exact.
+    if (deletedFiles === "include" && maxResults !== undefined) {
+      args.push("-m", String(maxResults + 1));
+    }
+    args.push(spec);
+
+    const result = await this.runBrowse(args, options.signal);
+    const rows = this.selectDataRows(args, result, (row) => normalizeNullableString(row.depotFile) !== null);
+
+    const listings = rows
+      .map((row) => this.toDepotFileListing(row))
+      .filter((listing) => {
+        if (deletedFiles === "include") return true;
+        if (deletedFiles === "only") return listing.isDeletedAtHead;
+        return !listing.isDeletedAtHead;
+      });
+
+    if (maxResults === undefined) {
+      return { items: listings, hasMore: false };
+    }
+
+    return {
+      items: listings.slice(0, maxResults),
+      hasMore: listings.length > maxResults
+    };
+  }
+
+  /**
+   * Resolve rich per-file metadata via `p4 fstat`.
+   *
+   * All file specs are statted in a single `p4 fstat` call, making this the
+   * batching primitive for explorer badges: out-of-date state, head/have
+   * revisions, type, size, and concurrent-open information. Use `fields` to
+   * narrow the returned columns and `includeFileSize` to opt into size/digest.
+   *
+   * Files that do not exist resolve to no rows rather than throwing.
+   */
+  async statFiles(options: StatFilesOptions): Promise<P4FileStat[]> {
+    const specs = Array.isArray(options.fileSpec) ? options.fileSpec : [options.fileSpec];
+    if (specs.length === 0) {
+      return [];
+    }
+
+    const args = ["-Mj", "-z", "tag", "fstat"];
+    if (options.maxResults !== undefined) {
+      args.push("-m", String(requirePositiveInteger(options.maxResults, "maxResults")));
+    }
+    if (options.includeFileSize) {
+      args.push("-Ol");
+    }
+    if (options.fields && options.fields.length > 0) {
+      args.push("-T", options.fields.join(" "));
+    }
+    for (const spec of specs) {
+      args.push(this.appendAtChange(spec, options.atChange));
+    }
+
+    const result = await this.runBrowse(args, options.signal);
+    const rows = this.selectDataRows(args, result, (row) => normalizeNullableString(row.depotFile) !== null);
+    return rows.map((row) => this.toFileStat(row));
+  }
+
+  /**
+   * Map file specs across depot, client, and local syntax via `p4 where`.
+   *
+   * Use this for "reveal in workspace" / "open in editor" actions and to
+   * resolve arbitrary depot paths to filesystem paths. Specs outside the client
+   * view resolve to no rows rather than throwing. A client view with
+   * overlapping or exclusionary lines can produce multiple rows per spec;
+   * exclusion rows are flagged with {@link P4WhereMapping.isExcluded}.
+   */
+  async whereFiles(options: WhereFilesOptions): Promise<P4WhereMapping[]> {
+    const specs = Array.isArray(options.fileSpec) ? options.fileSpec : [options.fileSpec];
+    if (specs.length === 0) {
+      return [];
+    }
+
+    const args = ["-Mj", "-z", "tag", "where", ...specs];
+    const result = await this.runBrowse(args, options.signal);
+    const rows = this.selectDataRows(args, result, (row) => normalizeNullableString(row.depotFile) !== null);
+    return rows.map((row) => this.toWhereMapping(row));
+  }
+
+  /**
+   * Return a file's revision history via `p4 filelog`.
+   *
+   * Full changelist descriptions are requested with `-l`. Set `followBranches`
+   * to trace history across integrations, branches, and renames. A
+   * non-existent file resolves to an empty revision list rather than throwing.
+   */
+  async getFileHistory(options: GetFileHistoryOptions): Promise<P4FileHistory> {
+    const args = ["-Mj", "-z", "tag", "filelog", "-l"];
+    if (options.followBranches) {
+      args.push("-i");
+    }
+    if (options.maxRevisions !== undefined) {
+      args.push("-m", String(requirePositiveInteger(options.maxRevisions, "maxRevisions")));
+    }
+    args.push(options.depotFile);
+
+    const result = await this.runBrowse(args, options.signal);
+    const rows = this.selectDataRows(args, result, (row) => normalizeNullableString(row.depotFile) !== null);
+
+    const row = rows[0];
+    if (!row) {
+      return { depotFile: this.toDepotPath(options.depotFile)!, revisions: [] };
+    }
+
+    return {
+      depotFile: this.toDepotPath(row.depotFile) ?? this.toDepotPath(options.depotFile)!,
+      revisions: this.toFileRevisions(row)
+    };
+  }
+
+  /**
+   * Resolve Perforce users via `p4 users` for display and attribution.
+   *
+   * Pass `users` to resolve specific identifiers, or omit it to list all users.
+   * This turns raw user IDs on changelists and file revisions into full names
+   * and emails.
+   */
+  async listUsers(options: ListUsersOptions = {}): Promise<P4User[]> {
+    const args = ["-Mj", "-z", "tag", "users"];
+    if (options.maxResults !== undefined) {
+      args.push("-m", String(requirePositiveInteger(options.maxResults, "maxResults")));
+    }
+    if (options.users && options.users.length > 0) {
+      args.push(...options.users);
+    }
+
+    const result = await this.runBrowse(args, options.signal);
+    const rows = this.selectDataRows(args, result, (row) => normalizeNullableString(row.User) !== null);
+    return rows.map((row) => this.toUser(row));
+  }
+
+  /**
+   * List streams via `p4 streams`.
+   *
+   * Each result carries its `parent`, so callers can assemble the stream
+   * hierarchy of a stream depot without additional queries. Scope the listing
+   * with `fileSpec` such as `//Project/...`.
+   */
+  async listStreams(options: ListStreamsOptions = {}): Promise<P4Stream[]> {
+    const args = ["-Mj", "-z", "tag", "streams"];
+    if (options.maxResults !== undefined) {
+      args.push("-m", String(requirePositiveInteger(options.maxResults, "maxResults")));
+    }
+    this.appendFileSpecs(args, options.fileSpec);
+
+    const result = await this.runBrowse(args, options.signal);
+    const rows = this.selectDataRows(args, result, (row) => normalizeNullableString(row.Stream) !== null);
+    return rows.map((row) => this.toStream(row));
+  }
+
+  /**
+   * Return line-by-line blame for a text file via `p4 annotate`.
+   *
+   * Lines are annotated with the changelist that last modified them
+   * (`p4 annotate -c`), which callers can join with {@link getFileHistory} or
+   * {@link describeChangelist} to resolve authors and descriptions. Set
+   * `followIntegrations` to attribute lines to their integration source. A
+   * non-existent file resolves to an empty line list rather than throwing.
+   */
+  async annotateFile(options: AnnotateFileOptions): Promise<P4AnnotationResult> {
+    const spec = this.appendRevision(options.depotFile, options.revision);
+    const args = ["-Mj", "-z", "tag", "annotate", "-q", "-c"];
+    if (options.followIntegrations) {
+      args.push("-I");
+    }
+    args.push(spec);
+
+    const result = await this.runBrowse(args, options.signal);
+    const rows = parseP4JsonLines<Record<string, unknown>>(result.stdout);
+
+    let depotFile: P4DepotPath | null = null;
+    let revision: string | null = null;
+    let hasFatal = false;
+    const lines: P4AnnotatedLine[] = [];
+
+    for (const row of rows) {
+      // Annotated line rows always carry `upper` (the changelist from `-c`).
+      // Message rows such as "no such file(s)" carry `data` but no `upper`, so
+      // keying on `upper` alone avoids misreading them as content lines.
+      if (row.upper !== undefined) {
+        lines.push({
+          line: lines.length + 1,
+          change: normalizeNullableNumber(row.upper),
+          data: this.stripTrailingNewline(typeof row.data === "string" ? row.data : "")
+        });
+        continue;
+      }
+
+      if (normalizeNullableString(row.depotFile) !== null) {
+        depotFile = this.toDepotPath(row.depotFile);
+        revision = normalizeNullableString(row.rev);
+        continue;
+      }
+
+      const severity = normalizeNullableNumber(row.severity);
+      if (severity !== null && severity >= 3) {
+        hasFatal = true;
+      }
+    }
+
+    if (hasFatal) {
+      throw this.toCommandError(args, result);
+    }
+    if (rows.length === 0 && result.exitCode !== 0) {
+      throw this.toCommandError(args, result);
+    }
+
+    return {
+      depotFile: depotFile ?? this.toDepotPath(options.depotFile)!,
+      revision,
+      lines
+    };
   }
 
   /**
@@ -1380,6 +1682,265 @@ export class P4Client {
     }
   }
 
+  /**
+   * Run a read-only browse command that tolerates benign "no such file(s)"
+   * warnings by returning them as empty listings.
+   */
+  private async runBrowse(args: string[], signal?: AbortSignal): Promise<P4CommandResult> {
+    const options: P4CommandOptions = { allowNonZeroExit: true };
+    if (signal !== undefined) {
+      options.signal = signal;
+    }
+    return this.run(args, options);
+  }
+
+  /**
+   * Split tagged JSON rows into data rows versus Perforce message rows.
+   *
+   * Warning-level messages (such as "no such file(s)" for an empty directory)
+   * are treated as an empty result. Error-level messages, or a non-zero exit
+   * with no parseable output at all, raise a {@link P4CommandError}.
+   */
+  private selectDataRows(
+    args: string[],
+    result: P4CommandResult,
+    hasData: (row: Record<string, unknown>) => boolean
+  ): Record<string, unknown>[] {
+    const rows = parseP4JsonLines<Record<string, unknown>>(result.stdout);
+    const data: Record<string, unknown>[] = [];
+    let hasFatal = false;
+
+    for (const row of rows) {
+      if (hasData(row)) {
+        data.push(row);
+        continue;
+      }
+
+      const severity = normalizeNullableNumber(row.severity);
+      if (severity !== null && severity >= 3) {
+        hasFatal = true;
+      }
+    }
+
+    if (hasFatal) {
+      throw this.toCommandError(args, result);
+    }
+
+    if (rows.length === 0 && result.exitCode !== 0) {
+      throw this.toCommandError(args, result);
+    }
+
+    return data;
+  }
+
+  /**
+   * Validate and normalize a directory depot path for single-level browsing.
+   */
+  private normalizeBrowseDir(depotPath: string): string {
+    if (!depotPath.startsWith("//") || /[#@*]/.test(depotPath) || depotPath.includes("...")) {
+      throw new Error("depotPath must be a depot directory without a wildcard or revision specifier.");
+    }
+
+    return depotPath.replace(/\/+$/, "");
+  }
+
+  private appendAtChange(spec: string, atChange: number | undefined): string {
+    if (atChange === undefined) {
+      return spec;
+    }
+
+    return `${spec}@${requirePositiveInteger(atChange, "atChange")}`;
+  }
+
+  private depotBaseName(depotPath: string): string {
+    const trimmed = depotPath.replace(/\/+$/, "");
+    const index = trimmed.lastIndexOf("/");
+    return index >= 0 ? trimmed.slice(index + 1) : trimmed;
+  }
+
+  private toDepot(row: Record<string, unknown>): P4Depot {
+    const name = normalizeNullableString(row.name)!;
+    return {
+      name,
+      depotPath: this.toDepotPath(`//${name}`)!,
+      type: normalizeNullableString(row.type),
+      map: normalizeNullableString(row.map),
+      description: normalizeNullableString(row.desc)
+    };
+  }
+
+  private toDepotDir(row: Record<string, unknown>): P4DepotDir {
+    const depotDir = this.toDepotPath(row.dir)!;
+    return {
+      depotDir,
+      name: this.depotBaseName(depotDir)
+    };
+  }
+
+  private toDepotFileListing(row: Record<string, unknown>): P4DepotFileListing {
+    const depotFile = this.toDepotPath(row.depotFile)!;
+    const action = this.toFileAction(row.action);
+    const type = normalizeNullableString(row.type);
+
+    return {
+      depotFile,
+      name: this.depotBaseName(depotFile),
+      revision: normalizeNullableNumber(row.rev),
+      action,
+      type,
+      changelist: normalizeNullableNumber(row.change),
+      isDeletedAtHead: this.isDeleteAction(action),
+      isBinary: isBinaryP4Type(type)
+    };
+  }
+
+  private toFileStat(row: Record<string, unknown>): P4FileStat {
+    const depotFile = this.toDepotPath(row.depotFile)!;
+    const headAction = this.toFileAction(row.headAction);
+    const headType = normalizeNullableString(row.headType);
+    const headRevision = normalizeNullableNumber(row.headRev);
+    const haveRevision = normalizeNullableNumber(row.haveRev);
+    const headTime = normalizeNullableString(row.headTime);
+    const isDeletedAtHead = this.isDeleteAction(headAction);
+
+    const isOutOfDate = haveRevision !== null
+      && (isDeletedAtHead || (headRevision !== null && haveRevision < headRevision));
+
+    const otherOpen: string[] = [];
+    for (const key of Object.keys(row)) {
+      if (/^otherOpen\d+$/.test(key)) {
+        const value = normalizeNullableString(row[key]);
+        if (value !== null) {
+          otherOpen.push(value);
+        }
+      }
+    }
+
+    const otherLocked = Object.keys(row).some((key) => /^otherLock\d*$/.test(key));
+
+    return {
+      depotFile,
+      localFile: this.toLocalPath(row.clientFile),
+      isMapped: row.isMapped !== undefined,
+      headAction,
+      headType,
+      headRevision,
+      headChange: normalizeNullableNumber(row.headChange),
+      headTime,
+      headTimeIso: unixSecondsToIsoString(headTime),
+      haveRevision,
+      fileSize: normalizeNullableNumber(row.fileSize),
+      digest: normalizeNullableString(row.digest),
+      isDeletedAtHead,
+      isOutOfDate,
+      isBinary: isBinaryP4Type(headType),
+      openAction: this.toFileAction(row.action),
+      openChangelist: row.action !== undefined ? normalizeP4Change(row.change) : null,
+      otherOpen,
+      otherLocked
+    };
+  }
+
+  private isDeleteAction(action: P4FileAction | null): boolean {
+    if (!action) return false;
+    const normalized = action.toLowerCase();
+    return normalized === "delete"
+      || normalized === "move/delete"
+      || normalized === "purge";
+  }
+
+  private toWhereMapping(row: Record<string, unknown>): P4WhereMapping {
+    const stripExclusion = (value: string | null): string | null =>
+      value === null ? null : value.replace(/^-/, "");
+
+    const rawDepot = normalizeNullableString(row.depotFile);
+    const isExcluded = row.unmap !== undefined || (rawDepot?.startsWith("-") ?? false);
+
+    return {
+      depotFile: this.toDepotPath(stripExclusion(rawDepot))!,
+      clientFile: this.toClientPath(stripExclusion(normalizeNullableString(row.clientFile))),
+      localFile: this.toLocalPath(stripExclusion(normalizeNullableString(row.path))),
+      isExcluded
+    };
+  }
+
+  private toFileRevisions(row: Record<string, unknown>): P4FileRevision[] {
+    const indexes = Object.keys(row)
+      .map((key) => /^rev(\d+)$/.exec(key)?.[1])
+      .filter((index): index is string => index !== undefined)
+      .map((index) => Number(index))
+      .filter((index) => Number.isInteger(index))
+      .sort((left, right) => left - right);
+
+    const revisions: P4FileRevision[] = [];
+    for (const index of indexes) {
+      const revision = normalizeNullableNumber(row[`rev${index}`]);
+      if (revision === null) {
+        continue;
+      }
+
+      const time = normalizeNullableString(row[`time${index}`]);
+      revisions.push({
+        revision,
+        change: normalizeNullableNumber(row[`change${index}`]),
+        action: this.toFileAction(row[`action${index}`]),
+        type: normalizeNullableString(row[`type${index}`]),
+        time,
+        timeIso: unixSecondsToIsoString(time),
+        user: normalizeNullableString(row[`user${index}`]),
+        client: normalizeNullableString(row[`client${index}`]),
+        description: normalizeNullableString(row[`desc${index}`]),
+        digest: normalizeNullableString(row[`digest${index}`]),
+        fileSize: normalizeNullableNumber(row[`fileSize${index}`])
+      });
+    }
+
+    return revisions;
+  }
+
+  private toUser(row: Record<string, unknown>): P4User {
+    const accessedAt = normalizeNullableString(row.Access);
+    return {
+      user: normalizeNullableString(row.User)!,
+      email: normalizeNullableString(row.Email),
+      fullName: normalizeNullableString(row.FullName),
+      type: normalizeNullableString(row.Type),
+      accessedAt,
+      accessedAtIso: unixSecondsToIsoString(accessedAt)
+    };
+  }
+
+  private toStream(row: Record<string, unknown>): P4Stream {
+    const stream = this.toDepotPath(row.Stream)!;
+    const parent = normalizeNullableString(row.Parent);
+
+    return {
+      stream,
+      name: normalizeNullableString(row.Name) ?? this.depotBaseName(stream),
+      owner: normalizeNullableString(row.Owner),
+      parent: parent !== null && parent !== "none" ? this.toDepotPath(parent) : null,
+      type: normalizeNullableString(row.Type),
+      description: normalizeNullableString(row.desc)
+    };
+  }
+
+  private appendRevision(depotFile: string, revision: string | number | undefined): string {
+    if (revision === undefined) {
+      return depotFile;
+    }
+
+    const text = String(revision);
+    if (text.startsWith("#") || text.startsWith("@")) {
+      return `${depotFile}${text}`;
+    }
+
+    return `${depotFile}#${text}`;
+  }
+
+  private stripTrailingNewline(value: string): string {
+    return value.replace(/\r?\n$/, "");
+  }
+
   private getMaterializedFilePath(directory: string, depotFile: P4DepotPath): string {
     if (!depotFile.startsWith("//")) {
       throw new P4MaterializationError(
@@ -1600,6 +2161,10 @@ export class P4Client {
     const timeoutMs = options.timeoutMs ?? this.timeoutMs;
     if (timeoutMs !== undefined) {
       commandOptions.timeoutMs = requirePositiveTimeoutMs(timeoutMs);
+    }
+
+    if (options.signal !== undefined) {
+      commandOptions.signal = options.signal;
     }
 
     if (options.allowNonZeroExit !== undefined) {

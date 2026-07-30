@@ -69,4 +69,25 @@ describe("command streaming", () => {
       expect(error).toBeInstanceOf(P4TimeoutError);
     }
   });
+
+  it("aborts a running command when the signal fires", async () => {
+    const controller = new AbortController();
+    const resultPromise = runCommand(
+      process.execPath,
+      ["-e", "setTimeout(() => process.stdout.write('late'), 500)"],
+      { signal: controller.signal }
+    );
+
+    controller.abort();
+
+    await expect(resultPromise).rejects.toThrow();
+  });
+
+  it("rejects immediately when the signal is already aborted", async () => {
+    await expect(
+      runCommand(process.execPath, ["-e", "setTimeout(() => {}, 500)"], {
+        signal: AbortSignal.abort()
+      })
+    ).rejects.toThrow();
+  });
 });

@@ -13,6 +13,36 @@ This project follows semantic versioning.
 - Added binary-safe `materializeDepotFiles()` downloads through
   `p4 print -q -K -o`, without syncing or routing payloads through text stdout.
 - Added matching Effect service operations and typed materialization failures.
+- Added depot-tree browsing primitives for lazy exploration: `listDepots()`
+  (`p4 depots`), `listDepotDirs()` (`p4 dirs`, single level), and
+  `listDepotFiles()` (`p4 files`, single level at head). Empty or non-existent
+  directories resolve to empty listings instead of throwing.
+- Added `listDepotFiles({ deletedFiles: "exclude" | "include" | "only" })` with
+  exact `hasMore`/completeness when filtering: because `p4 files -m` counts
+  head-deleted revisions, the filtering modes list the level and bound
+  client-side rather than mixing a server bound with client-side filtering.
+- Added `statFiles()` batching wrapper over `p4 fstat` returning rich per-file
+  metadata — head/have revisions, type, size/digest (opt-in via
+  `includeFileSize`), computed `isOutOfDate`, and concurrent-open/lock state —
+  with `-T` field selection and `-m` bounds.
+- Added `signal` (`AbortSignal`) to `P4CommandOptions` and the new browse/stat
+  options so interactive callers can cancel in-flight commands.
+- Added `whereFiles()` (`p4 where`) mapping specs across depot, client, and
+  local syntax, flagging exclusionary view rows for "reveal in workspace" and
+  "open in editor" actions.
+- Added `getFileHistory()` (`p4 filelog -l`) returning newest-first revision
+  history with change, action, type, time, author, description, digest, and
+  size, plus `followBranches` to trace integrations and renames.
+- Added `listUsers()` (`p4 users`) resolving user identifiers to full names and
+  emails for changelist and revision attribution.
+- Added `listStreams()` (`p4 streams`) returning each stream's `parent` so
+  callers can assemble the stream-depot hierarchy without extra queries.
+- Added `annotateFile()` (`p4 annotate -q -c`) for line-by-line blame, tagging
+  each line with the last modifying changelist, with `followIntegrations` to
+  attribute lines to their integration source.
+- Added Effect service wrappers and exports for depot browsing, `statFiles()`,
+  `whereFiles()`, `getFileHistory()`, `listUsers()`, `listStreams()`, and
+  `annotateFile()`.
 
 ## 0.7.0 - 2026-06-15
 

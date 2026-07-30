@@ -56,7 +56,8 @@ export function watchCommand(
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env,
-      stdio: "pipe"
+      stdio: "pipe",
+      signal: options.signal
     });
 
     let stdout = "";

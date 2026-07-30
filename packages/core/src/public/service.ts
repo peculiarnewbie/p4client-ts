@@ -105,7 +105,25 @@ export function createP4Service(options: P4ClientOptions = {}): P4Service {
     materializeDepotFiles: (serviceOptions) =>
       tryClientPromise(() => client.materializeDepotFiles(serviceOptions)),
     getChangelistDiffSummary: (change, serviceOptions) =>
-      tryClientPromise(() => client.getChangelistDiffSummary(change, serviceOptions))
+      tryClientPromise(() => client.getChangelistDiffSummary(change, serviceOptions)),
+    listDepots: (serviceOptions) =>
+      tryClientPromise(() => client.listDepots(serviceOptions)),
+    listDepotDirs: (serviceOptions) =>
+      tryClientPromise(() => client.listDepotDirs(serviceOptions)),
+    listDepotFiles: (serviceOptions) =>
+      tryClientPromise(() => client.listDepotFiles(serviceOptions)),
+    statFiles: (serviceOptions) =>
+      tryClientPromise(() => client.statFiles(serviceOptions)),
+    whereFiles: (serviceOptions) =>
+      tryClientPromise(() => client.whereFiles(serviceOptions)),
+    getFileHistory: (serviceOptions) =>
+      tryClientPromise(() => client.getFileHistory(serviceOptions)),
+    listUsers: (serviceOptions) =>
+      tryClientPromise(() => client.listUsers(serviceOptions)),
+    listStreams: (serviceOptions) =>
+      tryClientPromise(() => client.listStreams(serviceOptions)),
+    annotateFile: (serviceOptions) =>
+      tryClientPromise(() => client.annotateFile(serviceOptions))
   };
 }
 
@@ -275,4 +293,68 @@ export function getChangelistDiffSummary(
   options?: Parameters<P4Service["getChangelistDiffSummary"]>[1]
 ) {
   return defaultService.getChangelistDiffSummary(change, options);
+}
+
+/**
+ * List top-level depots using the default Effect service.
+ */
+export function listDepots(options?: Parameters<P4Service["listDepots"]>[0]) {
+  return defaultService.listDepots(options);
+}
+
+/**
+ * List immediate subdirectories of a depot path using the default Effect service.
+ */
+export function listDepotDirs(options: Parameters<P4Service["listDepotDirs"]>[0]) {
+  return defaultService.listDepotDirs(options);
+}
+
+/**
+ * List immediate files of a depot path using the default Effect service.
+ */
+export function listDepotFiles(options: Parameters<P4Service["listDepotFiles"]>[0]) {
+  return defaultService.listDepotFiles(options);
+}
+
+/**
+ * Resolve rich per-file metadata using the default Effect service.
+ */
+export function statFiles(options: Parameters<P4Service["statFiles"]>[0]) {
+  return defaultService.statFiles(options);
+}
+
+/**
+ * Map file specs across depot, client, and local syntax using the default
+ * Effect service.
+ */
+export function whereFiles(options: Parameters<P4Service["whereFiles"]>[0]) {
+  return defaultService.whereFiles(options);
+}
+
+/**
+ * Read a file's revision history using the default Effect service.
+ */
+export function getFileHistory(options: Parameters<P4Service["getFileHistory"]>[0]) {
+  return defaultService.getFileHistory(options);
+}
+
+/**
+ * Resolve Perforce users using the default Effect service.
+ */
+export function listUsers(options?: Parameters<P4Service["listUsers"]>[0]) {
+  return defaultService.listUsers(options);
+}
+
+/**
+ * List streams using the default Effect service.
+ */
+export function listStreams(options?: Parameters<P4Service["listStreams"]>[0]) {
+  return defaultService.listStreams(options);
+}
+
+/**
+ * Annotate a file's lines using the default Effect service.
+ */
+export function annotateFile(options: Parameters<P4Service["annotateFile"]>[0]) {
+  return defaultService.annotateFile(options);
 }

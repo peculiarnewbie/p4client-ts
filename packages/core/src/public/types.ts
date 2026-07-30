@@ -83,6 +83,14 @@ export interface P4CommandOptions {
   input?: string;
   /** Kill the child process when it exceeds this duration in milliseconds. */
   timeoutMs?: number;
+  /**
+   * Abort the command when the signal fires. Aborting kills the child process
+   * and rejects the result with the signal's `AbortError`.
+   *
+   * Intended for interactive UIs that cancel in-flight work when the user
+   * changes selection or navigates away.
+   */
+  signal?: AbortSignal;
   /** Allow non-zero exits to be returned instead of throwing. */
   allowNonZeroExit?: boolean;
 }
@@ -822,6 +830,409 @@ export interface ListDepotFilesAtChangeResult {
 }
 
 /**
+ * Options for {@link P4Client.listDepots}.
+ */
+export interface ListDepotsOptions {
+  /** Abort the underlying `p4 depots` call. */
+  signal?: AbortSignal;
+}
+
+/**
+ * A top-level depot returned by `listDepots()`.
+ */
+export interface P4Depot {
+  /** Depot name, for example `depot`. */
+  name: string;
+  /** Root depot path, for example `//depot`. */
+  depotPath: P4DepotPath;
+  /** Depot type such as `local`, `stream`, `remote`, or `spec`. */
+  type: string | null;
+  /** Depot map when reported by the server. */
+  map: string | null;
+  /** Depot description when reported by the server. */
+  description: string | null;
+}
+
+/**
+ * Options for {@link P4Client.listDepotDirs}.
+ */
+export interface ListDepotDirsOptions {
+  /**
+   * Directory depot path whose immediate subdirectories should be listed, for
+   * example `//depot/main`. A single-level `/*` wildcard is appended
+   * automatically; the path must not already contain a wildcard or revision
+   * specifier.
+   */
+  depotPath: string;
+  /** Restrict the listing to the depot state at a submitted changelist. */
+  atChange?: number;
+  /**
+   * Maximum directories to return. `p4 dirs` has no server-side limit, so the
+   * bound is applied client-side and one extra row is used to compute
+   * {@link ListDepotDirsResult.hasMore}.
+   */
+  maxResults?: number;
+  /** Abort the underlying `p4 dirs` call. */
+  signal?: AbortSignal;
+}
+
+/**
+ * An immediate subdirectory returned by `listDepotDirs()`.
+ */
+export interface P4DepotDir {
+  /** Full depot path of the subdirectory, for example `//depot/main/art`. */
+  depotDir: P4DepotPath;
+  /** Trailing path segment for display, for example `art`. */
+  name: string;
+}
+
+/**
+ * Bounded single-level directory listing.
+ */
+export interface ListDepotDirsResult {
+  items: P4DepotDir[];
+  /** Whether another subdirectory exists beyond {@link items}. */
+  hasMore: boolean;
+}
+
+/**
+ * Options for {@link P4Client.listDepotFiles}.
+ */
+export interface ListDepotFilesOptions {
+  /**
+   * Directory depot path whose immediate files should be listed, for example
+   * `//depot/main`. A single-level `/*` wildcard is appended automatically; the
+   * path must not already contain a wildcard or revision specifier.
+   */
+  depotPath: string;
+  /** Restrict the listing to the depot state at a submitted changelist. */
+  atChange?: number;
+  /**
+   * Maximum files to return. One extra row is used to compute
+   * {@link ListDepotFilesResult.hasMore}. Omit for an unbounded listing.
+   */
+  maxResults?: number;
+  /**
+   * How files deleted at the head revision are treated. Defaults to `exclude`.
+   *
+   * - `exclude` — omit head-deleted files (typical explorer default).
+   * - `include` — return them, flagged via {@link P4DepotFileListing.isDeletedAtHead}.
+   * - `only` — return only head-deleted files.
+   *
+   * When filtering (`exclude`/`only`), the directory level is listed without a
+   * server-side `p4 files -m` bound and `maxResults` is applied client-side, so
+   * both the returned items and `hasMore` are exact. `include` can use the
+   * server-side bound because no client-side filtering follows.
+   */
+  deletedFiles?: "exclude" | "include" | "only";
+  /** Abort the underlying `p4 files` call. */
+  signal?: AbortSignal;
+}
+
+/**
+ * A single-level depot file at its head revision.
+ */
+export interface P4DepotFileListing {
+  /** Depot path reported by Perforce. */
+  depotFile: P4DepotPath;
+  /** Trailing path segment for display, for example `foo.txt`. */
+  name: string;
+  /** Head revision number when reported. */
+  revision: number | null;
+  /** Head action such as `add`, `edit`, or `delete`. */
+  action: P4FileAction | null;
+  /** Perforce file type at the head revision. */
+  type: string | null;
+  /** Changelist that submitted the head revision. */
+  changelist: number | null;
+  /** Whether the head revision is a delete. */
+  isDeletedAtHead: boolean;
+  /** Whether the head file type is non-text. */
+  isBinary: boolean;
+}
+
+/**
+ * Bounded single-level file listing.
+ */
+export interface ListDepotFilesResult {
+  items: P4DepotFileListing[];
+  /** Whether another file exists beyond {@link items}. */
+  hasMore: boolean;
+}
+
+/**
+ * Options for {@link P4Client.statFiles}.
+ */
+export interface StatFilesOptions {
+  /** One or more depot/client file specs or wildcards to stat in one call. */
+  fileSpec: string | string[];
+  /**
+   * Restrict the returned fields via `p4 fstat -T`. Omit for the default field
+   * set. Narrowing fields reduces server work for large listings.
+   */
+  fields?: string[];
+  /**
+   * Add `p4 fstat -Ol` so {@link P4FileStat.fileSize} and
+   * {@link P4FileStat.digest} are populated. Defaults to `false` because the
+   * server must compute them.
+   */
+  includeFileSize?: boolean;
+  /** Restrict the stat to the depot state at a submitted changelist. */
+  atChange?: number;
+  /** Maximum rows to return via `p4 fstat -m`. */
+  maxResults?: number;
+  /** Abort the underlying `p4 fstat` call. */
+  signal?: AbortSignal;
+}
+
+/**
+ * Rich per-file metadata resolved by `statFiles()` from `p4 fstat`.
+ *
+ * This is the workhorse primitive for explorer badges: out-of-date state,
+ * head/have revisions, file type, and concurrent-open information in one call.
+ */
+export interface P4FileStat {
+  /** Depot path reported by Perforce. */
+  depotFile: P4DepotPath;
+  /** Local filesystem path when the file maps into the current client. */
+  localFile: P4LocalPath | null;
+  /** Whether the file maps into the current client view. */
+  isMapped: boolean;
+  /** Head action such as `add`, `edit`, or `delete`. */
+  headAction: P4FileAction | null;
+  /** Perforce file type at the head revision. */
+  headType: string | null;
+  /** Head revision number when reported. */
+  headRevision: number | null;
+  /** Changelist that submitted the head revision. */
+  headChange: number | null;
+  /** Head submit time as reported by Perforce (unix seconds). */
+  headTime: string | null;
+  /** ISO-8601 version of {@link headTime} when available. */
+  headTimeIso: string | null;
+  /** Revision currently synced into the workspace, when the file is present. */
+  haveRevision: number | null;
+  /** Head file size in bytes. Populated only when `includeFileSize` is set. */
+  fileSize: number | null;
+  /** Head content digest. Populated only when `includeFileSize` is set. */
+  digest: string | null;
+  /** Whether the head revision is a delete. */
+  isDeletedAtHead: boolean;
+  /**
+   * Whether the workspace copy is behind the head revision. True when the file
+   * is synced but the head revision moved forward or was deleted.
+   */
+  isOutOfDate: boolean;
+  /** Whether the head file type is non-text. */
+  isBinary: boolean;
+  /** Open action on the current client, when the file is checked out here. */
+  openAction: P4FileAction | null;
+  /** Open changelist on the current client, when the file is checked out here. */
+  openChangelist: number | "default" | null;
+  /** `user@client` entries for other workspaces that have the file open. */
+  otherOpen: string[];
+  /** Whether another workspace holds a lock on the file. */
+  otherLocked: boolean;
+}
+
+/**
+ * Options for {@link P4Client.whereFiles}.
+ */
+export interface WhereFilesOptions {
+  /** One or more depot, client, or local file specs to map. */
+  fileSpec: string | string[];
+  /** Abort the underlying `p4 where` call. */
+  signal?: AbortSignal;
+}
+
+/**
+ * A depot/client/local path mapping resolved by `whereFiles()`.
+ */
+export interface P4WhereMapping {
+  /** Depot-syntax path, for example `//depot/main/foo.txt`. */
+  depotFile: P4DepotPath;
+  /** Client-syntax path, for example `//workspace/foo.txt`. */
+  clientFile: P4ClientPath | null;
+  /** Local filesystem path, for example `C:\\ws\\foo.txt`. */
+  localFile: P4LocalPath | null;
+  /**
+   * Whether this row is an exclusionary mapping (a `-` line in the client
+   * view). Exclusions describe paths the view removes rather than maps.
+   */
+  isExcluded: boolean;
+}
+
+/**
+ * Options for {@link P4Client.getFileHistory}.
+ */
+export interface GetFileHistoryOptions {
+  /** Depot, client, or local file spec whose history should be listed. */
+  depotFile: string;
+  /** Maximum revisions to return via `p4 filelog -m`. */
+  maxRevisions?: number;
+  /**
+   * Follow file history across integrations, branches, and renames using
+   * `p4 filelog -i`. Defaults to `false`.
+   */
+  followBranches?: boolean;
+  /** Abort the underlying `p4 filelog` call. */
+  signal?: AbortSignal;
+}
+
+/**
+ * One revision in a file's history.
+ */
+export interface P4FileRevision {
+  /** Revision number. */
+  revision: number;
+  /** Changelist that submitted this revision. */
+  change: number | null;
+  /** Submit action such as `add`, `edit`, `delete`, `branch`, or `integrate`. */
+  action: P4FileAction | null;
+  /** Perforce file type at this revision. */
+  type: string | null;
+  /** Submit time as reported by Perforce (unix seconds). */
+  time: string | null;
+  /** ISO-8601 version of {@link time} when available. */
+  timeIso: string | null;
+  /** User that submitted this revision. */
+  user: string | null;
+  /** Client workspace used to submit this revision. */
+  client: string | null;
+  /** Changelist description for this revision. */
+  description: string | null;
+  /** Content digest when reported. */
+  digest: string | null;
+  /** File size in bytes when reported. */
+  fileSize: number | null;
+}
+
+/**
+ * File revision history returned by `getFileHistory()`.
+ */
+export interface P4FileHistory {
+  /** Depot path the history belongs to. */
+  depotFile: P4DepotPath;
+  /** Revisions ordered newest first, as emitted by `p4 filelog`. */
+  revisions: P4FileRevision[];
+}
+
+/**
+ * Options for {@link P4Client.listUsers}.
+ */
+export interface ListUsersOptions {
+  /** Resolve only these specific user identifiers. Omit to list all users. */
+  users?: string[];
+  /** Maximum users to return via `p4 users -m`. */
+  maxResults?: number;
+  /** Abort the underlying `p4 users` call. */
+  signal?: AbortSignal;
+}
+
+/**
+ * A Perforce user resolved by `listUsers()`, for display and attribution.
+ */
+export interface P4User {
+  /** User identifier, for example `surya`. */
+  user: string;
+  /** Email address when set on the user spec. */
+  email: string | null;
+  /** Full display name when set on the user spec. */
+  fullName: string | null;
+  /** User type such as `standard`, `operator`, or `service`. */
+  type: string | null;
+  /** Last access timestamp as reported by Perforce (unix seconds). */
+  accessedAt: string | null;
+  /** ISO-8601 version of {@link accessedAt} when available. */
+  accessedAtIso: string | null;
+}
+
+/**
+ * Options for {@link P4Client.listStreams}.
+ */
+export interface ListStreamsOptions {
+  /**
+   * Stream/depot path filter, for example `//Project/...` to scope the listing
+   * to a single stream depot.
+   */
+  fileSpec?: string | string[];
+  /** Maximum streams to return via `p4 streams -m`. */
+  maxResults?: number;
+  /** Abort the underlying `p4 streams` call. */
+  signal?: AbortSignal;
+}
+
+/**
+ * A stream resolved by `listStreams()`.
+ *
+ * The `parent` relationship lets callers assemble the stream hierarchy without
+ * additional queries.
+ */
+export interface P4Stream {
+  /** Stream path, for example `//Project/main`. */
+  stream: P4DepotPath;
+  /** Display name, for example `main`. */
+  name: string;
+  /** Stream owner. */
+  owner: string | null;
+  /** Parent stream path, or `null` for a mainline (`Parent: none`). */
+  parent: P4DepotPath | null;
+  /** Stream type such as `mainline`, `development`, `release`, `virtual`, or `task`. */
+  type: string | null;
+  /** Stream description when reported. */
+  description: string | null;
+}
+
+/**
+ * Options for {@link P4Client.annotateFile}.
+ */
+export interface AnnotateFileOptions {
+  /** Depot, client, or local file spec to annotate. */
+  depotFile: string;
+  /**
+   * Revision or change to annotate. A bare value is treated as a revision
+   * (`#rev`); prefix with `@` to annotate at a change. Defaults to the head
+   * revision.
+   */
+  revision?: string | number;
+  /**
+   * Follow integrations into the source of each line with `p4 annotate -I`.
+   * Defaults to `false`.
+   */
+  followIntegrations?: boolean;
+  /** Abort the underlying `p4 annotate` call. */
+  signal?: AbortSignal;
+}
+
+/**
+ * A single annotated (blamed) line.
+ */
+export interface P4AnnotatedLine {
+  /** 1-based line number in the annotated revision. */
+  line: number;
+  /** Changelist that most recently modified this line. */
+  change: number | null;
+  /** Line content without its trailing newline. */
+  data: string;
+}
+
+/**
+ * Line-by-line blame returned by `annotateFile()`.
+ *
+ * Annotation is meaningful only for text files; join `change` with
+ * {@link P4Client.getFileHistory} or `describeChangelist()` to resolve authors
+ * and descriptions.
+ */
+export interface P4AnnotationResult {
+  /** Depot path that was annotated. */
+  depotFile: P4DepotPath;
+  /** Revision reported by Perforce for the annotated file, when available. */
+  revision: string | null;
+  /** Annotated lines in file order. */
+  lines: P4AnnotatedLine[];
+}
+
+/**
  * Options for {@link P4Client.materializeDepotFiles}.
  */
 export interface MaterializeDepotFilesOptions {
@@ -972,4 +1383,31 @@ export interface P4Service {
     change: number | "default",
     options?: GetChangelistDiffSummaryOptions
   ) => import("effect").Effect.Effect<P4ChangelistDiffSummary, P4ServiceError>;
+  listDepots: (
+    options?: ListDepotsOptions
+  ) => import("effect").Effect.Effect<P4Depot[], P4ServiceError>;
+  listDepotDirs: (
+    options: ListDepotDirsOptions
+  ) => import("effect").Effect.Effect<ListDepotDirsResult, P4ServiceError>;
+  listDepotFiles: (
+    options: ListDepotFilesOptions
+  ) => import("effect").Effect.Effect<ListDepotFilesResult, P4ServiceError>;
+  statFiles: (
+    options: StatFilesOptions
+  ) => import("effect").Effect.Effect<P4FileStat[], P4ServiceError>;
+  whereFiles: (
+    options: WhereFilesOptions
+  ) => import("effect").Effect.Effect<P4WhereMapping[], P4ServiceError>;
+  getFileHistory: (
+    options: GetFileHistoryOptions
+  ) => import("effect").Effect.Effect<P4FileHistory, P4ServiceError>;
+  listUsers: (
+    options?: ListUsersOptions
+  ) => import("effect").Effect.Effect<P4User[], P4ServiceError>;
+  listStreams: (
+    options?: ListStreamsOptions
+  ) => import("effect").Effect.Effect<P4Stream[], P4ServiceError>;
+  annotateFile: (
+    options: AnnotateFileOptions
+  ) => import("effect").Effect.Effect<P4AnnotationResult, P4ServiceError>;
 }
