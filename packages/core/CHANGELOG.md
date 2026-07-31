@@ -4,7 +4,7 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
-## Unreleased
+## 0.8.0 - 2026-07-31
 
 ### Added
 
@@ -43,6 +43,11 @@ This project follows semantic versioning.
 - Added Effect service wrappers and exports for depot browsing, `statFiles()`,
   `whereFiles()`, `getFileHistory()`, `listUsers()`, `listStreams()`, and
   `annotateFile()`.
+
+### Fixed
+
+- Classified Perforce `archive` head actions consistently with delete and purge
+  actions when filtering depot listings and computing `isDeletedAtHead`.
 
 ## 0.7.0 - 2026-06-15
 

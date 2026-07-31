@@ -113,8 +113,10 @@ packages/
 
 **IMPORTANT:** Always consult effect-solutions before writing Effect code.
 
-1. Run `effect-solutions list` to see available guides
-2. Run `effect-solutions show <topic>...` for relevant patterns (supports multiple topics)
+Always use the repository wrapper; do not invoke a globally installed `effect-solutions` executable directly on Windows. The wrapper invokes the bundled CLI because the upstream launcher has no Windows target.
+
+1. Run `bun run effect:solutions -- list` to see available guides
+2. Run `bun run effect:solutions -- show <topic>...` for relevant patterns (supports multiple topics)
 3. Search `~/.local/share/effect-solutions/effect` for real implementations
 
 Topics: quick-start, project-setup, tsconfig, basics, services-and-layers, data-modeling, error-handling, config, testing, cli.

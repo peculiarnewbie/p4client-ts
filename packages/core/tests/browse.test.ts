@@ -105,7 +105,8 @@ describe("P4Client depot browsing", () => {
         return ok(command, args, [
           "{\"depotFile\":\"//depot/main/foo.txt\",\"rev\":\"7\",\"change\":\"120\",\"action\":\"edit\",\"type\":\"text\"}",
           "{\"depotFile\":\"//depot/main/logo.png\",\"rev\":\"2\",\"change\":\"90\",\"action\":\"add\",\"type\":\"binary\"}",
-          "{\"depotFile\":\"//depot/main/old.txt\",\"rev\":\"3\",\"change\":\"110\",\"action\":\"delete\",\"type\":\"text\"}"
+          "{\"depotFile\":\"//depot/main/old.txt\",\"rev\":\"3\",\"change\":\"110\",\"action\":\"delete\",\"type\":\"text\"}",
+          "{\"depotFile\":\"//depot/main/archived.txt\",\"rev\":\"4\",\"change\":\"115\",\"action\":\"archive\",\"type\":\"text\"}"
         ]);
       }
     });
@@ -286,6 +287,25 @@ describe("P4Client statFiles", () => {
         "//depot/main/bar.txt",
         "//depot/main/baz.txt"
       ]
+    ]);
+  });
+
+  it("treats archived head actions as deleted", async () => {
+    const p4 = new P4Client({
+      executor: async (command, args) =>
+        ok(command, args, [
+          "{\"depotFile\":\"//depot/main/archived.txt\",\"headAction\":\"archive\",\"headRev\":\"4\",\"haveRev\":\"4\"}"
+        ])
+    });
+
+    await expect(
+      p4.statFiles({ fileSpec: "//depot/main/archived.txt" })
+    ).resolves.toMatchObject([
+      {
+        depotFile: "//depot/main/archived.txt",
+        isDeletedAtHead: true,
+        isOutOfDate: true
+      }
     ]);
   });
 

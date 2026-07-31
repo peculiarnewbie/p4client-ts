@@ -1846,6 +1846,7 @@ export class P4Client {
     const normalized = action.toLowerCase();
     return normalized === "delete"
       || normalized === "move/delete"
+      || normalized === "archive"
       || normalized === "purge";
   }
 
