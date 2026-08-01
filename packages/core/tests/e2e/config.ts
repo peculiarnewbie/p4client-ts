@@ -1,96 +1,45 @@
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 
 export interface E2EConfig {
   workspaceRoot: string;
   client: string;
   stream: string;
-  user: string | null;
-  host: string | null;
-  p4Port: string | null;
-  p4Config: string | null;
-  allowOpenedScenarios: boolean;
-  allowSyncPreview: boolean;
-  repoRoot: string;
+  p4Executable: string;
+  user: string;
+  p4Port: string;
+  syncBaseChange: number;
   testStreamPackageRoot: string;
-  workspaceRootName: string;
   p4Env: NodeJS.ProcessEnv;
 }
 
-export type E2EConfigState =
-  | {
-      enabled: false;
-      reason: string;
-    }
-  | {
-      enabled: true;
-      config: E2EConfig;
-    };
-
-function readBooleanEnv(name: string): boolean {
-  return process.env[name] === "1";
-}
-
-function readOptionalEnv(name: string): string | null {
+function readRequiredEnv(name: string): string {
   const value = process.env[name]?.trim();
-  return value ? value : null;
+  if (!value) {
+    throw new Error(`The canonical E2E runner did not provide ${name}. Run "bun run test:e2e".`);
+  }
+  return value;
 }
 
-export function loadE2EConfig(): E2EConfigState {
-  if (!readBooleanEnv("P4_TS_E2E")) {
-    return {
-      enabled: false,
-      reason: "Set P4_TS_E2E=1 to run Perforce end-to-end tests."
-    };
+function readRequiredPositiveIntegerEnv(name: string): number {
+  const value = Number(readRequiredEnv(name));
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive safe integer.`);
   }
+  return value;
+}
 
-  const workspaceRoot = readOptionalEnv("P4_TS_E2E_WORKSPACE_ROOT");
-  const client = readOptionalEnv("P4_TS_E2E_CLIENT");
-  const stream = readOptionalEnv("P4_TS_E2E_STREAM");
-
-  if (!workspaceRoot || !client || !stream) {
-    throw new Error([
-      "P4_TS_E2E=1 requires a complete fixture target.",
-      "Set P4_TS_E2E_WORKSPACE_ROOT, P4_TS_E2E_CLIENT, and P4_TS_E2E_STREAM."
-    ].join(" "));
-  }
-
+export function loadE2EConfig(): E2EConfig {
   const repoRoot = resolve(import.meta.dir, "../../../../");
-  const testStreamPackageRoot = resolve(repoRoot, "packages/test-stream");
-  const p4Env: NodeJS.ProcessEnv = {
-    ...process.env,
-    P4CLIENT: client
-  };
-
-  const p4Port = readOptionalEnv("P4_TS_E2E_P4PORT");
-  const user = readOptionalEnv("P4_TS_E2E_USER");
-  const p4Config = readOptionalEnv("P4_TS_E2E_P4CONFIG");
-
-  if (p4Port) {
-    p4Env.P4PORT = p4Port;
-  }
-  if (user) {
-    p4Env.P4USER = user;
-  }
-  if (p4Config) {
-    p4Env.P4CONFIG = p4Config;
-  }
-
+  const client = readRequiredEnv("P4CLIENT");
   return {
-    enabled: true,
-    config: {
-      workspaceRoot,
-      client,
-      stream,
-      user,
-      host: readOptionalEnv("P4_TS_E2E_HOST"),
-      p4Port,
-      p4Config,
-      allowOpenedScenarios: readBooleanEnv("P4_TS_E2E_ALLOW_OPENED_SCENARIOS"),
-      allowSyncPreview: readBooleanEnv("P4_TS_E2E_ALLOW_SYNC_PREVIEW"),
-      repoRoot,
-      testStreamPackageRoot,
-      workspaceRootName: basename(workspaceRoot),
-      p4Env
-    }
+    workspaceRoot: readRequiredEnv("P4_TS_E2E_WORKSPACE_ROOT"),
+    client,
+    stream: readRequiredEnv("P4_TS_E2E_STREAM"),
+    p4Executable: readRequiredEnv("P4_TS_E2E_P4_EXECUTABLE"),
+    user: readRequiredEnv("P4USER"),
+    p4Port: readRequiredEnv("P4PORT"),
+    syncBaseChange: readRequiredPositiveIntegerEnv("P4_TS_E2E_SYNC_BASE_CHANGE"),
+    testStreamPackageRoot: resolve(repoRoot, "packages/test-stream"),
+    p4Env: { ...process.env, P4CLIENT: client }
   };
 }

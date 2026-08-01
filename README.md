@@ -64,6 +64,9 @@ bun run docs:build
 bun install
 bun run typecheck
 bun run test
+bun run test:e2e
 bun run build
 bun run docs:build
 ```
+
+`bun run test:e2e` is the canonical E2E command. It downloads or reuses hash-verified Perforce `p4`/`p4d` binaries, creates a disposable localhost server and stream from `packages/test-stream`, runs the full E2E suite, and removes the temporary fixture. The first run requires network access; binaries are cached outside the repository.

@@ -1,24 +1,18 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import { basename } from "node:path";
 import { loadE2EConfig } from "./config.js";
-import { loadFixture, validateFixtureMetadata } from "./fixture.js";
+import { loadFixture } from "./fixture.js";
 import { P4E2EHarness } from "./harness.js";
 
-const state = loadE2EConfig();
-const openedDescribe = describe.skipIf(!state.enabled || !state.config.allowOpenedScenarios);
+const config = loadE2EConfig();
+const fixture = loadFixture(config);
+const harness = new P4E2EHarness(config, fixture);
 
-openedDescribe("p4-ts e2e opened files", () => {
-  if (!state.enabled) {
-    return;
-  }
-
-  const fixture = loadFixture(state.config);
-  const harness = new P4E2EHarness(state.config, fixture);
+describe("p4-ts e2e opened files", () => {
   let numberedChange: number | null = null;
 
   beforeAll(async () => {
-    validateFixtureMetadata(state.config, fixture);
-    await harness.validateProvisionedFixture();
+    await harness.validateSeededWorkspace();
   });
 
   beforeEach(async () => {
@@ -47,10 +41,11 @@ openedDescribe("p4-ts e2e opened files", () => {
     expect(defaultFiles.map((entry) => basename(entry.localFile ?? ""))).toEqual(["new-feature.txt"]);
     expect(numberedFiles.map((entry) => entry.changelist)).toEqual([numberedChange, numberedChange]);
     expect(numberedFiles.map((entry) => entry.action).sort()).toEqual(["delete", "edit"]);
-    expect(numberedFiles.map((entry) => basename(entry.localFile ?? entry.clientFile ?? ""))).toEqual([
-      "config.json",
-      "getting-started.md"
-    ]);
+    expect(
+      numberedFiles
+        .map((entry) => basename(entry.localFile ?? entry.clientFile ?? ""))
+        .sort()
+    ).toEqual(["config.json", "getting-started.md"]);
 
     expect(pending.some((entry) => entry.change === numberedChange)).toBe(true);
     expect(pending.some((entry) => entry.change === "default")).toBe(true);

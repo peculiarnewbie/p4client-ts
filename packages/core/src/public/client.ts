@@ -1651,7 +1651,7 @@ export class P4Client {
     return {
       depotFile: this.toDepotPath(file.depotFile),
       clientFile: this.toClientPath(file.clientFile),
-      localFile: this.toLocalPath(file.path),
+      localFile: this.toLocalFile(file.path) ?? this.toLocalFile(file.clientFile),
       action,
       type: normalizeNullableString(file.type),
       changelist,
@@ -1987,7 +1987,7 @@ export class P4Client {
     return {
       depotFile: this.toDepotPath(row.depotFile),
       clientFile: this.toClientPath(row.clientFile),
-      localFile: this.toLocalPath(row.path),
+      localFile: this.toLocalFile(row.path) ?? this.toLocalFile(row.clientFile),
       action,
       type: normalizeNullableString(row.type),
       changelist: normalizeP4Change(row.change)
@@ -2002,6 +2002,9 @@ export class P4Client {
     };
 
     for (const row of rows) {
+      if (this.isReconcileMessageRow(row)) {
+        continue;
+      }
       const candidate = this.toReconcileCandidate(row);
       if (candidate.action === "add") result.added.push(candidate);
       else if (candidate.action === "edit") result.edited.push(candidate);
@@ -2009,6 +2012,14 @@ export class P4Client {
     }
 
     return result;
+  }
+
+  private isReconcileMessageRow(row: Record<string, unknown>): boolean {
+    const severity = normalizeNullableNumber(row.severity);
+    return normalizeNullableString(row.action) === null
+      && severity !== null
+      && severity < 3
+      && normalizeNullableString(row.data) !== null;
   }
 
   private getSyncCommandArgs(
@@ -2034,6 +2045,9 @@ export class P4Client {
     const errors: P4SyncErrorItem[] = [];
 
     for (const row of rows) {
+      if (this.isP4MessageRow(row)) {
+        continue;
+      }
       if (this.isSyncErrorRow(row)) {
         errors.push(this.toSyncErrorItem(row));
         continue;
@@ -2057,7 +2071,7 @@ export class P4Client {
     return {
       depotFile: this.toDepotPath(row.depotFile),
       clientFile: this.toClientPath(row.clientFile),
-      localFile: this.toLocalPath(row.path),
+      localFile: this.toLocalFile(row.path) ?? this.toLocalFile(row.clientFile),
       revision: normalizeNullableNumber(row.rev),
       action: this.toFileAction(row.action),
       fileSize: normalizeNullableNumber(row.fileSize)
@@ -2067,6 +2081,17 @@ export class P4Client {
   private isSyncErrorRow(row: Record<string, unknown>): boolean {
     const severity = normalizeNullableNumber(row.severity);
     return severity !== null && severity >= 3;
+  }
+
+  private isP4MessageRow(row: Record<string, unknown>): boolean {
+    const hasFileField = [row.depotFile, row.clientFile, row.path].some(
+      (value) => normalizeNullableString(value) !== null
+    );
+    const severity = normalizeNullableNumber(row.severity);
+    return !hasFileField
+      && severity !== null
+      && severity < 3
+      && normalizeNullableString(row.data) !== null;
   }
 
   private toSyncErrorItem(row: Record<string, unknown>): P4SyncErrorItem {
@@ -2095,6 +2120,22 @@ export class P4Client {
   private toLocalPath(value: unknown): P4LocalPath | null {
     const normalized = normalizeNullableString(value);
     return normalized ? normalized as P4LocalPath : null;
+  }
+
+  private toLocalFile(value: unknown): P4LocalPath | null {
+    const normalized = normalizeNullableString(value);
+    if (normalized === null) {
+      return null;
+    }
+    if (isAbsolute(normalized) || !normalized.startsWith("//")) {
+      return normalized as P4LocalPath;
+    }
+
+    const clientRelativePath = /^\/\/[^/]+\/(.+)$/.exec(normalized)?.[1];
+    if (clientRelativePath === undefined || this.cwd === undefined) {
+      return null;
+    }
+    return resolve(this.cwd, ...clientRelativePath.split("/")) as P4LocalPath;
   }
 
   private toFileAction(value: unknown): P4FileAction | null {

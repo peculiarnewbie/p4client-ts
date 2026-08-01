@@ -293,35 +293,4 @@ bun run docs:build
 
 ## End-to-End Tests
 
-The e2e suite targets a pre-provisioned Perforce fixture workspace seeded from `@p4-ts/test-stream`.
-
-- The suite is manual opt-in and skipped unless `P4_TS_E2E=1`.
-- The harness validates the configured fixture target; it does not provision streams, clients, or submit seed content.
-- Scenario setup may use local `p4 edit/add/delete`, numbered changelists, `sync`, and `revert`, with cleanup returning the workspace to baseline.
-
-Required env vars:
-
-```bash
-P4_TS_E2E=1
-P4_TS_E2E_WORKSPACE_ROOT=/absolute/path/to/workspace
-P4_TS_E2E_CLIENT=p4ts_e2e_main
-P4_TS_E2E_STREAM=//p4ts/main
-```
-
-Optional env vars:
-
-```bash
-P4_TS_E2E_USER=p4ts-e2e
-P4_TS_E2E_HOST=build-host
-P4_TS_E2E_P4PORT=ssl:perforce.example.com:1666
-P4_TS_E2E_P4CONFIG=.p4config
-P4_TS_E2E_ALLOW_OPENED_SCENARIOS=1
-P4_TS_E2E_ALLOW_SYNC_PREVIEW=1
-```
-
-External prerequisite checklist:
-
-1. Create a dedicated stream matching `packages/test-stream/stream-manifest.json`.
-2. Create a dedicated client/workspace for that stream.
-3. Seed and submit the contents of `packages/test-stream/seed` outside the test harness.
-4. Optionally prepare a behind-head workspace state for sync-preview coverage.
+`bun run test:e2e` is the canonical E2E command. It downloads or reuses hash-verified Perforce `p4`/`p4d` binaries, creates a disposable localhost server, stream, client, and workspace from `@p4-ts/test-stream`, runs all scenarios, and cleans up the temporary fixture. The first run requires network access. Binaries are cached outside the repository.

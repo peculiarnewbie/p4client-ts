@@ -444,6 +444,9 @@ export function resolveDepotDiffRevisions(
 
 /**
  * Infer depot revision endpoints for a shelved changelist file.
+ *
+ * For `p4 describe -S`, the reported revision is the depot revision the
+ * shelved file was based on; the shelved content is addressed by `@=change`.
  */
 export function resolveShelvedDiffRevisions(
   file: {
@@ -472,13 +475,13 @@ export function resolveShelvedDiffRevisions(
   }
 
   if (action === "edit" || action === "integrate" || action === "branch") {
-    if (revision === null || revision <= 1) {
+    if (revision === null || revision < 1) {
       throw new Error(
         `Unable to infer base revision for shelved file ${file.depotFile}.`
       );
     }
 
-    return { fromRevision: revision - 1, toRevision: shelfRevision };
+    return { fromRevision: revision, toRevision: shelfRevision };
   }
 
   throw new Error(

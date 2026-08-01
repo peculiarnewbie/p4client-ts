@@ -1,14 +1,9 @@
-import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { P4Client } from "../../src/public/client.js";
 import type { P4CommandOptions, P4CommandResult, SyncOptions } from "../../src/public/types.js";
 import type { E2EConfig } from "./config.js";
-import {
-  assertProvisionedSentinels,
-  relativeFixturePath,
-  type E2EFixture,
-  type FixtureSentinel
-} from "./fixture.js";
+import { assertSeededWorkspace, type E2EFixture, type FixtureSentinel } from "./fixture.js";
 
 const CONFIG_PATH = "src/app/config.json";
 const GUIDE_PATH = "docs/guide/getting-started.md";
@@ -22,9 +17,9 @@ export class P4E2EHarness {
     readonly fixture: E2EFixture
   ) {
     this.client = new P4Client({
+      executable: config.p4Executable,
       cwd: config.workspaceRoot,
-      env: config.p4Env,
-      hostName: config.host ?? undefined
+      env: config.p4Env
     });
   }
 
@@ -40,9 +35,9 @@ export class P4E2EHarness {
     return sentinel;
   }
 
-  async validateProvisionedFixture() {
+  async validateSeededWorkspace() {
     await this.cleanupWorkspace();
-    assertProvisionedSentinels(this.fixture);
+    assertSeededWorkspace(this.fixture);
   }
 
   async cleanupWorkspace() {
@@ -65,6 +60,10 @@ export class P4E2EHarness {
 
   async sync(options: SyncOptions = {}) {
     return this.client.sync({ fileSpec: "...", ...options });
+  }
+
+  async prepareBehindHeadWorkspace() {
+    await this.run(["sync", `@${this.config.syncBaseChange}`]);
   }
 
   async assertCleanWorkspace() {
@@ -104,10 +103,10 @@ export class P4E2EHarness {
   }
 
   async openOpenedFilesScenario(change: number) {
-    writeFileSync(this.getPath(NEW_FEATURE_PATH), "p4-ts e2e opened-file fixture\n", "utf8");
-
     await this.run(["edit", "-c", String(change), this.getPath(CONFIG_PATH)]);
+    appendFileSync(this.getPath(CONFIG_PATH), "\n", "utf8");
     await this.run(["delete", "-c", String(change), this.getPath(GUIDE_PATH)]);
+    writeFileSync(this.getPath(NEW_FEATURE_PATH), "p4-ts e2e opened-file fixture\n", "utf8");
     await this.run(["add", this.getPath(NEW_FEATURE_PATH)]);
   }
 
@@ -156,24 +155,12 @@ export class P4E2EHarness {
     copyFileSync(sentinel.seedPath, sentinel.workspacePath);
   }
 
-  sentinelRelativePaths() {
-    return this.fixture.sentinels.map((sentinel) =>
-      relativeFixturePath(this.config.workspaceRoot, sentinel.workspacePath)
-    );
-  }
-
   async run(args: string[], options: P4CommandOptions = {}): Promise<P4CommandResult> {
     return this.client.run(args, {
       cwd: this.config.workspaceRoot,
       env: this.config.p4Env,
       ...options
     });
-  }
-
-  ensureSentinelExists(relativePath: string) {
-    if (!existsSync(this.getPath(relativePath))) {
-      throw new Error(`Expected fixture file is missing from workspace: ${relativePath}`);
-    }
   }
 }
 

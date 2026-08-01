@@ -1780,12 +1780,12 @@ describe("P4Client", () => {
       })
     ).resolves.toMatchObject({
       source: "depot",
-      fromRevision: 6,
+      fromRevision: 7,
       toRevision: "@=12345"
     });
 
     expect(calls).toEqual([
-      ["diff2", "-du", "//Project/main/foo.txt#6", "//Project/main/foo.txt@=12345"]
+      ["diff2", "-du", "//Project/main/foo.txt#7", "//Project/main/foo.txt@=12345"]
     ]);
   });
 
@@ -2302,7 +2302,7 @@ describe("P4Client", () => {
 
     expect(calls).toEqual([
       ["-Mj", "-z", "tag", "describe", "-S", "-s", "12345"],
-      ["diff2", "-du", "//Project/main/foo.txt#6", "//Project/main/foo.txt@=12345"]
+      ["diff2", "-du", "//Project/main/foo.txt#7", "//Project/main/foo.txt@=12345"]
     ]);
   });
 

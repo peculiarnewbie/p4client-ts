@@ -317,8 +317,8 @@ describe("resolveDiffPlan", () => {
     ).toEqual({
       source: "depot",
       command: "diff2",
-      args: ["-du", "//Project/main/foo.txt#3", "//Project/main/foo.txt@=12345"],
-      fromRevision: 3,
+      args: ["-du", "//Project/main/foo.txt#4", "//Project/main/foo.txt@=12345"],
+      fromRevision: 4,
       toRevision: "@=12345"
     });
   });
@@ -367,7 +367,7 @@ describe("resolveShelvedDiffRevisions", () => {
         revision: 7,
         shelvedChange: 12345
       })
-    ).toEqual({ fromRevision: 6, toRevision: "@=12345" });
+    ).toEqual({ fromRevision: 7, toRevision: "@=12345" });
 
     expect(
       resolveShelvedDiffRevisions({
@@ -379,15 +379,15 @@ describe("resolveShelvedDiffRevisions", () => {
     ).toEqual({ fromRevision: 7, toRevision: "none" });
   });
 
-  it("throws when a shelved edit has no prior revision", () => {
-    expect(() =>
+  it("uses the first depot revision as the base for a shelved edit", () => {
+    expect(
       resolveShelvedDiffRevisions({
         depotFile: "//Project/main/edit.txt",
         action: "edit",
         revision: 1,
         shelvedChange: 12345
       })
-    ).toThrow("Unable to infer base revision");
+    ).toEqual({ fromRevision: 1, toRevision: "@=12345" });
   });
 });
 

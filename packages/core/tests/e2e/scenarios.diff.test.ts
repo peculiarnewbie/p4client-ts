@@ -2,26 +2,20 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test
 import { writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { loadE2EConfig } from "./config.js";
-import { loadFixture, validateFixtureMetadata } from "./fixture.js";
+import { loadFixture } from "./fixture.js";
 import { P4E2EHarness } from "./harness.js";
 
 const CONFIG_PATH = "src/app/config.json";
 
-const state = loadE2EConfig();
-const diffDescribe = describe.skipIf(!state.enabled || !state.config.allowOpenedScenarios);
+const config = loadE2EConfig();
+const fixture = loadFixture(config);
+const harness = new P4E2EHarness(config, fixture);
 
-diffDescribe("p4-ts e2e diff inspection", () => {
-  if (!state.enabled) {
-    return;
-  }
-
-  const fixture = loadFixture(state.config);
-  const harness = new P4E2EHarness(state.config, fixture);
+describe("p4-ts e2e diff inspection", () => {
   let numberedChange: number | null = null;
 
   beforeAll(async () => {
-    validateFixtureMetadata(state.config, fixture);
-    await harness.validateProvisionedFixture();
+    await harness.validateSeededWorkspace();
   });
 
   beforeEach(async () => {

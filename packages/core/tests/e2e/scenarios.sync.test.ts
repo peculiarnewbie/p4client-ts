@@ -1,26 +1,20 @@
 import { beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import { loadE2EConfig } from "./config.js";
-import { loadFixture, validateFixtureMetadata } from "./fixture.js";
+import { loadFixture } from "./fixture.js";
 import { P4E2EHarness } from "./harness.js";
 
-const state = loadE2EConfig();
-const syncDescribe = describe.skipIf(!state.enabled || !state.config.allowSyncPreview);
+const config = loadE2EConfig();
+const fixture = loadFixture(config);
+const harness = new P4E2EHarness(config, fixture);
 
-syncDescribe("p4-ts e2e sync", () => {
-  if (!state.enabled) {
-    return;
-  }
-
-  const fixture = loadFixture(state.config);
-  const harness = new P4E2EHarness(state.config, fixture);
-
+describe("p4-ts e2e sync", () => {
   beforeAll(async () => {
-    validateFixtureMetadata(state.config, fixture);
-    await harness.validateProvisionedFixture();
+    await harness.validateSeededWorkspace();
   });
 
   beforeEach(async () => {
     await harness.cleanupWorkspace();
+    await harness.prepareBehindHeadWorkspace();
   });
 
   it("supports preview-first sync workflows against a behind-head workspace", async () => {

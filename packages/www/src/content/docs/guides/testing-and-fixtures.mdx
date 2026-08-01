@@ -29,14 +29,14 @@ const p4 = new P4Client({
 const environment = await p4.getEnvironment();
 ```
 
-## End-to-End Fixture Package
+## End-to-End Tests
 
-This repository also includes `packages/test-stream`, which contains the canonical stream seed used by the e2e test harness.
+This repository includes `packages/test-stream`, which contains the canonical stream seed used by the E2E harness. Run the canonical E2E command from the repository root:
 
-The e2e suite is intentionally manual:
+```bash
+bun run test:e2e
+```
 
-- set `P4_TS_E2E=1`
-- point the harness at a pre-provisioned workspace root
-- seed and submit the fixture content outside the test harness
+The runner downloads or reuses hash-verified Perforce `p4`/`p4d` binaries, creates a disposable localhost server and workspace, provisions the stream, seeds the fixture, runs all E2E scenarios, and cleans up. The first run requires network access.
 
-See the repository README files for the current environment variables and fixture requirements. Use the [API Reference](/api/) for exact shapes while building tests around the client.
+Use the [API Reference](/api/) for exact shapes while building tests around the client.
