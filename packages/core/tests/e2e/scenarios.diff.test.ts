@@ -46,7 +46,7 @@ describe("p4-ts e2e diff inspection", () => {
 
     expect(description.change).toBe(numberedChange);
     expect(description.status).toBe("pending");
-    expect(description.files.map((file) => file.action).sort()).toEqual(["delete", "edit"]);
+    expect(description.files.map((file) => String(file.action)).sort()).toEqual(["delete", "edit"]);
     expect(summary.files.some((file) => file.patchLoadState === "deferred")).toBe(true);
 
     if (!editedFile) {
@@ -67,7 +67,7 @@ describe("p4-ts e2e diff inspection", () => {
     expect(diffResult.exitCode).toBeLessThanOrEqual(1);
     expect(diffResult.unifiedDiff.length).toBeGreaterThan(0);
     expect(diffResult.additions + diffResult.deletions).toBeGreaterThan(0);
-    expect(basename(openedEdit?.localFile ?? "")).toBe(CONFIG_PATH.split("/").pop());
+    expect(basename(openedEdit?.localFile ?? "")).toBe(CONFIG_PATH.split("/").pop()!);
   });
 
   it("reviews shelved changelist content without local opens", async () => {
@@ -109,7 +109,7 @@ describe("p4-ts e2e diff inspection", () => {
 
     expect(shelved.items.some((item) => item.change === numberedChange)).toBe(true);
     expect(description.contentSource).toBe("shelved");
-    expect(description.files.map((file) => file.action)).toEqual(["edit"]);
+    expect(description.files.map((file) => String(file.action))).toEqual(["edit"]);
     expect(opened).toEqual([]);
     expect(summary.files[0]).toMatchObject({
       localFile: null,

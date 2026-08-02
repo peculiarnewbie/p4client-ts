@@ -37,10 +37,10 @@ describe("p4-ts e2e opened files", () => {
     const numberedFiles = await harness.client.getChangelistFiles(numberedChange);
     const pending = await harness.client.listPendingChangelists({ includeDefault: true });
 
-    expect(openedFiles.map((entry) => entry.action).sort()).toEqual(["add", "delete", "edit"]);
+    expect(openedFiles.map((entry) => String(entry.action)).sort()).toEqual(["add", "delete", "edit"]);
     expect(defaultFiles.map((entry) => basename(entry.localFile ?? ""))).toEqual(["new-feature.txt"]);
     expect(numberedFiles.map((entry) => entry.changelist)).toEqual([numberedChange, numberedChange]);
-    expect(numberedFiles.map((entry) => entry.action).sort()).toEqual(["delete", "edit"]);
+    expect(numberedFiles.map((entry) => String(entry.action)).sort()).toEqual(["delete", "edit"]);
     expect(
       numberedFiles
         .map((entry) => basename(entry.localFile ?? entry.clientFile ?? ""))

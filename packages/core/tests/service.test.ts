@@ -1,9 +1,27 @@
 import { describe, expect, it } from "bun:test";
 import { Effect, Stream } from "effect";
-import { P4CommandError } from "../src/public/errors.js";
+import { P4ClientOperationError, P4CommandError } from "../src/public/errors.js";
 import { createP4Service } from "../src/public/service.js";
 
 describe("createP4Service", () => {
+  it("wraps unexpected client failures in the service error type", async () => {
+    const cause = new Error("unexpected client failure");
+    const service = createP4Service({
+      executor: async () => {
+        throw cause;
+      }
+    });
+
+    const recovered = await Effect.runPromise(
+      service.listDepots().pipe(
+        Effect.catch((error) => Effect.succeed(error))
+      )
+    );
+
+    expect(recovered).toBeInstanceOf(P4ClientOperationError);
+    expect((recovered as P4ClientOperationError).cause).toBe(cause);
+  });
+
   it("keeps rejected client calls in the Effect error channel", async () => {
     const service = createP4Service({
       executor: async (command, args) => ({
@@ -558,5 +576,45 @@ describe("createP4Service", () => {
       ],
       hasMore: false
     });
+  });
+
+  it("exposes the remaining browse and materialization wrappers", async () => {
+    const service = createP4Service({
+      executor: async (command, args) => ({
+        command,
+        args,
+        stdout: "",
+        stderr: "",
+        exitCode: 0
+      })
+    });
+
+    await expect(Effect.runPromise(service.getChangelistFiles("default"))).resolves.toEqual([]);
+    await expect(Effect.runPromise(service.listDepots())).resolves.toEqual([]);
+    await expect(
+      Effect.runPromise(service.listDepotDirs({ depotPath: "//Project/main" }))
+    ).resolves.toEqual({ items: [], hasMore: false });
+    await expect(
+      Effect.runPromise(service.listDepotFiles({ depotPath: "//Project/main" }))
+    ).resolves.toEqual({ items: [], hasMore: false });
+    await expect(Effect.runPromise(service.statFiles({ fileSpec: "//Project/main/..." }))).resolves.toEqual([]);
+    await expect(Effect.runPromise(service.whereFiles({ fileSpec: "//Project/main/..." }))).resolves.toEqual([]);
+    await expect(
+      Effect.runPromise(service.getFileHistory({ depotFile: "//Project/main/missing.txt" }))
+    ).resolves.toEqual({ depotFile: "//Project/main/missing.txt", revisions: [] });
+    await expect(Effect.runPromise(service.listUsers())).resolves.toEqual([]);
+    await expect(Effect.runPromise(service.listStreams())).resolves.toEqual([]);
+    await expect(
+      Effect.runPromise(service.annotateFile({ depotFile: "//Project/main/missing.txt" }))
+    ).resolves.toEqual({
+      depotFile: "//Project/main/missing.txt",
+      revision: null,
+      lines: []
+    });
+    await expect(
+      Effect.runPromise(
+        service.materializeDepotFiles({ directory: ".", files: [], maxFiles: 1 })
+      )
+    ).resolves.toMatchObject({ items: [], totalCount: 0 });
   });
 });

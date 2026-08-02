@@ -8,9 +8,13 @@ import {
   normalizeP4Change,
   parseP4JsonLines,
   parseP4KeyValueOutput,
+  parseTaggedJsonLine,
   parseP4PrintHeader,
   parseP4ProgressLine,
   parseUnifiedDiff,
+  requireNonNegativeInteger,
+  requirePositiveInteger,
+  requirePositiveTimeoutMs,
   resolveDepotDiffRevisions,
   resolveDiffPlan,
   resolveShelvedDiffRevisions,
@@ -79,6 +83,13 @@ describe("parseP4JsonLines", () => {
   });
 });
 
+describe("parseTaggedJsonLine", () => {
+  it("ignores blank and human-readable progress lines", () => {
+    expect(parseTaggedJsonLine("   ")).toBeNull();
+    expect(parseTaggedJsonLine("Scanning workspace: 1/2")).toBeNull();
+  });
+});
+
 describe("parseP4ProgressLine", () => {
   it("extracts best-effort progress fields from a human-readable line", () => {
     expect(parseP4ProgressLine("Scanning workspace: 3/12 (25%)")).toEqual({
@@ -109,6 +120,7 @@ describe("isLocalWorkspace", () => {
         { rootExists: () => false }
       )
     ).toBe(false);
+    expect(isLocalWorkspace({ host: null }, "DESKTOP-WORK-ARIF")).toBe(true);
   });
 });
 
@@ -124,6 +136,10 @@ describe("workspaceStreamFileSpec", () => {
 });
 
 describe("requireWorkspaceStreamFileSpec", () => {
+  it("returns a recursive spec for stream workspaces", () => {
+    expect(requireWorkspaceStreamFileSpec({ stream: "//Project/main" })).toBe("//Project/main/...");
+  });
+
   it("throws for non-stream workspaces", () => {
     expect(() => requireWorkspaceStreamFileSpec({ stream: null })).toThrow("not stream-based");
   });
@@ -270,6 +286,40 @@ describe("resolveDepotDiffRevisions", () => {
       })
     ).toEqual({ fromRevision: 7, toRevision: "none" });
   });
+
+  it("handles add/delete/edit edge cases and unsupported actions", () => {
+    expect(
+      resolveDepotDiffRevisions({
+        depotFile: "//Project/main/new.txt",
+        action: "add",
+        revision: null
+      })
+    ).toEqual({ fromRevision: "none", toRevision: "have" });
+
+    expect(
+      resolveDepotDiffRevisions({
+        depotFile: "//Project/main/deleted.txt",
+        action: "delete",
+        revision: null
+      })
+    ).toBeNull();
+
+    expect(
+      resolveDepotDiffRevisions({
+        depotFile: "//Project/main/first.txt",
+        action: "edit",
+        revision: 1
+      })
+    ).toBeNull();
+
+    expect(
+      resolveDepotDiffRevisions({
+        depotFile: "//Project/main/unknown.txt",
+        action: "move/add",
+        revision: 2
+      })
+    ).toBeNull();
+  });
 });
 
 describe("resolveDiffPlan", () => {
@@ -388,6 +438,52 @@ describe("resolveShelvedDiffRevisions", () => {
         shelvedChange: 12345
       })
     ).toEqual({ fromRevision: 1, toRevision: "@=12345" });
+  });
+
+  it("rejects shelved deletes and edits without a base revision", () => {
+    expect(() =>
+      resolveShelvedDiffRevisions({
+        depotFile: "//Project/main/delete.txt",
+        action: "delete",
+        revision: null,
+        shelvedChange: 12345
+      })
+    ).toThrow("base revision");
+
+    expect(() =>
+      resolveShelvedDiffRevisions({
+        depotFile: "//Project/main/edit.txt",
+        action: "edit",
+        revision: null,
+        shelvedChange: 12345
+      })
+    ).toThrow("base revision");
+
+    expect(() =>
+      resolveShelvedDiffRevisions({
+        depotFile: "//Project/main/refresh.txt",
+        action: "refresh",
+        revision: 2,
+        shelvedChange: 12345
+      })
+    ).toThrow("Unable to infer depot revisions");
+  });
+});
+
+describe("numeric option guards", () => {
+  it("accepts valid integer and timeout values", () => {
+    expect(requirePositiveInteger(3, "limit")).toBe(3);
+    expect(requireNonNegativeInteger(0, "change")).toBe(0);
+    expect(requirePositiveTimeoutMs(0.5)).toBe(0.5);
+  });
+
+  it("rejects invalid integer and timeout values", () => {
+    expect(() => requirePositiveInteger(0, "limit")).toThrow("positive finite integer");
+    expect(() => requirePositiveInteger(Number.NaN, "limit")).toThrow("positive finite integer");
+    expect(() => requireNonNegativeInteger(-1, "change")).toThrow("non-negative finite integer");
+    expect(() => requireNonNegativeInteger(1.5, "change")).toThrow("non-negative finite integer");
+    expect(() => requirePositiveTimeoutMs(0)).toThrow("positive finite number");
+    expect(() => requirePositiveTimeoutMs(Number.POSITIVE_INFINITY)).toThrow("positive finite number");
   });
 });
 
