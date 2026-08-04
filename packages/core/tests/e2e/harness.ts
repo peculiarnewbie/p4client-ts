@@ -8,6 +8,8 @@ import { assertSeededWorkspace, type E2EFixture, type FixtureSentinel } from "./
 const CONFIG_PATH = "src/app/config.json";
 const GUIDE_PATH = "docs/guide/getting-started.md";
 const NEW_FEATURE_PATH = "src/app/new-feature.txt";
+const RENAME_SOURCE_PATH = "history/chain-source.txt";
+const RENAME_TARGET_PATH = "history/chain-renamed.txt";
 
 export class P4E2EHarness {
   readonly client: P4Client;
@@ -131,6 +133,56 @@ export class P4E2EHarness {
 
     rmSync(this.getPath(GUIDE_PATH), { force: true });
     writeFileSync(this.getPath(NEW_FEATURE_PATH), "p4-ts e2e reconcile fixture\n", "utf8");
+  }
+
+  /**
+   * Submit a two-revision file and then rename it, so `p4 filelog -i` on the
+   * renamed path reports an integration chain of two depot paths.
+   *
+   * Re-running against a server that already carries the chain is a no-op, so
+   * the scenario stays usable outside the disposable-p4d runner.
+   */
+  async seedRenameChain(): Promise<{ sourceDepotFile: string; targetDepotFile: string }> {
+    const sourceDepotFile = `${this.config.stream}/${RENAME_SOURCE_PATH}`;
+    const targetDepotFile = `${this.config.stream}/${RENAME_TARGET_PATH}`;
+    if (await this.depotFileExists(targetDepotFile)) {
+      return { sourceDepotFile, targetDepotFile };
+    }
+
+    const source = this.getPath(RENAME_SOURCE_PATH);
+    mkdirSync(dirname(source), { recursive: true });
+    writeFileSync(source, "p4-ts rename chain revision 1\n", "utf8");
+    await this.run(["add", source]);
+    await this.run(["submit", "-d", "p4-ts E2E rename chain add"]);
+
+    await this.run(["edit", source]);
+    appendFileSync(source, "p4-ts rename chain revision 2\n", "utf8");
+    await this.run(["submit", "-d", "p4-ts E2E rename chain edit"]);
+
+    await this.run(["edit", source]);
+    await this.run(["move", source, this.getPath(RENAME_TARGET_PATH)]);
+    await this.run(["submit", "-d", "p4-ts E2E rename chain move"]);
+
+    if (!(await this.depotFileExists(targetDepotFile))) {
+      throw new Error(`Seeding the rename chain did not submit ${targetDepotFile}.`);
+    }
+
+    return { sourceDepotFile, targetDepotFile };
+  }
+
+  /** Exit codes vary by message severity, so key on tagged output instead. */
+  async depotFileExists(depotFile: string): Promise<boolean> {
+    const result = await this.run(["-Mj", "-z", "tag", "files", depotFile], {
+      allowNonZeroExit: true
+    });
+    return result.stdout.includes("\"depotFile\"");
+  }
+
+  async revertRenameChain() {
+    await this.run(
+      ["revert", this.getPath(RENAME_SOURCE_PATH), this.getPath(RENAME_TARGET_PATH)],
+      { allowNonZeroExit: true }
+    );
   }
 
   async revertKnownPaths() {

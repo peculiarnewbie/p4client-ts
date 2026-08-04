@@ -1066,13 +1066,28 @@ export interface P4WhereMapping {
  * Options for {@link P4Client.getFileHistory}.
  */
 export interface GetFileHistoryOptions {
-  /** Depot, client, or local file spec whose history should be listed. */
+  /**
+   * Depot, client, or local file spec whose history should be listed.
+   *
+   * A wildcard spec matches several files, and a renamed file carries its
+   * pre-rename ancestry even without {@link followBranches}; either way the
+   * revisions are merged as described on {@link P4FileHistory.revisions}.
+   */
   depotFile: string;
-  /** Maximum revisions to return via `p4 filelog -m`. */
+  /**
+   * Maximum revisions to return. `p4 filelog -m` bounds each depot path
+   * separately, so this bounds the merged total described on
+   * {@link P4FileHistory.revisions} after merging.
+   */
   maxRevisions?: number;
   /**
    * Follow file history across integrations, branches, and renames using
    * `p4 filelog -i`. Defaults to `false`.
+   *
+   * Perforce reports one row per depot path in the integration chain, and every
+   * path's revisions are merged into {@link P4FileHistory.revisions}. Read
+   * {@link P4FileRevision.depotFile} to tell which path a revision came from,
+   * since revision numbers restart at 1 on each path.
    */
   followBranches?: boolean;
   /** Abort the underlying `p4 filelog` call. */
@@ -1083,7 +1098,16 @@ export interface GetFileHistoryOptions {
  * One revision in a file's history.
  */
 export interface P4FileRevision {
-  /** Revision number. */
+  /**
+   * Depot path this revision belongs to.
+   *
+   * A merged history spans several paths when integrations are followed or the
+   * spec matched more than one file, and revision numbers restart at 1 on each
+   * path — so this is what disambiguates a repeated {@link revision} and labels
+   * cross-path ancestry.
+   */
+  depotFile: P4DepotPath;
+  /** Revision number, counted from 1 within {@link depotFile}. */
   revision: number;
   /** Changelist that submitted this revision. */
   change: number | null;
@@ -1111,9 +1135,19 @@ export interface P4FileRevision {
  * File revision history returned by `getFileHistory()`.
  */
 export interface P4FileHistory {
-  /** Depot path the history belongs to. */
+  /**
+   * The requested head path, resolved to depot syntax. Following integrations
+   * never repoints this at an ancestor.
+   */
   depotFile: P4DepotPath;
-  /** Revisions ordered newest first, as emitted by `p4 filelog`. */
+  /**
+   * Revisions from every depot path `p4 filelog` reported, merged into one list
+   * ordered by changelist descending — falling back to submit time when neither
+   * side reports a changelist. Revision number is not the ordering key because
+   * it restarts at 1 on each path; read {@link P4FileRevision.depotFile} to
+   * attribute a revision. {@link GetFileHistoryOptions.maxRevisions} bounds this
+   * merged total.
+   */
   revisions: P4FileRevision[];
 }
 

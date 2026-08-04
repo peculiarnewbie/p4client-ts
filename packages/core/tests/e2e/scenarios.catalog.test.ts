@@ -65,6 +65,52 @@ describe("p4-ts e2e catalog and history", () => {
     expect(annotation.lines.some((line) => line.data.includes("p4-ts-fixture"))).toBe(true);
   });
 
+  it("merges a real rename chain and bounds the merged total", async () => {
+    let chain: { sourceDepotFile: string; targetDepotFile: string };
+    try {
+      chain = await harness.seedRenameChain();
+    } finally {
+      await harness.revertRenameChain();
+    }
+
+    const followed = await harness.client.getFileHistory({
+      depotFile: chain.targetDepotFile,
+      followBranches: true
+    });
+    const unfollowed = await harness.client.getFileHistory({
+      depotFile: chain.targetDepotFile
+    });
+    const bounded = await harness.client.getFileHistory({
+      depotFile: chain.targetDepotFile,
+      followBranches: true,
+      maxRevisions: 2
+    });
+
+    // The rename leaves one revision on the new path and two on the old one,
+    // and the head path stays the requested one rather than the ancestor.
+    expect(String(followed.depotFile)).toBe(chain.targetDepotFile);
+    expect(followed.revisions.map((revision) => String(revision.depotFile))).toEqual([
+      chain.targetDepotFile,
+      chain.sourceDepotFile,
+      chain.sourceDepotFile
+    ]);
+
+    // Real p4 reports rename ancestry as extra rows even without `-i`, which is
+    // why merging is not gated on followBranches: reading only the first row
+    // dropped the pre-rename history here too.
+    expect(unfollowed.revisions.map((revision) => String(revision.depotFile))).toContain(
+      chain.sourceDepotFile
+    );
+
+    const changes = followed.revisions.map((revision) => revision.change);
+    expect(changes.every((change) => change !== null)).toBe(true);
+    expect([...changes].sort((left, right) => Number(right) - Number(left))).toEqual(changes);
+
+    // `p4 filelog -m 2 -i` would have returned three revisions, two per path.
+    expect(bounded.revisions).toHaveLength(2);
+    expect(bounded.revisions).toEqual(followed.revisions.slice(0, 2));
+  });
+
   it("lists exact historical revisions and materializes one through real p4", async () => {
     const historical = await harness.client.listDepotFilesAtChange({
       depotPath: "//p4ts/main/...",

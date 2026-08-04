@@ -838,14 +838,27 @@ export class P4Client {
    * Full changelist descriptions are requested with `-l`. Set `followBranches`
    * to trace history across integrations, branches, and renames. A
    * non-existent file resolves to an empty revision list rather than throwing.
+   *
+   * `p4 filelog` emits one row per depot path, and several paths come back not
+   * only from `-i` but also from a wildcard spec and from a renamed file, whose
+   * ancestry Perforce reports even without `-i`. Revisions from every path are
+   * merged into one list
+   * ordered by changelist descending, each tagged with its originating
+   * {@link P4FileRevision.depotFile}, and `maxRevisions` bounds that merged
+   * total.
    */
   async getFileHistory(options: GetFileHistoryOptions): Promise<P4FileHistory> {
+    const maxRevisions =
+      options.maxRevisions === undefined
+        ? undefined
+        : requirePositiveInteger(options.maxRevisions, "maxRevisions");
+
     const args = ["-Mj", "-z", "tag", "filelog", "-l"];
     if (options.followBranches) {
       args.push("-i");
     }
-    if (options.maxRevisions !== undefined) {
-      args.push("-m", String(requirePositiveInteger(options.maxRevisions, "maxRevisions")));
+    if (maxRevisions !== undefined) {
+      args.push("-m", String(maxRevisions));
     }
     args.push(options.depotFile);
 
@@ -857,9 +870,15 @@ export class P4Client {
       return { depotFile: this.toDepotPath(options.depotFile)!, revisions: [] };
     }
 
+    // `-m N` bounds each path separately, so the merged list can exceed the
+    // requested total and has to be sliced here. Taking the head path from the
+    // first row rather than from `options.depotFile` keeps client and local
+    // specs resolved to depot syntax; with `-i` the first row is the requested
+    // path, never an ancestor.
+    const merged = this.mergeFileRevisions(rows);
     return {
       depotFile: this.toDepotPath(row.depotFile) ?? this.toDepotPath(options.depotFile)!,
-      revisions: this.toFileRevisions(row)
+      revisions: maxRevisions === undefined ? merged : merged.slice(0, maxRevisions)
     };
   }
 
@@ -1865,7 +1884,40 @@ export class P4Client {
     };
   }
 
-  private toFileRevisions(row: Record<string, unknown>): P4FileRevision[] {
+  /**
+   * Flatten every `p4 filelog` row into one newest-first revision list.
+   *
+   * Revision numbers restart at 1 on each path, so the merged list is ordered
+   * by changelist descending (falling back to submit time when both sides lack
+   * a changelist) rather than by revision number, which would interleave
+   * unrelated paths. Equal or incomparable keys keep input order, which is row
+   * order and newest-first within a row.
+   */
+  private mergeFileRevisions(rows: Record<string, unknown>[]): P4FileRevision[] {
+    const merged: P4FileRevision[] = [];
+    const seen = new Set<string>();
+
+    for (const row of rows) {
+      const depotFile = this.toDepotPath(row.depotFile);
+      if (depotFile === null) {
+        continue;
+      }
+
+      for (const revision of this.toFileRevisions(row, depotFile)) {
+        // A wide integration graph can surface the same path in several rows.
+        const key = `${depotFile}#${revision.revision}`;
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        merged.push(revision);
+      }
+    }
+
+    return merged.sort(compareFileRevisionsNewestFirst);
+  }
+
+  private toFileRevisions(row: Record<string, unknown>, depotFile: P4DepotPath): P4FileRevision[] {
     const indexes = Object.keys(row)
       .map((key) => /^rev(\d+)$/.exec(key)?.[1])
       .filter((index): index is string => index !== undefined)
@@ -1882,6 +1934,7 @@ export class P4Client {
 
       const time = normalizeNullableString(row[`time${index}`]);
       revisions.push({
+        depotFile,
         revision,
         change: normalizeNullableNumber(row[`change${index}`]),
         action: this.toFileAction(row[`action${index}`]),
@@ -2363,4 +2416,30 @@ export class P4Client {
   } {
     return createAsyncEventQueue<T>();
   }
+}
+
+/**
+ * Order merged `p4 filelog` revisions newest first.
+ *
+ * Changelists are compared when both sides report one, submit time otherwise.
+ * Returning `0` for incomparable pairs leaves them in input order, since
+ * `Array.prototype.sort` is stable.
+ */
+function compareFileRevisionsNewestFirst(left: P4FileRevision, right: P4FileRevision): number {
+  if (left.change !== null && right.change !== null) {
+    return right.change - left.change;
+  }
+
+  const leftTime = left.time === null ? null : Number(left.time);
+  const rightTime = right.time === null ? null : Number(right.time);
+  if (
+    leftTime !== null &&
+    rightTime !== null &&
+    Number.isFinite(leftTime) &&
+    Number.isFinite(rightTime)
+  ) {
+    return rightTime - leftTime;
+  }
+
+  return 0;
 }

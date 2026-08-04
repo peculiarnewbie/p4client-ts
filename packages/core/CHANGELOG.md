@@ -4,6 +4,43 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
+## 0.9.0 - 2026-08-04
+
+### Fixed
+
+- Fixed `getFileHistory({ followBranches: true })` discarding every depot path
+  but the first. `p4 filelog` reports one row per path, so following
+  integrations returned exactly what not following them returned, making the
+  option inert. Revisions from all paths are now merged into one list.
+- Fixed `getFileHistory()` dropping paths in two cases that do not involve
+  `followBranches` at all, which is why the merge is unconditional: a wildcard
+  spec such as `//depot/main/...` returned a single arbitrary matched file, and a
+  renamed file lost its pre-rename history because `p4 filelog` reports rename
+  ancestry as extra rows even without `-i`. `P4FileHistory.depotFile` is no
+  longer whichever path happened to come first in those cases.
+
+### Changed
+
+- `P4FileHistory.revisions` is ordered by changelist descending, falling back to
+  submit time when neither side reports a changelist. Revision number is no
+  longer the ordering key, because it restarts at 1 on each depot path and would
+  interleave unrelated paths. A revision of a given path is reported once even
+  when a wide integration graph repeats it.
+- `GetFileHistoryOptions.maxRevisions` now bounds the merged total. `p4 filelog
+  -m` applies its bound to each path separately, so the option silently
+  over-delivered whenever `followBranches` was set — measured as 65 revisions
+  returned for `-m 51 -i` across a two-path chain.
+- `P4FileHistory.depotFile` remains the requested head path; following
+  integrations never repoints it at an ancestor.
+
+### Added
+
+- Added `P4FileRevision.depotFile`, the path a revision belongs to, so callers
+  can label cross-path ancestry and disambiguate revision numbers repeated
+  across a merged history. This field is additive for readers, but is required
+  and therefore a breaking change for code that constructs `P4FileRevision`
+  values, such as test fixtures and mocks.
+
 ## 0.8.0 - 2026-07-31
 
 ### Added
