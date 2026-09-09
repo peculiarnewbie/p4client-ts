@@ -60,12 +60,39 @@ function executeCommand(
       let settled = false;
       let failure: P4ClientOperationError | P4TimeoutError | undefined;
       let timeout: ReturnType<typeof setTimeout> | undefined;
+      let childClosed = false;
+      let closeExitCode = 1;
+      let stdinWriteFinished = options.input === undefined;
 
       const clearCommandTimeout = () => {
         if (timeout !== undefined) {
           clearTimeout(timeout);
           timeout = undefined;
         }
+      };
+      const maybeResolve = () => {
+        if (settled) return;
+        // A recorded failure settles as soon as the child closes (normally
+        // from the SIGKILL in fail()), or immediately if the child never
+        // spawned or had already closed before the failure was recorded.
+        if (failure !== undefined) {
+          if (!childClosed && child.pid !== undefined) return;
+          settled = true;
+          clearCommandTimeout();
+          resume(Effect.fail(failure));
+          return;
+        }
+        // When input was provided, a success must wait for stdin to flush or
+        // error. Otherwise a stdin EPIPE racing the child's close would be
+        // swallowed by the settled guard in fail() and the outcome would
+        // depend on event-delivery order.
+        if (!childClosed || stdinWriteFinished === false) return;
+        settled = true;
+        clearCommandTimeout();
+        if (stdoutCarry) emit?.({ type: 'line', source: 'stdout', line: stdoutCarry });
+        if (stderrCarry) emit?.({ type: 'line', source: 'stderr', line: stderrCarry });
+        emit?.({ type: 'exit', exitCode: closeExitCode });
+        resume(Effect.succeed({ command, args, stdout, stderr, exitCode: closeExitCode }));
       };
       const fail = (error: Error) => {
         if (settled || failure !== undefined) return;
@@ -80,10 +107,7 @@ function executeCommand(
         child.stdin.destroy();
         child.stdout.destroy();
         child.stderr.destroy();
-        if (child.pid === undefined) {
-          settled = true;
-          resume(Effect.fail(failure));
-        }
+        maybeResolve();
       };
 
       child.on('error', fail);
@@ -104,18 +128,14 @@ function executeCommand(
         stderr += chunk;
         if (emit) stderrCarry = flushCompleteLines('stderr', chunk, stderrCarry, emit);
       });
+      child.stdin.on('finish', () => {
+        stdinWriteFinished = true;
+        maybeResolve();
+      });
       child.on('close', (exitCode) => {
-        if (settled) return;
-        settled = true;
-        clearCommandTimeout();
-        if (failure !== undefined) {
-          resume(Effect.fail(failure));
-          return;
-        }
-        if (stdoutCarry) emit?.({ type: 'line', source: 'stdout', line: stdoutCarry });
-        if (stderrCarry) emit?.({ type: 'line', source: 'stderr', line: stderrCarry });
-        emit?.({ type: 'exit', exitCode: exitCode ?? 1 });
-        resume(Effect.succeed({ command, args, stdout, stderr, exitCode: exitCode ?? 1 }));
+        childClosed = true;
+        closeExitCode = exitCode ?? 1;
+        maybeResolve();
       });
 
       const timeoutMs = options.timeoutMs;
