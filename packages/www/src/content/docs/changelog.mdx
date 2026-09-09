@@ -5,6 +5,35 @@ description: Release notes for p4client-ts.
 
 All notable changes to `p4client-ts` are documented here.
 
+## 0.10.0 - 2026-09-09
+
+### Breaking changes
+
+- Typed `parseP4JsonLines` and `runTaggedJson` calls now require an Effect schema.
+  Generic-only typed calls have been removed; calls without a schema return
+  `Record<string, unknown>[]`.
+- Command rows are validated before public results are constructed. Malformed
+  required fields and supplied numeric metadata now raise `P4ParseError`.
+- Opened, reconcile, and sync `clientFile` values now correctly include
+  `P4LocalPath`; invalid fractional, negative, and unsafe changelist IDs reject.
+
+### Added
+
+- Exported Effect schemas and validated brands for Perforce paths, file actions,
+  integer IDs, changelists, and workspace rows.
+- Shared `P4OperationOptions.signal` cancellation support across high-level
+  operations, nested work, settings readers, and concurrent file work.
+- Compile-time API contract tests as part of `bun run typecheck`.
+
+### Fixed
+
+- Effect interruption, early watched-event exits, and partial Effect stream
+  consumption now cancel and join their owned work.
+- Aborted, timed-out, and failed commands wait for direct-child closure, including
+  a Bun/Windows pipe-retention race during output delivery.
+- Fixed command/event failures, bounded queue cleanup, concurrent scheduling,
+  submitted diff endpoints, unified diff counting, and invalid timestamp handling.
+
 ## 0.9.0 - 2026-08-04
 
 ### Fixed

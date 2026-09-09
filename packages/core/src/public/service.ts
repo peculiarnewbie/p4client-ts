@@ -1,4 +1,5 @@
 import { Effect, Stream } from "effect";
+import { createCancellationScope, settleOperation } from '../internal/cancellation.js';
 import { P4Client } from "./client.js";
 import {
   P4ClientOperationError,
@@ -7,7 +8,7 @@ import {
   P4ParseError,
   P4TimeoutError
 } from "./errors.js";
-import type { GetEnvironmentOptions, P4ClientOptions, P4Service } from "./types.js";
+import type { GetEnvironmentOptions, P4ClientOptions, P4OperationHandle, P4Service } from "./types.js";
 import type { P4ServiceError } from "./errors.js";
 
 function normalizeGetEnvironmentOptions(options?: boolean | GetEnvironmentOptions): GetEnvironmentOptions {
@@ -33,11 +34,43 @@ function toServiceError(error: unknown): P4ServiceError {
   return new P4ClientOperationError(message, error);
 }
 
-function tryClientPromise<T>(promise: () => Promise<T>) {
-  return Effect.tryPromise({
-    try: promise,
-    catch: toServiceError
-  });
+function tryClientPromise<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  parent?: AbortSignal
+): Effect.Effect<T, P4ServiceError> {
+  return Effect.scoped(Effect.gen(function* () {
+    const scope = yield* Effect.acquireRelease(
+      Effect.sync(() => createCancellationScope(parent)),
+      (scope) => Effect.sync(scope.dispose)
+    );
+    const result = yield* Effect.acquireRelease(
+      Effect.try({ try: () => operation(scope.signal), catch: toServiceError }),
+      (result) => Effect.sync(scope.abort).pipe(Effect.andThen(settleOperation(result)))
+    );
+    return yield* Effect.tryPromise({ try: () => result, catch: toServiceError });
+  }));
+}
+
+function streamClientOperation<TEvent, TResult>(
+  operation: (signal: AbortSignal) => P4OperationHandle<TEvent, TResult>,
+  parent?: AbortSignal
+): Stream.Stream<TEvent, P4ServiceError> {
+  return Stream.unwrap(Effect.gen(function* () {
+    const scope = yield* Effect.acquireRelease(
+      Effect.sync(() => createCancellationScope(parent)),
+      (scope) => Effect.sync(scope.dispose)
+    );
+    const handle = yield* Effect.acquireRelease(
+      Effect.try({ try: () => operation(scope.signal), catch: toServiceError }),
+      (handle) => Effect.sync(scope.abort).pipe(Effect.andThen(settleOperation(handle.result)))
+    );
+    // The final result can fail even when a custom event source finishes normally.
+    return Stream.fromAsyncIterable(handle.events, toServiceError).pipe(
+      Stream.concat(Stream.fromEffect(
+        Effect.tryPromise({ try: () => handle.result, catch: toServiceError })
+      ).pipe(Stream.drain))
+    );
+  }));
 }
 
 /**
@@ -45,85 +78,82 @@ function tryClientPromise<T>(promise: () => Promise<T>) {
  *
  * The returned service exposes the same typed inspection, preview, and sync
  * operations as `P4Client`, but each operation resolves to an `Effect`.
+ * Interruption cancels that invocation and waits for its owned work to settle.
+ * Ending a stream early also cancels and joins the underlying operation.
  */
 export function createP4Service(options: P4ClientOptions = {}): P4Service {
   const client = new P4Client(options);
 
   return {
     getP4Environment: (options) =>
-      tryClientPromise(() => client.getEnvironment(normalizeGetEnvironmentOptions(options))),
+      tryClientPromise(
+        (signal) => client.getEnvironment({ ...normalizeGetEnvironmentOptions(options), signal }),
+        normalizeGetEnvironmentOptions(options).signal
+      ),
     listP4Workspaces: (refresh = false) =>
-      tryClientPromise(() => client.listWorkspaces({ refresh })),
+      tryClientPromise((signal) => client.listWorkspaces({ refresh, signal })),
     listPendingChangelists: (serviceOptions) =>
-      tryClientPromise(() => client.listPendingChangelists(serviceOptions)),
+      tryClientPromise((signal) => client.listPendingChangelists({ ...serviceOptions, signal }), serviceOptions?.signal),
     listSubmittedChangelists: (serviceOptions) =>
-      tryClientPromise(() => client.listSubmittedChangelists(serviceOptions)),
+      tryClientPromise((signal) => client.listSubmittedChangelists({ ...serviceOptions, signal }), serviceOptions?.signal),
     listShelvedChangelists: (serviceOptions) =>
-      tryClientPromise(() => client.listShelvedChangelists(serviceOptions)),
+      tryClientPromise((signal) => client.listShelvedChangelists({ ...serviceOptions, signal }), serviceOptions?.signal),
     listChangelists: (serviceOptions) =>
-      tryClientPromise(() => client.listChangelists(serviceOptions)),
+      tryClientPromise((signal) => client.listChangelists({ ...serviceOptions, signal }), serviceOptions?.signal),
     getOpenedFiles: (serviceOptions) =>
-      tryClientPromise(() => client.getOpenedFiles(serviceOptions)),
+      tryClientPromise((signal) => client.getOpenedFiles({ ...serviceOptions, signal }), serviceOptions?.signal),
     getChangelistFiles: (change, serviceOptions) =>
-      tryClientPromise(() => client.getChangelistFiles(change, serviceOptions)),
+      tryClientPromise((signal) => client.getChangelistFiles(change, { ...serviceOptions, signal }), serviceOptions?.signal),
     previewReconcile: (serviceOptions) =>
-      tryClientPromise(() => client.previewReconcile(serviceOptions)),
+      tryClientPromise((signal) => client.previewReconcile({ ...serviceOptions, signal }), serviceOptions?.signal),
     streamPreviewReconcile: (serviceOptions) =>
-      Stream.unwrap(
-        Effect.sync(() =>
-          Stream.fromAsyncIterable(
-            client.watchPreviewReconcile(serviceOptions).events,
-            toServiceError
-          )
-        )
+      streamClientOperation(
+        (signal) => client.watchPreviewReconcile({ ...serviceOptions, signal }),
+        serviceOptions?.signal
       ),
     previewSync: (serviceOptions) =>
-      tryClientPromise(() => client.previewSync(serviceOptions)),
+      tryClientPromise((signal) => client.previewSync({ ...serviceOptions, signal }), serviceOptions?.signal),
     sync: (serviceOptions) =>
-      tryClientPromise(() => client.sync(serviceOptions)),
+      tryClientPromise((signal) => client.sync({ ...serviceOptions, signal }), serviceOptions?.signal),
     streamSync: (serviceOptions) =>
-      Stream.unwrap(
-        Effect.sync(() =>
-          Stream.fromAsyncIterable(
-            client.watchSync(serviceOptions).events,
-            toServiceError
-          )
-        )
+      streamClientOperation(
+        (signal) => client.watchSync({ ...serviceOptions, signal }),
+        serviceOptions?.signal
       ),
     setClient: (serviceOptions) =>
-      tryClientPromise(() => client.setClient(serviceOptions)),
+      tryClientPromise((signal) => client.setClient({ ...serviceOptions, signal }), serviceOptions?.signal),
     switchWorkspace: (clientName) =>
-      tryClientPromise(() => client.switchWorkspace(clientName)),
+      tryClientPromise((signal) => client.switchWorkspace(clientName, { signal })),
     describeChangelist: (change, serviceOptions) =>
-      tryClientPromise(() => client.describeChangelist(change, serviceOptions)),
+      tryClientPromise((signal) => client.describeChangelist(change, { ...serviceOptions, signal }), serviceOptions?.signal),
     diffFile: (serviceOptions) =>
-      tryClientPromise(() => client.diffFile(serviceOptions)),
+      tryClientPromise((signal) => client.diffFile({ ...serviceOptions, signal }), serviceOptions?.signal),
     printFile: (depotFile, serviceOptions) =>
-      tryClientPromise(() => client.printFile(depotFile, serviceOptions)),
+      tryClientPromise((signal) => client.printFile(depotFile, { ...serviceOptions, signal }), serviceOptions?.signal),
     listDepotFilesAtChange: (serviceOptions) =>
-      tryClientPromise(() => client.listDepotFilesAtChange(serviceOptions)),
+      tryClientPromise((signal) => client.listDepotFilesAtChange({ ...serviceOptions, signal }), serviceOptions?.signal),
     materializeDepotFiles: (serviceOptions) =>
-      tryClientPromise(() => client.materializeDepotFiles(serviceOptions)),
+      tryClientPromise((signal) => client.materializeDepotFiles({ ...serviceOptions, signal }), serviceOptions?.signal),
     getChangelistDiffSummary: (change, serviceOptions) =>
-      tryClientPromise(() => client.getChangelistDiffSummary(change, serviceOptions)),
+      tryClientPromise((signal) => client.getChangelistDiffSummary(change, { ...serviceOptions, signal }), serviceOptions?.signal),
     listDepots: (serviceOptions) =>
-      tryClientPromise(() => client.listDepots(serviceOptions)),
+      tryClientPromise((signal) => client.listDepots({ ...serviceOptions, signal }), serviceOptions?.signal),
     listDepotDirs: (serviceOptions) =>
-      tryClientPromise(() => client.listDepotDirs(serviceOptions)),
+      tryClientPromise((signal) => client.listDepotDirs({ ...serviceOptions, signal }), serviceOptions?.signal),
     listDepotFiles: (serviceOptions) =>
-      tryClientPromise(() => client.listDepotFiles(serviceOptions)),
+      tryClientPromise((signal) => client.listDepotFiles({ ...serviceOptions, signal }), serviceOptions?.signal),
     statFiles: (serviceOptions) =>
-      tryClientPromise(() => client.statFiles(serviceOptions)),
+      tryClientPromise((signal) => client.statFiles({ ...serviceOptions, signal }), serviceOptions?.signal),
     whereFiles: (serviceOptions) =>
-      tryClientPromise(() => client.whereFiles(serviceOptions)),
+      tryClientPromise((signal) => client.whereFiles({ ...serviceOptions, signal }), serviceOptions?.signal),
     getFileHistory: (serviceOptions) =>
-      tryClientPromise(() => client.getFileHistory(serviceOptions)),
+      tryClientPromise((signal) => client.getFileHistory({ ...serviceOptions, signal }), serviceOptions?.signal),
     listUsers: (serviceOptions) =>
-      tryClientPromise(() => client.listUsers(serviceOptions)),
+      tryClientPromise((signal) => client.listUsers({ ...serviceOptions, signal }), serviceOptions?.signal),
     listStreams: (serviceOptions) =>
-      tryClientPromise(() => client.listStreams(serviceOptions)),
+      tryClientPromise((signal) => client.listStreams({ ...serviceOptions, signal }), serviceOptions?.signal),
     annotateFile: (serviceOptions) =>
-      tryClientPromise(() => client.annotateFile(serviceOptions))
+      tryClientPromise((signal) => client.annotateFile({ ...serviceOptions, signal }), serviceOptions?.signal)
   };
 }
 

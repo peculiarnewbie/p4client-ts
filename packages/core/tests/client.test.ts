@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { Deferred, Effect } from 'effect';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -401,8 +402,7 @@ describe("P4Client", () => {
             "{\"change\":\"12345\",\"client\":\"Project_Main\",\"user\":\"surya\",\"time\":\"1742266870\",\"desc\":\"Submitted feature\",\"status\":\"submitted\"}",
             "{\"change\":\"12340\",\"client\":\"Project_Tools\",\"user\":\"maya\",\"time\":\"1742266000\",\"desc\":\"Tooling\",\"status\":\"submitted\"}",
             "{\"change\":\"12330\",\"client\":\"Project_Main\",\"user\":\"surya\",\"time\":\"1742265000\",\"desc\":\"Earlier\",\"status\":\"submitted\"}",
-            "{\"change\":\"default\",\"desc\":\"ignored\"}",
-            "{\"change\":\"not-a-change\",\"desc\":\"ignored\"}"
+            "{\"change\":\"default\",\"desc\":\"ignored\"}"
           ].join("\n"),
           stderr: "",
           exitCode: 0
@@ -2023,6 +2023,52 @@ describe("P4Client", () => {
         ]
       ]);
     } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('waits for active materialization work and stops queued work after failure', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'p4-ts-materialize-failure-'));
+    const secondStarted = Deferred.makeUnsafe<void>();
+    const firstFailed = Deferred.makeUnsafe<void>();
+    const secondFinished = Deferred.makeUnsafe<void>();
+    const failure = new Error('print failed');
+    const calls: string[] = [];
+    let finished = false;
+    const p4 = new P4Client({
+      executor: (command, args) => Effect.runPromise(Effect.gen(function* () {
+        const spec = args.at(-1)!;
+        calls.push(spec);
+        if (spec.endsWith('a.txt#1')) {
+          yield* Deferred.await(secondStarted);
+          yield* Deferred.succeed(firstFailed, undefined);
+          return yield* Effect.fail(failure);
+        }
+        yield* Deferred.succeed(secondStarted, undefined);
+        yield* Deferred.await(firstFailed);
+        yield* Effect.promise(() => writeFile(join(directory, 'completed.txt'), 'done'));
+        finished = true;
+        yield* Deferred.succeed(secondFinished, undefined);
+        return { command, args, stdout: '', stderr: '', exitCode: 0 };
+      }))
+    });
+    try {
+      await expect(p4.materializeDepotFiles({
+        directory,
+        maxFiles: 3,
+        concurrency: 2,
+        files: ['a', 'b', 'c'].map((name) => ({
+          depotFile: `//Project/main/${name}.txt` as P4DepotPath,
+          revision: 1,
+          changelist: 1,
+          action: 'add' as P4FileAction,
+          type: 'text'
+        }))
+      })).rejects.toBe(failure);
+      expect(finished).toBe(true);
+      expect(calls.sort()).toEqual(['//Project/main/a.txt#1', '//Project/main/b.txt#1']);
+    } finally {
+      await Effect.runPromise(Deferred.await(secondFinished));
       await rm(directory, { recursive: true, force: true });
     }
   });

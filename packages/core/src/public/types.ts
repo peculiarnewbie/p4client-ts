@@ -1,4 +1,7 @@
-import type { Brand } from "effect";
+import type {
+  P4DepotPathSchema, P4ClientPathSchema, P4LocalPathSchema,
+  P4FileActionSchema, P4JsonWorkspaceSchema
+} from './schemas.js';
 import type { P4ServiceError } from "./errors.js";
 
 /**
@@ -15,22 +18,22 @@ export type P4JsonValue =
 /**
  * Branded depot path parsed from Perforce output, for example `//depot/main/file.txt`.
  */
-export type P4DepotPath = Brand.Branded<string, "P4DepotPath">;
+export type P4DepotPath = typeof P4DepotPathSchema.Type;
 
 /**
  * Branded client path parsed from Perforce output.
  */
-export type P4ClientPath = Brand.Branded<string, "P4ClientPath">;
+export type P4ClientPath = typeof P4ClientPathSchema.Type;
 
 /**
  * Branded local filesystem path parsed from Perforce output.
  */
-export type P4LocalPath = Brand.Branded<string, "P4LocalPath">;
+export type P4LocalPath = typeof P4LocalPathSchema.Type;
 
 /**
  * Branded Perforce file action parsed from CLI output.
  */
-export type P4FileAction = Brand.Branded<string, "P4FileAction">;
+export type P4FileAction = typeof P4FileActionSchema.Type;
 
 /**
  * Raw result returned by a `p4` command execution.
@@ -65,27 +68,36 @@ export type P4CommandStreamEvent =
  * Handle returned by progress-aware operations.
  */
 export interface P4OperationHandle<TEvent, TResult> {
-  /** Incremental events emitted while the operation runs. */
+  /**
+   * Single-consumer events. Returning from iteration (including `break`) cancels
+   * unfinished work and waits for cleanup. A completed operation stays completed.
+   */
   events: AsyncIterable<TEvent>;
-  /** Final typed result once the operation finishes. */
+  /** Final typed result after cleanup; rejects if unfinished work is cancelled. */
   result: Promise<TResult>;
+}
+
+/** Cancellation shared by high-level client operations. */
+export interface P4OperationOptions {
+  /** Abort this operation, including nested commands and queued work. */
+  signal?: AbortSignal;
 }
 
 /**
  * Low-level execution options for raw `p4` commands.
  */
-export interface P4CommandOptions {
+export interface P4CommandOptions extends P4OperationOptions {
   /** Working directory used for the command invocation. */
   cwd?: string;
   /** Environment variables merged into the child process. */
   env?: NodeJS.ProcessEnv;
   /** Optional stdin content written to the child process. */
   input?: string;
-  /** Kill the child process when it exceeds this duration in milliseconds. */
+  /** Kill the child after this duration in milliseconds (maximum 2,147,483,647). */
   timeoutMs?: number;
   /**
    * Abort the command when the signal fires. Aborting kills the child process
-   * and rejects the result with the signal's `AbortError`.
+   * and waits for it to close before rejecting the result with an abort error.
    *
    * Intended for interactive UIs that cancel in-flight work when the user
    * changes selection or navigates away.
@@ -102,6 +114,8 @@ export interface WatchP4CommandOptions extends P4CommandOptions {}
 
 /**
  * Injectable command runner used by {@link P4ClientOptions.executor}.
+ * Implementations must honor `options.signal` and settle after releasing owned
+ * resources. Effect interruption waits for this Promise to settle.
  */
 export type P4CommandExecutor = (
   command: string,
@@ -111,6 +125,8 @@ export type P4CommandExecutor = (
 
 /**
  * Injectable streaming command runner used by progress-aware APIs.
+ * Implementations must honor `options.signal`, finish pending event reads on
+ * cancellation, and settle `result` after releasing owned resources.
  */
 export type P4StreamingCommandExecutor = (
   command: string,
@@ -180,15 +196,15 @@ export interface P4ResolvedSettings {
 /**
  * Options for local settings resolution.
  */
-export interface ResolveP4SettingsOptions {
+export interface ResolveP4SettingsOptions extends P4OperationOptions {
   /** Ordered source precedence. Later sources only fill missing keys. */
   sources?: P4SettingsSource[];
   /** Override registry reads for tests or custom hosts. */
-  readRegistry?: () => Promise<P4CliSettings>;
+  readRegistry?: (signal?: AbortSignal) => Promise<P4CliSettings>;
   /** Override `~/.p4qt/ApplicationSettings.xml` reads. */
-  readP4vAppSettings?: () => Promise<P4CliSettings>;
+  readP4vAppSettings?: (signal?: AbortSignal) => Promise<P4CliSettings>;
   /** Override `~/.p4qt/connectionmap.xml` reads. */
-  readP4vConnectionMap?: () => Promise<P4CliSettings>;
+  readP4vConnectionMap?: (signal?: AbortSignal) => Promise<P4CliSettings>;
 }
 
 /**
@@ -208,7 +224,7 @@ export interface P4EnvironmentSummary {
 /**
  * Options for resolving the current Perforce environment.
  */
-export interface GetEnvironmentOptions {
+export interface GetEnvironmentOptions extends P4OperationOptions {
   /** Ignore cached values and re-read the underlying sources. */
   refresh?: boolean;
   /** Resolve from the server or from local settings only. Defaults to `server`. */
@@ -225,15 +241,7 @@ export interface GetEnvironmentOptions {
 /**
  * Minimal tagged JSON row shape returned by `p4 clients -u`.
  */
-export interface P4JsonWorkspace {
-  client: string;
-  Stream?: string;
-  Root: string;
-  Host?: string;
-  Owner: string;
-  Access?: string;
-  Update?: string;
-}
+export interface P4JsonWorkspace extends Readonly<typeof P4JsonWorkspaceSchema.Type> {}
 
 /**
  * Workspace fields needed to determine whether a client spec looks local.
@@ -277,7 +285,7 @@ export interface RunTaggedJsonOptions extends P4CommandOptions {
 /**
  * Filters for listing user workspaces.
  */
-export interface ListWorkspacesOptions {
+export interface ListWorkspacesOptions extends P4OperationOptions {
   /** Override the Perforce user whose clients should be listed. */
   user?: string;
   /** Override the host name used for locality checks. */
@@ -291,7 +299,7 @@ export interface ListWorkspacesOptions {
 /**
  * Filters for listing pending changelists.
  */
-export interface ListPendingChangelistsOptions {
+export interface ListPendingChangelistsOptions extends P4OperationOptions {
   user?: string;
   client?: string | null;
   /** One or more file specs appended to the command. */
@@ -325,7 +333,7 @@ export interface P4PendingChangelistSummary {
 /**
  * Filters for listing submitted changelists.
  */
-export interface ListSubmittedChangelistsOptions {
+export interface ListSubmittedChangelistsOptions extends P4OperationOptions {
   /** Depot/stream file spec, for example `//Project/main/...`. */
   fileSpec?: string | string[];
   /** Filter by client workspace. Prefer `fileSpec` for team-wide stream views. */
@@ -364,7 +372,7 @@ export interface ListSubmittedChangelistsResult {
 /**
  * Filters for listing shelved changelists.
  */
-export interface ListShelvedChangelistsOptions {
+export interface ListShelvedChangelistsOptions extends P4OperationOptions {
   /** Depot/stream file spec, for example `//Project/main/...`. */
   fileSpec?: string | string[];
   /** Filter by client workspace. Prefer `fileSpec` for team-wide stream views. */
@@ -412,7 +420,7 @@ export type P4ChangelistListSummary =
  *
  * Pagination applies only when `status` is `submitted` or `shelved`.
  */
-export interface ListChangelistsOptions {
+export interface ListChangelistsOptions extends P4OperationOptions {
   status: P4ChangelistListStatus;
   includeDefault?: boolean;
   limit?: number;
@@ -435,7 +443,7 @@ export interface ListChangelistsResult {
 /**
  * Filters for listing opened files.
  */
-export interface GetOpenedFilesOptions {
+export interface GetOpenedFilesOptions extends P4OperationOptions {
   user?: string;
   client?: string | null;
   change?: number | "default";
@@ -450,7 +458,8 @@ export interface GetOpenedFilesOptions {
  */
 export interface P4OpenedFileSummary {
   depotFile: P4DepotPath | null;
-  clientFile: P4ClientPath | null;
+  /** Client syntax or a local filename, depending on the CLI output. */
+  clientFile: P4ClientPath | P4LocalPath | null;
   localFile: P4LocalPath | null;
   action: P4FileAction;
   type: string | null;
@@ -465,7 +474,7 @@ export interface P4OpenedFileSummary {
 /**
  * Options for previewing `p4 reconcile`.
  */
-export interface PreviewReconcileOptions {
+export interface PreviewReconcileOptions extends P4OperationOptions {
   fileSpec?: string | string[];
   /** Workspace used to derive a local-root file spec when `fileSpec` is omitted. */
   workspace?: Pick<P4WorkspaceSummary, "root" | "stream">;
@@ -483,7 +492,8 @@ export interface PreviewReconcileOptions {
  */
 export interface P4ReconcileCandidate {
   depotFile: P4DepotPath | null;
-  clientFile: P4ClientPath | null;
+  /** Client syntax or a local filename, depending on the CLI output. */
+  clientFile: P4ClientPath | P4LocalPath | null;
   localFile: P4LocalPath | null;
   action: "add" | "edit" | "delete";
   type: string | null;
@@ -531,7 +541,7 @@ export type P4ReconcileProgressEvent =
 /**
  * Options for previewing `p4 sync`.
  */
-export interface PreviewSyncOptions {
+export interface PreviewSyncOptions extends P4OperationOptions {
   fileSpec?: string | string[];
   /** Pass `-f` to force sync preview output. */
   force?: boolean;
@@ -546,7 +556,7 @@ export interface PreviewSyncOptions {
 /**
  * Options for performing `p4 sync`.
  */
-export interface SyncOptions {
+export interface SyncOptions extends P4OperationOptions {
   fileSpec?: string | string[];
   /** Pass `-f` to force sync output. */
   force?: boolean;
@@ -561,7 +571,7 @@ export interface SyncOptions {
  */
 export interface P4SyncItem {
   depotFile: P4DepotPath | null;
-  clientFile: P4ClientPath | null;
+  clientFile: P4ClientPath | P4LocalPath | null;
   localFile: P4LocalPath | null;
   revision: number | null;
   action: P4FileAction | null;
@@ -610,7 +620,7 @@ export type P4SyncProgressEvent =
 /**
  * Options for changing the active Perforce client setting.
  */
-export interface SetClientOptions {
+export interface SetClientOptions extends P4OperationOptions {
   /** Client name to activate. */
   client: string;
   /** Clear cached environment/workspaces on this P4Client instance. Defaults to true. */
@@ -647,7 +657,7 @@ export interface P4ListWorkspaceResult {
 /**
  * Options for {@link P4Client.describeChangelist}.
  */
-export interface DescribeChangelistOptions {
+export interface DescribeChangelistOptions extends P4OperationOptions {
   /** Override the client workspace used when resolving opened files. */
   client?: string | null;
   /** When true, describe shelved files via `p4 describe -S -s`. */
@@ -694,7 +704,7 @@ export type P4DiffSource = "workspace" | "depot";
 /**
  * Options for {@link P4Client.diffFile}.
  */
-export interface DiffFileOptions {
+export interface DiffFileOptions extends P4OperationOptions {
   /** Depot path for the file being diffed. */
   depotFile: string;
   /** Local workspace path for the result; not passed to Perforce. */
@@ -772,7 +782,7 @@ export interface P4FileDiffResult {
 /**
  * Options for {@link P4Client.printFile}.
  */
-export interface PrintFileOptions {
+export interface PrintFileOptions extends P4OperationOptions {
   /** Depot revision to print. Defaults to `have`. */
   revision?: string | number;
 }
@@ -795,7 +805,7 @@ export interface P4PrintResult {
 /**
  * Options for {@link P4Client.listDepotFilesAtChange}.
  */
-export interface ListDepotFilesAtChangeOptions {
+export interface ListDepotFilesAtChangeOptions extends P4OperationOptions {
   /** Depot file or directory pattern, for example `//depot/main/...`. */
   depotPath: string;
   /** Submitted changelist whose depot state should be inspected. */
@@ -832,7 +842,7 @@ export interface ListDepotFilesAtChangeResult {
 /**
  * Options for {@link P4Client.listDepots}.
  */
-export interface ListDepotsOptions {
+export interface ListDepotsOptions extends P4OperationOptions {
   /** Abort the underlying `p4 depots` call. */
   signal?: AbortSignal;
 }
@@ -856,7 +866,7 @@ export interface P4Depot {
 /**
  * Options for {@link P4Client.listDepotDirs}.
  */
-export interface ListDepotDirsOptions {
+export interface ListDepotDirsOptions extends P4OperationOptions {
   /**
    * Directory depot path whose immediate subdirectories should be listed, for
    * example `//depot/main`. A single-level `/*` wildcard is appended
@@ -898,7 +908,7 @@ export interface ListDepotDirsResult {
 /**
  * Options for {@link P4Client.listDepotFiles}.
  */
-export interface ListDepotFilesOptions {
+export interface ListDepotFilesOptions extends P4OperationOptions {
   /**
    * Directory depot path whose immediate files should be listed, for example
    * `//depot/main`. A single-level `/*` wildcard is appended automatically; the
@@ -963,7 +973,7 @@ export interface ListDepotFilesResult {
 /**
  * Options for {@link P4Client.statFiles}.
  */
-export interface StatFilesOptions {
+export interface StatFilesOptions extends P4OperationOptions {
   /** One or more depot/client file specs or wildcards to stat in one call. */
   fileSpec: string | string[];
   /**
@@ -1038,7 +1048,7 @@ export interface P4FileStat {
 /**
  * Options for {@link P4Client.whereFiles}.
  */
-export interface WhereFilesOptions {
+export interface WhereFilesOptions extends P4OperationOptions {
   /** One or more depot, client, or local file specs to map. */
   fileSpec: string | string[];
   /** Abort the underlying `p4 where` call. */
@@ -1065,7 +1075,7 @@ export interface P4WhereMapping {
 /**
  * Options for {@link P4Client.getFileHistory}.
  */
-export interface GetFileHistoryOptions {
+export interface GetFileHistoryOptions extends P4OperationOptions {
   /**
    * Depot, client, or local file spec whose history should be listed.
    *
@@ -1154,7 +1164,7 @@ export interface P4FileHistory {
 /**
  * Options for {@link P4Client.listUsers}.
  */
-export interface ListUsersOptions {
+export interface ListUsersOptions extends P4OperationOptions {
   /** Resolve only these specific user identifiers. Omit to list all users. */
   users?: string[];
   /** Maximum users to return via `p4 users -m`. */
@@ -1184,7 +1194,7 @@ export interface P4User {
 /**
  * Options for {@link P4Client.listStreams}.
  */
-export interface ListStreamsOptions {
+export interface ListStreamsOptions extends P4OperationOptions {
   /**
    * Stream/depot path filter, for example `//Project/...` to scope the listing
    * to a single stream depot.
@@ -1220,7 +1230,7 @@ export interface P4Stream {
 /**
  * Options for {@link P4Client.annotateFile}.
  */
-export interface AnnotateFileOptions {
+export interface AnnotateFileOptions extends P4OperationOptions {
   /** Depot, client, or local file spec to annotate. */
   depotFile: string;
   /**
@@ -1269,7 +1279,7 @@ export interface P4AnnotationResult {
 /**
  * Options for {@link P4Client.materializeDepotFiles}.
  */
-export interface MaterializeDepotFilesOptions {
+export interface MaterializeDepotFilesOptions extends P4OperationOptions {
   /** Exact revisions previously resolved from Perforce. */
   files: readonly P4DepotFileRevision[];
   /** Caller-provided temporary directory that receives the files. */

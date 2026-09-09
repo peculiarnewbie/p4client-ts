@@ -69,14 +69,16 @@ function getBestCandidate(candidates: P4CliSettings[]): P4CliSettings {
   return bestConnectable ?? bestPartial ?? {};
 }
 
-async function readRegistrySettings(): Promise<P4CliSettings> {
+async function readRegistrySettings(signal?: AbortSignal): Promise<P4CliSettings> {
+  signal?.throwIfAborted();
   if (process.platform !== "win32") {
     return {};
   }
 
   try {
     const result = await runCommand("reg", ["query", "HKCU\\Software\\Perforce\\Environment"], {
-      allowNonZeroExit: true
+      allowNonZeroExit: true,
+      ...(signal === undefined ? {} : { signal })
     });
 
     if (result.exitCode !== 0) {
@@ -85,24 +87,31 @@ async function readRegistrySettings(): Promise<P4CliSettings> {
 
     return parseRegQueryOutput(result.stdout);
   } catch {
+    signal?.throwIfAborted();
     return {};
   }
 }
 
-async function readP4vApplicationSettings(): Promise<P4CliSettings> {
+async function readP4vApplicationSettings(signal?: AbortSignal): Promise<P4CliSettings> {
   try {
-    const content = await readFile(join(homedir(), ".p4qt", "ApplicationSettings.xml"), "utf8");
+    const content = await readFile(join(homedir(), ".p4qt", "ApplicationSettings.xml"), {
+      encoding: 'utf8', signal
+    });
     return parseP4vApplicationSettingsXml(content);
   } catch {
+    signal?.throwIfAborted();
     return {};
   }
 }
 
-async function readP4vConnectionMap(): Promise<P4CliSettings> {
+async function readP4vConnectionMap(signal?: AbortSignal): Promise<P4CliSettings> {
   try {
-    const content = await readFile(join(homedir(), ".p4qt", "connectionmap.xml"), "utf8");
+    const content = await readFile(join(homedir(), ".p4qt", "connectionmap.xml"), {
+      encoding: 'utf8', signal
+    });
     return parseP4vConnectionMapXml(content);
   } catch {
+    signal?.throwIfAborted();
     return {};
   }
 }
@@ -249,7 +258,8 @@ export function parseP4vConnectionMapXml(xml: string): P4CliSettings {
  * Resolve Perforce settings from ordered local sources without contacting the
  * server.
  *
- * Missing sources are treated as contributing no settings.
+ * Missing sources are treated as contributing no settings. Cancellation rejects
+ * the lookup instead of falling through to another source.
  */
 export async function resolveP4Settings(
   cliSettings: P4CliSettings = {},
@@ -267,9 +277,10 @@ export async function resolveP4SettingsWithDetails(
   cliSettings: P4CliSettings = {},
   options: ResolveP4SettingsOptions = {}
 ): Promise<P4ResolvedSettings> {
+  options.signal?.throwIfAborted();
   const contributions: P4SettingsContribution[] = [];
   const sources = options.sources ?? [...DEFAULT_P4_SETTINGS_SOURCES];
-  const readers: Record<Exclude<P4SettingsSource, "cli">, () => Promise<P4CliSettings>> = {
+  const readers: Record<Exclude<P4SettingsSource, "cli">, (signal?: AbortSignal) => Promise<P4CliSettings>> = {
     registry: options.readRegistry ?? readRegistrySettings,
     "p4v-app-settings": options.readP4vAppSettings ?? readP4vApplicationSettings,
     "p4v-connection-map": options.readP4vConnectionMap ?? readP4vConnectionMap
@@ -277,9 +288,14 @@ export async function resolveP4SettingsWithDetails(
   let settings: P4CliSettings = {};
 
   for (const source of sources) {
+    options.signal?.throwIfAborted();
     const sourceSettings = source === "cli"
       ? cliSettings
-      : await readers[source]().catch(() => ({}));
+      : await readers[source](options.signal).catch(() => {
+        options.signal?.throwIfAborted();
+        return {};
+      });
+    options.signal?.throwIfAborted();
     const contributedKeys = getContributedSettingKeys(settings, sourceSettings);
 
     if (contributedKeys.length > 0) {
