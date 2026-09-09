@@ -26,7 +26,7 @@ import {
 } from "../src/public/helpers.js";
 import { formatCommandArgs } from "../src/public/command-format.js";
 import { P4ParseError } from "../src/public/errors.js";
-import type { P4JsonWorkspace } from "../src/public/types.js";
+import { P4JsonWorkspaceSchema } from '../src/public/schemas.js';
 
 describe("parseP4KeyValueOutput", () => {
   it("parses p4 info output", () => {
@@ -53,7 +53,7 @@ describe("parseP4JsonLines", () => {
       "{\"client\":\"Arif_MBResearch\",\"Owner\":\"arif\",\"Root\":\"D:\\\\workspace\\\\MBResearch\",\"Access\":\"1742180400\"}"
     ].join("\n");
 
-    const result = parseP4JsonLines<P4JsonWorkspace>(output);
+    const result = parseP4JsonLines(output, P4JsonWorkspaceSchema);
 
     expect(result).toEqual([
       {
@@ -160,6 +160,10 @@ describe("unixSecondsToIsoString", () => {
   it("returns null for missing or invalid values", () => {
     expect(unixSecondsToIsoString(null)).toBeNull();
     expect(unixSecondsToIsoString("not-a-number")).toBeNull();
+    expect(unixSecondsToIsoString('  ')).toBeNull();
+    expect(unixSecondsToIsoString('1e100')).toBeNull();
+    expect(unixSecondsToIsoString('8640000000001')).toBeNull();
+    expect(unixSecondsToIsoString('0')).toBe('1970-01-01T00:00:00.000Z');
   });
 });
 
@@ -209,6 +213,17 @@ describe("isBinaryP4Type", () => {
 });
 
 describe("summarizeUnifiedDiff", () => {
+  it('counts header-like content inside hunks across multiple files', () => {
+    const diff = [
+      '--- a/first', '+++ b/first', '@@ -1 +1 @@',
+      '--- removed content', '+++ added content',
+      '--- a/second', '+++ b/second', '@@ -0,0 +1,2 @@',
+      '+++ another addition', '+last addition',
+      '+outside a hunk'
+    ].join('\n');
+    expect(summarizeUnifiedDiff(diff)).toEqual({ additions: 3, deletions: 1 });
+  });
+
   it("counts addition and deletion lines", () => {
     const diff = [
       "--- a/foo.txt",
@@ -284,7 +299,7 @@ describe("resolveDepotDiffRevisions", () => {
         action: "delete",
         revision: 7
       })
-    ).toEqual({ fromRevision: 7, toRevision: "none" });
+    ).toEqual({ fromRevision: 6, toRevision: "none" });
   });
 
   it("handles add/delete/edit edge cases and unsupported actions", () => {
@@ -315,7 +330,7 @@ describe("resolveDepotDiffRevisions", () => {
     expect(
       resolveDepotDiffRevisions({
         depotFile: "//Project/main/unknown.txt",
-        action: "move/add",
+        action: "purge",
         revision: 2
       })
     ).toBeNull();
@@ -323,6 +338,19 @@ describe("resolveDepotDiffRevisions", () => {
 });
 
 describe("resolveDiffPlan", () => {
+  it('handles submitted branches, moves, and deletion endpoints', () => {
+    for (const action of ['branch', 'move/add']) {
+      expect(resolveDepotDiffRevisions({ depotFile: '//depot/file', action, revision: 1 }))
+        .toEqual({ fromRevision: 'none', toRevision: 1 });
+    }
+    expect(resolveDepotDiffRevisions({
+      depotFile: '//depot/file', action: 'move/delete', revision: 3
+    })).toEqual({ fromRevision: 2, toRevision: 'none' });
+    expect(resolveDiffPlan({
+      depotFile: '//depot/file', changelistStatus: 'submitted', action: 'delete', revision: 3
+    }).args).toEqual(['-du', '//depot/file#2', '//depot/file#none']);
+  });
+
   it("selects workspace diffs for pending changelists by default", () => {
     expect(
       resolveDiffPlan({

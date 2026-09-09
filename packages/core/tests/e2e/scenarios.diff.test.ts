@@ -36,6 +36,33 @@ describe("p4-ts e2e diff inspection", () => {
     await harness.assertCleanWorkspace();
   });
 
+  it('uses the last content revision when reviewing a submitted deletion', async () => {
+    const localPath = harness.getPath('audit-deleted.txt');
+    const depotFile = '//p4ts/main/audit-deleted.txt';
+    writeFileSync(localPath, 'removed line\n', 'utf8');
+    await harness.run(['add', localPath]);
+    await harness.run(['submit', '-d', 'p4-ts deletion diff fixture add']);
+    await harness.run(['delete', localPath]);
+    await harness.run(['submit', '-d', 'p4-ts deletion diff fixture delete']);
+    const changes = await harness.client.listSubmittedChangelists({ fileSpec: depotFile, limit: 1 });
+    const change = changes.items[0];
+    if (!change) throw new Error('Missing submitted deletion changelist.');
+    const description = await harness.client.describeChangelist(change.change);
+    const file = description.files[0];
+    if (!file) throw new Error('Missing deleted file description.');
+    expect(file.action).toBe('delete');
+    expect(file.revision).toBe(2);
+    const diff = await harness.client.diffFile({
+      depotFile,
+      changelistStatus: 'submitted',
+      action: file.action,
+      revision: file.revision
+    });
+    expect(diff.fromRevision).toBe(1);
+    expect(diff.toRevision).toBe('none');
+    expect(diff.unifiedDiff).toContain(`${depotFile}#1`);
+  });
+
   it("describes a numbered changelist and returns a non-empty diff after edit", async () => {
     numberedChange = await harness.createNumberedChangelist("p4-ts e2e diff inspection");
     await harness.openOpenedFilesScenario(numberedChange);

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
-import { Schema } from "effect";
+import { Option, Schema } from 'effect';
 import { P4ParseError } from "./errors.js";
+import { P4ChangeSchema } from './schemas.js';
 import type {
   DiffFileOptions,
   LocalWorkspaceCandidate,
@@ -10,6 +11,8 @@ import type {
 } from "./types.js";
 
 const P4TaggedJsonRowSchema = Schema.Record(Schema.String, Schema.Unknown);
+const decodeTaggedRow = Schema.decodeUnknownSync(P4TaggedJsonRowSchema);
+const decodeChange = Schema.decodeUnknownOption(P4ChangeSchema);
 
 /**
  * Parse classic `p4 info`-style `Key: Value` output into an object map.
@@ -52,8 +55,8 @@ export function parseTaggedJsonLine(line: string): Record<string, unknown> | nul
   }
 
   try {
-    const parsed = JSON.parse(trimmed);
-    return Schema.decodeUnknownSync(P4TaggedJsonRowSchema)(parsed);
+    const parsed: unknown = JSON.parse(trimmed);
+    return decodeTaggedRow(parsed);
   } catch (error) {
     throw new P4ParseError("Unable to parse tagged Perforce JSON output.", line, error);
   }
@@ -62,9 +65,22 @@ export function parseTaggedJsonLine(line: string): Record<string, unknown> | nul
 /**
  * Parse newline-delimited JSON emitted by commands such as `p4 -Mj -z tag`.
  *
- * Empty lines are ignored before parsing.
+ * Empty lines are ignored. Without a schema, fields remain `unknown`.
+ * Pass an Effect schema to validate and infer the decoded result type.
+ *
+ * @param output Newline-delimited CLI output.
+ * @param schema Optional decoder for each object row; transformations are applied.
+ * @returns Decoded rows, or raw object rows when no schema is supplied.
+ * @throws {P4ParseError} When JSON or a row does not satisfy the schema.
  */
-export function parseP4JsonLines<T = Record<string, unknown>>(output: string): T[] {
+export function parseP4JsonLines<A>(output: string, schema: Schema.Decoder<A>): A[];
+/** Parse raw JSON object rows, keeping every field typed as unknown. */
+export function parseP4JsonLines(output: string): Record<string, unknown>[];
+export function parseP4JsonLines(
+  output: string,
+  schema?: Schema.Decoder<unknown>
+): unknown[] {
+  const decode = schema === undefined ? undefined : Schema.decodeUnknownSync(schema);
   return output
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
@@ -73,7 +89,11 @@ export function parseP4JsonLines<T = Record<string, unknown>>(output: string): T
       if (!parsed) {
         throw new P4ParseError("Unable to parse tagged Perforce JSON output.", line, null);
       }
-      return parsed as T;
+      try {
+        return decode === undefined ? parsed : decode(parsed);
+      } catch (cause) {
+        throw new P4ParseError('Perforce JSON row does not satisfy the supplied schema.', line, cause);
+      }
     });
 }
 
@@ -143,14 +163,7 @@ export function normalizeNullableNumber(value: unknown): number | null {
  * `"default"`.
  */
 export function normalizeP4Change(value: unknown): number | "default" | null {
-  const normalized = normalizeNullableString(value);
-  if (!normalized) return null;
-  if (normalized === "default") return "default";
-
-  const parsed = normalizeNullableNumber(normalized);
-  if (parsed === null) return null;
-
-  return Math.trunc(parsed);
+  return Option.getOrNull(decodeChange(typeof value === 'string' ? value.trim() : value));
 }
 
 /**
@@ -233,12 +246,13 @@ export function workspaceRootFileSpec(
  * Convert a unix timestamp expressed in seconds to an ISO-8601 string.
  */
 export function unixSecondsToIsoString(value: string | null | undefined): string | null {
-  if (!value) return null;
+  if (!value?.trim()) return null;
 
   const seconds = Number(value);
   if (!Number.isFinite(seconds)) return null;
 
-  return new Date(seconds * 1000).toISOString();
+  const date = new Date(seconds * 1000);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 
 const HUNK_HEADER_PATTERN = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
@@ -275,7 +289,7 @@ export function isBinaryP4Type(type: string | null | undefined): boolean {
  * @throws {Error} When the value is not a positive finite integer.
  */
 export function requirePositiveInteger(value: number, name: string): number {
-  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 1) {
+  if (!Number.isSafeInteger(value) || value < 1) {
     throw new Error(`${name} must be a positive finite integer, received ${String(value)}.`);
   }
 
@@ -288,7 +302,7 @@ export function requirePositiveInteger(value: number, name: string): number {
  * @throws {Error} When the value is not a non-negative finite integer.
  */
 export function requireNonNegativeInteger(value: number, name: string): number {
-  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+  if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${name} must be a non-negative finite integer, received ${String(value)}.`);
   }
 
@@ -298,11 +312,14 @@ export function requireNonNegativeInteger(value: number, name: string): number {
 /**
  * Assert a positive finite timeout duration in milliseconds.
  *
- * @throws {Error} When the value is not a positive finite number.
+ * @throws {Error} When the value is not positive or exceeds the runtime timer
+ * limit of 2,147,483,647 milliseconds.
  */
 export function requirePositiveTimeoutMs(value: number, name = "timeoutMs"): number {
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new Error(`${name} must be a positive finite number of milliseconds, received ${String(value)}.`);
+  if (!Number.isFinite(value) || value <= 0 || value > 2_147_483_647) {
+    throw new Error(
+      `${name} must be a positive finite number of milliseconds at most 2147483647, received ${String(value)}.`
+    );
   }
 
   return value;
@@ -314,18 +331,25 @@ export function requirePositiveTimeoutMs(value: number, name = "timeoutMs"): num
 export function summarizeUnifiedDiff(stdout: string): { additions: number; deletions: number } {
   let additions = 0;
   let deletions = 0;
+  let oldRemaining = 0;
+  let newRemaining = 0;
 
-  for (const rawLine of stdout.split(/\r?\n/)) {
-    const line = rawLine.trimEnd();
-    if (line.startsWith("+++") || line.startsWith("---")) {
+  for (const line of stdout.split(/\r?\n/)) {
+    const header = HUNK_HEADER_PATTERN.exec(line);
+    if (header) {
+      oldRemaining = Number(header[2] ?? 1);
+      newRemaining = Number(header[4] ?? 1);
       continue;
     }
-    if (line.startsWith("+")) {
+    if (line.startsWith('+') && newRemaining > 0) {
       additions += 1;
-      continue;
-    }
-    if (line.startsWith("-")) {
+      newRemaining -= 1;
+    } else if (line.startsWith('-') && oldRemaining > 0) {
       deletions += 1;
+      oldRemaining -= 1;
+    } else if (line.startsWith(' ')) {
+      oldRemaining = Math.max(0, oldRemaining - 1);
+      newRemaining = Math.max(0, newRemaining - 1);
     }
   }
 
@@ -415,7 +439,7 @@ export function resolveDepotDiffRevisions(
   const action = file.action.toLowerCase();
   const revision = file.revision;
 
-  if (action === "add") {
+  if (action === 'add' || action === 'move/add' || action === 'branch') {
     if (revision === null) {
       return { fromRevision: "none", toRevision: "have" };
     }
@@ -423,15 +447,15 @@ export function resolveDepotDiffRevisions(
     return { fromRevision: "none", toRevision: revision };
   }
 
-  if (action === "delete") {
-    if (revision === null) {
+  if (action === 'delete' || action === 'move/delete') {
+    if (revision === null || revision <= 1) {
       return null;
     }
 
-    return { fromRevision: revision, toRevision: "none" };
+    return { fromRevision: revision - 1, toRevision: 'none' };
   }
 
-  if (action === "edit" || action === "integrate" || action === "branch") {
+  if (action === "edit" || action === "integrate") {
     if (revision === null || revision <= 1) {
       return null;
     }

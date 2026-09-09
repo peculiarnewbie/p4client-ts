@@ -4,6 +4,60 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
+## Unreleased
+
+### Breaking changes
+
+- Typed `parseP4JsonLines` and `runTaggedJson` calls now require an Effect schema;
+  the output type is inferred from that decoder. Calls without a schema return
+  `Record<string, unknown>[]`. Replace generic-only calls with
+  `parseP4JsonLines(output, MySchema)` or `runTaggedJson(args, { schema: MySchema })`.
+- Command rows are validated before constructing typed results. Malformed required
+  fields and supplied numeric metadata now raise `P4ParseError` instead of being
+  silently dropped, truncated, or replaced with null. Additional server tags and
+  missing optional metadata remain supported.
+- Opened/reconcile/sync `clientFile` fields now include `P4LocalPath` in their
+  union, matching CLI output instead of branding local filenames as client paths.
+- Changelist normalization rejects fractional, negative, and unsafe integer IDs.
+  Integer option guards also reject numbers outside JavaScript's safe range.
+
+### Added
+
+- Shared `P4OperationOptions.signal` support across high-level client operations,
+  including nested commands, local settings readers, and concurrent file work.
+- Exported Effect schemas for depot/client/local paths, file actions, integer IDs,
+  changelists, and workspace rows. Branded path and workspace types derive from
+  these schemas.
+- Compile-time API contract tests run as part of `bun run typecheck`.
+
+### Fixed
+
+- Effect interruption and early stream exits now cancel and join their owned
+  operations without aborting caller signals or unrelated invocations.
+- Returning from watched event iteration cancels unfinished work. Abort, timeout,
+  and I/O failures wait for the direct child process to close before rejecting.
+- Cancelled settings lookups stop fallback resolution and do not cache success.
+- Command launch and I/O failures now reach both watched events and the result,
+  including synchronous spawn failures and closed stdin. Consuming events before
+  awaiting the result no longer leaves a rejected result unobserved.
+- Event queues preserve null/undefined failures and release pending values and
+  consumers when iteration ends early.
+- Timeouts above the runtime timer limit are rejected before launching a process.
+- Concurrent materialization and diff work stops scheduling queued operations on
+  failure and waits for active operations to settle before rejecting.
+- Submitted deletion diffs use the preceding content revision. Submitted branch
+  and move actions now have inferred diff endpoints.
+- Unified diff counts include changed lines beginning with `++` or `--` without
+  confusing them with file headers. Invalid or out-of-range timestamps return null.
+
+### Changed
+
+- The command adapter uses Effect with typed failures while preserving the existing
+  Promise API and native process errors. Child console windows are hidden on Windows.
+- Buffered commands skip line-event allocation and queue draining.
+- Changelist diff summaries index described files once instead of rescanning the
+  file list for each diff.
+
 ## 0.9.0 - 2026-08-04
 
 ### Fixed

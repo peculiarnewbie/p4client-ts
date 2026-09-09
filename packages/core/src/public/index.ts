@@ -1,5 +1,15 @@
 export { P4Client } from "./client.js";
 export {
+  P4DepotPathSchema,
+  P4ClientPathSchema,
+  P4LocalPathSchema,
+  P4FileActionSchema,
+  P4NonNegativeIntegerSchema,
+  P4PositiveIntegerSchema,
+  P4ChangeSchema,
+  P4JsonWorkspaceSchema
+} from './schemas.js';
+export {
   P4ClientOperationError,
   P4CommandError,
   P4MaterializationError,
@@ -144,6 +154,7 @@ export type {
   P4ListWorkspaceResult,
   P4LocalPath,
   P4OperationHandle,
+  P4OperationOptions,
   P4OpenedFileSummary,
   P4PendingChangelistSummary,
   P4PrintResult,

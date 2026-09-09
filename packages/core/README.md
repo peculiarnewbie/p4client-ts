@@ -13,6 +13,89 @@ The published package name is `p4client-ts`.
 - Apply command timeouts across raw and higher-level APIs
 - Optional [Effect](https://effect.website)-based service API
 
+## Runtime schemas and typed JSON
+
+Typed JSON parsing requires an Effect schema. The result type is inferred from
+the decoder, including transformations such as CLI numeric strings to numbers:
+
+```ts
+import { Schema } from 'effect';
+import { P4Client, P4DepotPathSchema, P4PositiveIntegerSchema, parseP4JsonLines } from 'p4client-ts';
+
+const FileRow = Schema.Struct({
+  depotFile: P4DepotPathSchema,
+  rev: P4PositiveIntegerSchema
+});
+
+const files = parseP4JsonLines('{"depotFile":"//depot/file.txt","rev":"3"}', FileRow);
+// files[0]?.rev is number; depotFile is a validated P4DepotPath.
+
+const p4 = new P4Client();
+const depotFiles = await p4.runTaggedJson(['files', '//depot/...'], { schema: FileRow });
+const rawRows = await p4.runTaggedJson(['files', '//depot/...']);
+// Raw fields remain unknown until narrowed or decoded.
+```
+
+Malformed command fields raise `P4ParseError` with the offending row and original
+schema error in `cause`. Missing optional fields remain supported. Built-in
+command schemas accept additional server tags, while a custom schema controls
+the shape returned by a custom parser call.
+
+**Migration:** replace `parseP4JsonLines<MyRow>(output)` with
+`parseP4JsonLines(output, MyRowSchema)`, and replace
+`runTaggedJson<MyRow>(args)` with `runTaggedJson(args, { schema: MyRowSchema })`.
+Generic-only typed calls are no longer supported.
+
+`P4DepotPathSchema`, `P4ClientPathSchema`, `P4LocalPathSchema`, and
+`P4FileActionSchema` construct the existing branded types through validation.
+For example, `Schema.decodeUnknownSync(P4DepotPathSchema)(input)` replaces an
+unchecked `input as P4DepotPath`. The depot and client schemas validate syntax;
+they do not verify that the path exists on a server. Local paths can be relative.
+Opened, reconcile, and sync `clientFile` fields now use
+`P4ClientPath | P4LocalPath | null`, reflecting both forms the CLI emits.
+
+## Cancellation
+
+Client operation options accept an `AbortSignal`. It reaches nested commands,
+local settings readers, and concurrent materialization or diff work:
+
+```ts
+const controller = new AbortController();
+const pending = p4.getChangelistDiffSummary(12345, {
+  includeLineCounts: true,
+  signal: controller.signal
+});
+
+// For example, when the selected changelist changes:
+controller.abort();
+try {
+  await pending;
+} catch (error) {
+  if (!controller.signal.aborted) throw error;
+}
+```
+
+Each Effect service invocation owns its cancellation scope. Interrupting the
+Effect aborts its work and waits for cleanup; it does not abort the caller's
+signal or other invocations. Ending an Effect stream early, such as with
+`Stream.take`, also cancels and joins its operation.
+
+For Promise-based watched operations, `break` from `handle.events` (or calling
+the iterator's `return()`) cancels unfinished work and waits for cleanup.
+`handle.result` rejects when that work is cancelled. To stop observing while
+letting the operation finish, keep draining events or await the result without
+starting iteration. Simply abandoning an iterator does not cancel it.
+
+The built-in command adapter terminates the direct child and waits for its
+process and output streams to close before settling an aborted or timed-out
+result. Cancellation stops queued commands; it does not undo completed file
+writes or Perforce operations. Cancelled lookups do not cache fallback success.
+
+Custom `executor`, `streamExecutor`, and settings readers must honor their
+supplied signal and settle after releasing resources. Streaming adapters must
+also finish pending event reads. Cleanup waits for these adapters; an adapter
+that ignores cancellation can therefore delay interruption indefinitely.
+
 ## Scope
 
 This package is intended for inspection, preview-oriented workflows, explicit `sync()` operations, and local `P4CLIENT` switching.
