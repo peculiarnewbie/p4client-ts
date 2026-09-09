@@ -4,7 +4,7 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
-## Unreleased
+## 0.10.0 - 2026-09-09
 
 ### Breaking changes
 
