@@ -4,6 +4,17 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
+## 0.11.0 - 2026-10-08
+
+### Added
+
+- `P4ClientOptions.client` runs every command in that workspace by passing the global
+  `-c <client>` option. A command-line client takes precedence over `P4CLIENT`, P4CONFIG files
+  and `p4 set`, so a `.p4config` in a parent folder (for example one setting `P4CLIENT` for a
+  whole drive of workspaces) can no longer switch commands to another workspace. It applies to
+  `run`, `watch` and every higher-level method built on them. The existing per-command `client`
+  filters (for example on `listChangelists`) are unchanged.
+
 ## 0.10.0 - 2026-09-09
 
 ### Breaking changes

@@ -144,6 +144,12 @@ export interface P4ClientOptions {
   cwd?: string;
   /** Default environment variables merged into every command. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Workspace every command runs in, passed as the global `-c` option. A command-line client
+   * takes precedence over `P4CLIENT`, P4CONFIG files and `p4 set`, so a `.p4config` in a parent
+   * folder cannot silently switch commands to another workspace.
+   */
+  client?: string;
   /** Override the host name used for local-workspace detection. */
   hostName?: string;
   /** Default timeout applied to raw and higher-level command execution. */
