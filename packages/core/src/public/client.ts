@@ -141,6 +141,8 @@ import type {
 export class P4Client {
   readonly executable: string;
   readonly cwd: string | undefined;
+  /** Workspace passed as the global `-c` option to every command, when set. */
+  readonly client: string | undefined;
   readonly env: NodeJS.ProcessEnv | undefined;
   readonly timeoutMs: number | undefined;
 
@@ -165,9 +167,15 @@ export class P4Client {
     this.cwd = options.cwd;
     this.env = options.env;
     this.timeoutMs = options.timeoutMs;
+    this.client = options.client;
     this.configuredHostName = options.hostName;
     this.executor = options.executor ?? runCommand;
     this.streamExecutor = options.streamExecutor ?? watchCommand;
+  }
+
+  /** Prefixes the global options this client was configured with, such as `-c <client>`. */
+  private withGlobalOptions(args: string[]): string[] {
+    return this.client ? ['-c', this.client, ...args] : args;
   }
 
   /**
@@ -182,7 +190,7 @@ export class P4Client {
   async run(args: string[], options: P4CommandOptions = {}): Promise<P4CommandResult> {
     options.signal?.throwIfAborted();
     const commandOptions = this.buildCommandOptions(options);
-    const result = await this.executor(this.executable, args, commandOptions);
+    const result = await this.executor(this.executable, this.withGlobalOptions(args), commandOptions);
     options.signal?.throwIfAborted();
 
     if (result.exitCode !== 0 && !commandOptions.allowNonZeroExit) {
@@ -206,7 +214,10 @@ export class P4Client {
     const scope = createCancellationScope(options.signal);
     let handle: P4OperationHandle<P4CommandStreamEvent, P4CommandResult>;
     try {
-      handle = this.streamExecutor(this.executable, args, { ...commandOptions, signal: scope.signal });
+      handle = this.streamExecutor(this.executable, this.withGlobalOptions(args), {
+        ...commandOptions,
+        signal: scope.signal
+      });
     } catch (error) {
       scope.dispose();
       throw error;

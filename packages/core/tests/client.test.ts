@@ -2423,3 +2423,52 @@ describe("P4Client", () => {
     });
   });
 });
+
+describe("client option", () => {
+  it("runs every command in the configured workspace, ahead of P4CLIENT and P4CONFIG", async () => {
+    const calls: string[][] = [];
+    const p4 = new P4Client({
+      client: "Arif_HexMain",
+      env: { P4CLIENT: "DESKTOP-WORK-ARIF" },
+      executor: createExecutor(async (command, args) => {
+        calls.push(args);
+        return { command, args, stdout: "", stderr: "", exitCode: 0 };
+      })
+    });
+
+    await p4.run(["info"]);
+    await p4.runTaggedJson(["opened"]);
+    expect(calls).toEqual([
+      ["-c", "Arif_HexMain", "info"],
+      ["-c", "Arif_HexMain", "-Mj", "-z", "tag", "opened"]
+    ]);
+  });
+
+  it("passes the workspace to streamed commands too", async () => {
+    let streamedArgs: string[] = [];
+    const p4 = new P4Client({
+      client: "Arif_HexMain",
+      streamExecutor: createStreamingExecutor((command, args) => {
+        streamedArgs = args;
+        return createStreamHandle([], { command, args, stdout: "", stderr: "", exitCode: 0 });
+      })
+    });
+
+    const handle = p4.watch(["sync", "//Hex/Main/..."]);
+    await handle.result;
+    expect(streamedArgs).toEqual(["-c", "Arif_HexMain", "sync", "//Hex/Main/..."]);
+  });
+
+  it("leaves commands unchanged without a client", async () => {
+    let seen: string[] = [];
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => {
+        seen = args;
+        return { command, args, stdout: "", stderr: "", exitCode: 0 };
+      })
+    });
+
+    await p4.run(["info"]);
+    expect(seen).toEqual(["info"]);
+  });
+});
