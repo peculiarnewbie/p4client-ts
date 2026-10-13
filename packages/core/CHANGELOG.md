@@ -4,19 +4,6 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
-## Unreleased
-
-### Fixed
-
-- `materializeDepotFiles()` raises `P4CommandError` (`unknown_revision`) for a revision that
-  does not exist, as `printFile()` does, instead of returning a `localPath` that was never
-  written.
-- `watchSync()` no longer emits a fatal row (expired ticket, path outside the client, …) as a
-  `message` event before rejecting, and now emits `message` events for notices on stderr. Its
-  events now match exactly the `errors` and `messages` that `sync()` returns.
-- `watchPreviewReconcile()`, on servers without `-I` progress, rejects unparseable stdout with
-  `P4ParseError` as `previewReconcile()` does, instead of reporting it as progress.
-
 ## 0.12.1 - 2026-10-14
 
 ### Fixed
@@ -25,6 +12,14 @@ This project follows semantic versioning.
   instead of failing the whole preview (a regression in 0.12.0). Session, server and view
   failures still raise. Perforce 2026.1 reports a writable-file clobber only during a real
   sync, not in its preview; both cases now have a disposable-server E2E scenario.
+- `materializeDepotFiles()` raises `P4CommandError` (`unknown_revision`) for a revision that
+  does not exist, as `printFile()` does, instead of returning a `localPath` that was never
+  written.
+- `watchSync()` no longer emits a fatal row (expired ticket, path outside the client, …) as a
+  `message` event before rejecting, and now emits `message` events for notices on stderr. Its
+  events now match exactly the `errors` and `messages` that `sync()` returns.
+- `watchPreviewReconcile()`, on servers without `-I` progress, rejects unparseable stdout with
+  `P4ParseError` as `previewReconcile()` does, instead of reporting it as progress.
 
 ## 0.12.0 - 2026-10-14
 
