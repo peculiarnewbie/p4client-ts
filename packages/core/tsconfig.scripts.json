@@ -4,5 +4,5 @@
     "noEmit": true,
     "types": ["node", "bun"]
   },
-  "include": ["scripts/**/*.ts", "tests/wire*.test.ts", "tests/prod-readonly-p4.test.ts"]
+  "include": ["scripts/**/*.ts", "tests/wire*.test.ts", "tests/prod-readonly-p4.test.ts", "tests/perforce-binaries.test.ts"]
 }

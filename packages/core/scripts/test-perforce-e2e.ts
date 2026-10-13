@@ -1,7 +1,7 @@
 import { Effect } from 'effect';
 import { createHash } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
-import { access, chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { createServer } from "node:net";
 import { basename, dirname, join, resolve } from "node:path";
@@ -25,7 +25,7 @@ interface CommandResult {
   readonly stdout: string;
 }
 
-interface PlatformBinary {
+export interface PlatformBinary {
   readonly name: string;
   readonly sha256: string;
 }
@@ -69,27 +69,41 @@ export interface Fixture {
 
 const perforceRelease = "r26.1";
 const perforceDownloadRoot = `https://ftp.perforce.com/perforce/${perforceRelease}`;
-const platformBinaries: Partial<Record<NodeJS.Platform, PlatformBinaries>> = {
-  darwin: {
-    directory: "bin.darwin90x86_64",
+// Pins come from each directory's SHA256SUMS. Perforce republishes builds within a release,
+// so a stale pin fails every fresh download. Keys are `platform-arch`, or a bare platform for
+// every architecture (Windows on Arm runs the x64 build).
+const platformBinaries: Partial<Record<string, PlatformBinaries>> = {
+  "darwin-arm64": {
+    directory: "bin.macosx12arm64",
     p4: {
       name: "p4",
-      sha256: "a539b30d5b6ee80685bfb691b17e6c1ef50bfcaa9f1c6c7034301f423ab1224f"
+      sha256: "9ab9a5e0ed867c1fd6f271fd99cf69cc27d1e072b3559643dabf15d48efb29f5"
     },
     p4d: {
       name: "p4d",
-      sha256: "cfc32bbbe57476fcdd4ff9d0f49ae429e91d46751a16c99dd5ec4c7123882474"
+      sha256: "fd125175d1a2f5e22f97aa842a65a81d5dedfd417b98cac7833f3b7302ffe3ba"
     }
   },
-  linux: {
+  "darwin-x64": {
+    directory: "bin.macosx1015x86_64",
+    p4: {
+      name: "p4",
+      sha256: "3386398f9714d8aaf05ba633d1c68396880a1fc14e45a9444020f306d307d6dd"
+    },
+    p4d: {
+      name: "p4d",
+      sha256: "2044e69cf81e6991dfa0a2c0b590e9e082ead2d345d6c05cf3446678e5ce3022"
+    }
+  },
+  "linux-x64": {
     directory: "bin.linux26x86_64",
     p4: {
       name: "p4",
-      sha256: "a539b30d5b6ee80685bfb691b17e6c1ef50bfcaa9f1c6c7034301f423ab1224f"
+      sha256: "bfbb838cc5794a6a678df65e52841004ca7e192119a1c108adac3d47f6ccb4fc"
     },
     p4d: {
       name: "p4d",
-      sha256: "cfc32bbbe57476fcdd4ff9d0f49ae429e91d46751a16c99dd5ec4c7123882474"
+      sha256: "e2c1e11865774782eb37483c0a6f6ebdfc09d9dca6f44880ae59059cdf7b1847"
     }
   },
   win32: {
@@ -283,39 +297,82 @@ async function sha256(path: string): Promise<string> {
   return createHash("sha256").update(await readFile(path)).digest("hex");
 }
 
-async function resolveCachedBinary(directory: string, binary: PlatformBinary): Promise<string> {
-  const destinationDirectory = join(cacheRoot(), perforceRelease, directory);
+async function readCachedHash(path: string): Promise<string | null> {
+  try {
+    return await sha256(path);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function downloadBinary(url: string): Promise<Uint8Array> {
+  const response = await fetch(url);
+  assert(response.ok, `Could not download ${url}: ${response.status} ${response.statusText}`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+export interface BinaryCacheOptions {
+  /** Cache root; defaults to `P4_TS_E2E_BINARY_CACHE` or the user cache directory. */
+  readonly cacheDirectory?: string;
+  /** Fetches a release file; defaults to an HTTPS download from Perforce. */
+  readonly download?: (url: string) => Promise<Uint8Array>;
+}
+
+/**
+ * Resolve a pinned Perforce binary, downloading it when it is not cached.
+ *
+ * A cached copy that fails verification (an interrupted write, or a build cached before
+ * Perforce republished it) is downloaded once more. Only a fresh download that also
+ * mismatches fails, and the failure lists every hash involved.
+ */
+export async function resolveCachedBinary(
+  directory: string,
+  binary: PlatformBinary,
+  options: BinaryCacheOptions = {}
+): Promise<string> {
+  const destinationDirectory = join(options.cacheDirectory ?? cacheRoot(), perforceRelease, directory);
   const destination = join(destinationDirectory, binary.name);
   await mkdir(destinationDirectory, { recursive: true });
 
-  try {
-    await access(destination);
-    const actual = await sha256(destination);
-    assert(
-      actual === binary.sha256,
-      `Cached ${binary.name} does not match the pinned SHA-256. Remove ${destination} and retry.`
-    );
+  const cached = await readCachedHash(destination);
+  if (cached === binary.sha256) {
     report("RUN ", `using hash-verified cached ${binary.name}`);
     return destination;
-  } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
-      throw error;
-    }
   }
 
-  const url = `${perforceDownloadRoot}/${directory}/${binary.name}`;
-  report("RUN ", `downloading pinned ${binary.name} from Perforce`);
-  const response = await fetch(url);
-  assert(response.ok, `Could not download ${url}: ${response.status} ${response.statusText}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  const actual = createHash("sha256").update(bytes).digest("hex");
-  assert(
-    actual === binary.sha256,
-    `Downloaded ${binary.name} did not match its pinned SHA-256 (${actual}).`
+  const releaseDirectory = `${perforceDownloadRoot}/${directory}`;
+  report(
+    "RUN ",
+    cached === null
+      ? `downloading pinned ${binary.name} from Perforce`
+      : `cached ${binary.name} has SHA-256 ${cached}, not the pinned ${binary.sha256}; downloading it again`
   );
-  await writeFile(destination, bytes, { flag: "wx" });
-  if (process.platform !== "win32") {
-    await chmod(destination, 0o755);
+  const bytes = await (options.download ?? downloadBinary)(`${releaseDirectory}/${binary.name}`);
+  const downloaded = createHash("sha256").update(bytes).digest("hex");
+  assert(
+    downloaded === binary.sha256,
+    [
+      `Downloaded ${binary.name} does not match its pinned SHA-256.`,
+      `  pinned:     ${binary.sha256}`,
+      `  downloaded: ${downloaded}`,
+      ...(cached === null ? [] : [`  cached:     ${cached} (${destination})`]),
+      `Perforce may have republished this build; compare ${releaseDirectory}/SHA256SUMS before updating the pin.`
+    ].join("\n")
+  );
+
+  // Write beside the cache and rename, so an interrupted download never leaves a partial binary.
+  const partial = `${destination}.${process.pid}.download`;
+  try {
+    await writeFile(partial, bytes);
+    if (process.platform !== "win32") {
+      await chmod(partial, 0o755);
+    }
+    await rename(partial, destination);
+  } finally {
+    await rm(partial, { force: true });
   }
   return destination;
 }
@@ -333,10 +390,10 @@ async function resolveBinaries(): Promise<ResolvedBinaries> {
     return { p4: configuredP4, p4d: configuredP4d };
   }
 
-  const platform = platformBinaries[process.platform];
+  const platform = platformBinaries[`${process.platform}-${process.arch}`] ?? platformBinaries[process.platform];
   assert(
     platform !== undefined,
-    `No pinned Perforce binary pair is configured for ${process.platform}. Set both explicit executable paths.`
+    `No pinned Perforce binary pair is configured for ${process.platform}-${process.arch}. Set both explicit executable paths.`
   );
   return {
     p4: await resolveCachedBinary(platform.directory, platform.p4),

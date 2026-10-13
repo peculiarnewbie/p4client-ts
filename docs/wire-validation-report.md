@@ -23,8 +23,14 @@ Neither runner uses configured production connection settings.
 The original Windows binary pins failed before the server started. Both new pins
 were verified against Perforce's published
 [Windows SHA256SUMS](https://ftp.perforce.com/perforce/r26.1/bin.ntx64/SHA256SUMS).
-Hash verification remains mandatory; mismatching cached/downloaded binaries are
-refused. The upstream release directory changes when Perforce publishes updates.
+Hash verification remains mandatory. A cached binary that mismatches is downloaded
+once more; a fresh download that mismatches is refused, and the failure lists the
+pinned, downloaded and cached hashes. The upstream release directory changes when
+Perforce publishes updates: on 2026-10-14 the Linux pins no longer matched the
+published SHA256SUMS, and `bin.darwin90x86_64` no longer carried `p4`/`p4d`. The
+Linux pins were updated, and macOS now uses `bin.macosx12arm64` or
+`bin.macosx1015x86_64` by architecture. All four pairs were checked against their
+directory's SHA256SUMS and by hashing a download; only Windows was run.
 
 Before/after claims for the identified regressions were checked by replaying
 committed disposable captures against a private source snapshot of `origin/main`
