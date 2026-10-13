@@ -4,6 +4,46 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
+## 0.12.0 - 2026-10-14
+
+### Breaking changes
+
+- Perforce messages are now separated from data rows. Recognized failures (unknown
+  changelist, expired ticket, permission, charset and similar) raise `P4CommandError`
+  even when `p4` exits zero, instead of reaching schemas or returning empty results.
+- `P4ErrorCategory` gains `permission`, `not_in_view`, `revision`, `changelist`, `user`
+  and `charset`. Failures previously reported as `command` or `client` may now use one
+  of these; update exhaustive switches. Classification ignores data rows and command
+  arguments, so a changelist description can no longer change an error's category.
+- `whereFiles()` raises a `not_in_view` failure instead of returning an empty mapping.
+- `printFile()` raises when file metadata is missing or the revision has no content,
+  distinguishing an unsynced `#have` from a real empty text file.
+- Combining `beforeChange` with a revision-qualified filespec is rejected. The cursor is
+  now applied to each filespec, and results are deduplicated and sorted before paging.
+
+### Added
+
+- `P4CommandError.reason` and `classifyP4Failure()` expose the specific
+  `P4FailureReason`.
+- Array and object results carry non-enumerable `messages` (`P4Message[]`) with
+  informational and warning diagnostics. Existing JSON shapes are unchanged; extract
+  `messages` explicitly before serialization. New exported types: `P4Message`,
+  `P4MessageReason`, `P4MessageCarrier`, `P4ResultArray`, plus `P4MessageRowSchema`.
+- Watched sync emits a `message` event for non-file diagnostics.
+- `P4ParseError` carries the redacted `command` and `args` that produced the bad row.
+
+### Fixed
+
+- `sync` previews no longer fail when an opened file is behind head and Perforce emits
+  `OutputInfo` rows with `data`/`level` but no file fields.
+- Per-file filesystem failures (clobber, rename, unlink, open-for-write) stay in
+  `errors[]` and watched `error-row` events, while session, server and spec failures
+  remain fatal.
+- `statFiles()` with selected fields always requests `depotFile`.
+- Escaped local paths (`%40`, `%23`, `%25`, `%2A`) are decoded exactly once.
+- Watched commands keep the executed command context on parse errors and join the
+  child process before rejecting.
+
 ## 0.11.0 - 2026-10-08
 
 ### Added
