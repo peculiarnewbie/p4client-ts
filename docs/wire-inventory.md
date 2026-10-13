@@ -2,7 +2,7 @@
 
 Inventory begun at `0cea5a1`, reviewed on 2026-10-13 and updated for the validation
 changes on this branch. The core package is
-`packages/core`; this machine's consumer checkout is `D:/git/electroswag`. Consumer
+`packages/core`. Consumer
 files were inspected without modification. Connection identities and captures
 from a configured server must never be included in this document.
 

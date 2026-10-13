@@ -390,3 +390,57 @@ describe('wire review regressions', () => {
     });
   });
 });
+
+describe('release review regressions', () => {
+  const client = (stdout: string, exitCode: number, stderr = ''): P4Client =>
+    new P4Client({
+      executor: (command, args) =>
+        Effect.runPromise(Effect.succeed({ command, args, stdout, stderr, exitCode })),
+    });
+
+  it('does not classify file paths in warning messages as session failures', async () => {
+    const warning = JSON.stringify({
+      data: '//depot/tickets/expired/Login Required/a.txt#9 - no file(s) at that revision.',
+      severity: 2,
+      generic: 17,
+    });
+    const result = await client(warning, 0).runTaggedJson(['files', '//depot/tickets/...#9']);
+    expect(result).toEqual([]);
+    expect(result.messages?.[0]?.reason).toBe('unknown_revision');
+  });
+
+  it('classifies command errors without matching path text', async () => {
+    const error = JSON.stringify({
+      data: '//depot/Login Required/a.txt - no such file(s).',
+      severity: 3,
+      generic: 17,
+    });
+    const failure = await client(error, 1).runTaggedJson(['files', '//depot/x']).catch((e) => e);
+    expect(failure).toBeInstanceOf(P4CommandError);
+    expect((failure as P4CommandError).category).not.toBe('authentication');
+  });
+
+  it('honors allowNonZeroExit in runTaggedJson', async () => {
+    const row = JSON.stringify({ depotFile: '//depot/a.txt' });
+    await expect(client(row, 1).runTaggedJson(['files', '//depot/a.txt'])).rejects.toBeInstanceOf(
+      P4CommandError,
+    );
+    await expect(
+      client(row, 1).runTaggedJson(['files', '//depot/a.txt'], { allowNonZeroExit: true }),
+    ).resolves.toEqual([{ depotFile: '//depot/a.txt' }]);
+  });
+
+  it('only treats the subcommand position as a payload command', () => {
+    const error = new P4CommandError(
+      'failed',
+      {
+        command: 'p4',
+        args: ['-c', 'diff', 'info'],
+        stdout: 'Perforce client error: Connect to server failed',
+        stderr: '',
+        exitCode: 1,
+      },
+    );
+    expect(error.category).toBe('connection');
+  });
+});

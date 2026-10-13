@@ -1,5 +1,6 @@
 import { classifyP4Error, classifyP4Failure } from '../public/errors.js';
 import { P4MessageRowSchema } from '../public/schemas.js';
+import { stripMessageSubject } from './diagnostics.js';
 import { decodeRow } from './rows.js';
 import type { P4Message, P4MessageCarrier } from '../public/types.js';
 
@@ -36,11 +37,12 @@ export function isSyncFileError(message: P4Message): boolean {
     return true;
   return (
     !FATAL_MESSAGE_REASONS.has(message.reason) &&
-    classifyP4Error(message.message) === 'command'
+    classifyP4Error(stripMessageSubject(message.message)) === 'command'
   );
 }
 
-function messageReason(text: string): P4Message['reason'] {
+function messageReason(message: string): P4Message['reason'] {
+  const text = stripMessageSubject(message);
   if (/opened and not being changed/i.test(text)) return 'opened_unchanged';
   if (/must resolve/i.test(text)) return 'resolve_required';
   if (/exclusive file already opened/i.test(text)) return 'exclusive_open';

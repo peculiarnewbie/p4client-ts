@@ -249,6 +249,8 @@ export class P4Client {
    * Without a schema, fields remain `unknown`. Message rows are separated before
    * schema validation and retained in the returned array's `messages` property.
    * Fatal messages raise P4CommandError, including failures with a zero exit code.
+   * A non-zero exit raises unless `allowNonZeroExit` is set, in which case data
+   * rows and messages are returned for the caller to inspect.
    *
    * @param args Perforce command arguments.
    * @param options Execution options and an optional Effect decoder.
@@ -268,8 +270,8 @@ export class P4Client {
     const commandArgs = options.prefixTaggedJsonFlags === false
       ? args
       : ["-Mj", "-z", "tag", ...args];
-    const result = await this.run(commandArgs, { ...options, allowNonZeroExit: true });
-    const rows = this.selectDataRows(commandArgs, result, () => true);
+    const result = await this.run(commandArgs, options);
+    const rows = this.selectDataRows(commandArgs, result, () => true, false, options.allowNonZeroExit === true);
     const schema = options.schema;
     return schema === undefined ? rows : withMessages(
       rows.map((row) => decodeRow(schema, row)), rows
@@ -1863,7 +1865,8 @@ export class P4Client {
     args: string[],
     result: P4CommandResult,
     hasData: (row: Record<string, unknown>) => boolean,
-    collectSyncErrors = false
+    collectSyncErrors = false,
+    allowNonZeroExit = false
   ): P4ResultArray<Record<string, unknown>> {
     let rows: Record<string, unknown>[];
     try {
@@ -1872,7 +1875,7 @@ export class P4Client {
       if (error instanceof P4ParseError) error.withCommand(result.command, result.args);
       throw error;
     }
-    return this.selectParsedRows(args, result, rows, hasData, collectSyncErrors);
+    return this.selectParsedRows(args, result, rows, hasData, collectSyncErrors, result.stderr, allowNonZeroExit);
   }
 
   /** Partition already-parsed watch rows without serializing and parsing their contents again. */
@@ -1882,7 +1885,8 @@ export class P4Client {
     rows: readonly Record<string, unknown>[],
     hasData: (row: Record<string, unknown>) => boolean,
     collectSyncErrors = false,
-    stderr = result.stderr
+    stderr = result.stderr,
+    allowNonZeroExit = false
   ): P4ResultArray<Record<string, unknown>> {
     const data: Record<string, unknown>[] = [];
     const messages: P4Message[] = [];
@@ -1914,7 +1918,7 @@ export class P4Client {
       throw this.toCommandError(args, result);
     }
 
-    if (result.exitCode !== 0 && messages.length === 0) {
+    if (result.exitCode !== 0 && messages.length === 0 && !allowNonZeroExit) {
       throw this.toCommandError(args, result);
     }
 
