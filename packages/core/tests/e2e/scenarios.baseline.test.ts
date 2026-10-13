@@ -40,11 +40,12 @@ describe("p4-ts e2e baseline", () => {
     const reconcilePreview = await harness.client.previewReconcile({ fileSpec: "..." });
     const openedFiles = await harness.client.getOpenedFiles();
 
-    expect(reconcilePreview).toEqual({
+    expect(reconcilePreview).toMatchObject({
       added: [],
       edited: [],
       deleted: []
     });
+    expect(reconcilePreview.messages?.[0]?.reason).toBe('empty');
     expect(openedFiles).toEqual([]);
   });
 

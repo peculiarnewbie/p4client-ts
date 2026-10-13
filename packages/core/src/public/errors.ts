@@ -15,7 +15,34 @@ export type P4ErrorCategory =
   | "authentication"
   | "server_config"
   | "client"
+  | 'permission'
+  | 'not_in_view'
+  | 'revision'
+  | 'changelist'
+  | 'user'
+  | 'charset'
   | "command";
+
+/** Specific failure case, independent of the CLI's exit status. */
+export type P4FailureReason = 'server_unreachable' | 'not_logged_in' | 'ticket_expired'
+  | 'permission_denied' | 'not_in_view' | 'unknown_revision' | 'unknown_changelist'
+  | 'unknown_user' | 'unknown_client' | 'charset' | 'clobber' | 'command';
+
+/** Classify recognizable Perforce failure text without relying on exit status. */
+export function classifyP4Failure(text: string): P4FailureReason {
+  if (/session has expired|ticket.*expired/i.test(text)) return 'ticket_expired';
+  if (/password.*invalid|password.*unset|login.*required|not logged in/i.test(text)) return 'not_logged_in';
+  if (/(?:no|have|denied) permission|permission denied|access (?:for|to).*denied|protected namespace/i.test(text)) return 'permission_denied';
+  if (/not in (?:the )?client view|must refer to client/i.test(text)) return 'not_in_view';
+  if (/invalid revision|no file\(s\) at that revision|unknown revision/i.test(text)) return 'unknown_revision';
+  if (/no such changelist|unknown changelist|change .+ unknown/i.test(text)) return 'unknown_changelist';
+  if (/no such user|user .+ (?:doesn.t exist|unknown)|unknown user/i.test(text)) return 'unknown_user';
+  if (/client .+ unknown|unknown.*client|client .+doesn.t exist/i.test(text)) return 'unknown_client';
+  if (/can.t clobber writable file|can.t overwrite existing file/i.test(text)) return 'clobber';
+  if (/unicode.*(?:require|permit)|translation (?:of|failed)|(?:unknown|invalid|unsupported) (?:character set|charset)|P4CHARSET.*(?:must|invalid|unknown)/i.test(text)) return 'charset';
+  if (/connect to server failed|tcp connect|no such host|connection refused|network is unreachable|WSAECONNREFUSED/i.test(text)) return 'server_unreachable';
+  return 'command';
+}
 
 // Order matters: patterns are evaluated top-down; first match wins.
 const categoryPatterns: readonly { category: P4ErrorCategory; pattern: RegExp }[] = [
@@ -64,6 +91,13 @@ const connectionErrorPatterns: readonly RegExp[] = [
  * @returns `"command"` when no more specific category matches.
  */
 export function classifyP4Error(text: string): P4ErrorCategory {
+  const reason = classifyP4Failure(text);
+  const categories: Partial<Record<P4FailureReason, P4ErrorCategory>> = {
+    server_unreachable: 'connection', not_logged_in: 'authentication', ticket_expired: 'authentication',
+    permission_denied: 'permission', not_in_view: 'not_in_view', unknown_revision: 'revision',
+    unknown_changelist: 'changelist', unknown_user: 'user', unknown_client: 'client', charset: 'charset'
+  };
+  if (categories[reason] !== undefined) return categories[reason];
   for (const { category, pattern } of categoryPatterns) {
     if (pattern.test(text)) {
       return category;
@@ -102,6 +136,8 @@ export class P4CommandError extends Error {
    * instead of parsing the error message string.
    */
   readonly category: P4ErrorCategory;
+  /** Specific recognized failure, including zero-exit warning failures. */
+  readonly reason: P4FailureReason;
 
   /**
    * Create a typed wrapper for a failed Perforce command result.
@@ -115,7 +151,9 @@ export class P4CommandError extends Error {
     super(message);
     this.name = "P4CommandError";
     this.result = result;
-    this.category = category ?? classifyP4Error(message);
+    const text = [result.stderr, result.stdout, message].join('\n');
+    this.category = category ?? classifyP4Error(text);
+    this.reason = classifyP4Failure(text);
   }
 }
 
@@ -163,6 +201,9 @@ export class P4ParseError extends Error {
   readonly _tag = "P4ParseError";
   readonly line: string;
   readonly cause: unknown;
+  /** Executable and argument vector when parsing was part of a client command. */
+  command: string | undefined;
+  args: string[] | undefined;
 
   /**
    * Create a typed parse error for malformed CLI output.
@@ -176,6 +217,18 @@ export class P4ParseError extends Error {
     this.name = "P4ParseError";
     this.line = line;
     this.cause = cause;
+  }
+
+  /**
+   * Attach command context while preserving the original row and schema cause.
+   * @param command Executable used for the malformed response.
+   * @param args Command arguments, redacted before retention.
+   * @returns This error with command context attached.
+   */
+  withCommand(command: string, args: readonly string[]): this {
+    this.command = command;
+    this.args = redactCommandArgs([...args]);
+    return this;
   }
 }
 

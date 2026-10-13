@@ -29,6 +29,15 @@ export const P4PositiveIntegerSchema = P4NonNegativeIntegerSchema.check(Schema.i
 /** Decode the default changelist sentinel or a non-negative numbered changelist. */
 export const P4ChangeSchema = Schema.Union([Schema.Literal('default'), P4NonNegativeIntegerSchema]);
 
+/** Validate OutputInfo, OutputWarning and OutputError fields in tagged JSON records. */
+export const P4MessageRowSchema = Schema.Struct({
+  data: Schema.String,
+  level: Schema.optionalKey(Schema.NullOr(P4NonNegativeIntegerSchema)),
+  severity: Schema.optionalKey(Schema.NullOr(P4NonNegativeIntegerSchema)),
+  generic: Schema.optionalKey(Schema.NullOr(P4NonNegativeIntegerSchema)),
+  code: Schema.optionalKey(Schema.NullOr(Schema.String))
+});
+
 /** Runtime contract for the required and optional fields emitted by `p4 clients`. */
 export const P4JsonWorkspaceSchema = Schema.Struct({
   client: Schema.NonEmptyString,

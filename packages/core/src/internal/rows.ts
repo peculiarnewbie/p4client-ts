@@ -72,14 +72,28 @@ export const StreamRow = Schema.Struct({
   Type: Text, desc: Text
 });
 export const AnnotationRow = Schema.Struct({ upper: P4NonNegativeIntegerSchema, data: Schema.String });
-export const MessageRow = Schema.Struct({ data: Schema.String, severity: Integer, generic: Integer, code: Text });
 export const AnnotationHeaderRow = Schema.Struct({ depotFile: P4DepotPathSchema, rev: Text });
+
+const commandContexts = new WeakMap<object, { command: string; args: readonly string[] }>();
+
+/** Keep command context outside the captured wire object. */
+export function setRowCommandContext(row: object, command: string, args: readonly string[]): void {
+  commandContexts.set(row, { command, args });
+}
+
+/** Construct a parse failure with the complete wire row and its command context. */
+export function rowParseError(message: string, source: unknown, cause: unknown): P4ParseError {
+  const error = new P4ParseError(message, JSON.stringify(source) ?? String(source), cause);
+  const context = typeof source === 'object' && source !== null ? commandContexts.get(source) : undefined;
+  if (context) error.withCommand(context.command, context.args);
+  return error;
+}
 
 /** Decode CLI data and keep the complete offending row in the public error. */
 export function decodeRow<A>(schema: Schema.Decoder<A>, row: unknown, source: unknown = row): A {
   try {
     return Schema.decodeUnknownSync(schema)(row, { onExcessProperty: 'preserve' });
   } catch (cause) {
-    throw new P4ParseError('Invalid Perforce command output.', JSON.stringify(source) ?? String(source), cause);
+    throw rowParseError('Invalid Perforce command output.', source, cause);
   }
 }

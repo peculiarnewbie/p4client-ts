@@ -5,10 +5,11 @@ import { Effect } from 'effect';
 import type { Schema } from 'effect';
 import { createAsyncEventQueue } from "../internal/async-queue.js";
 import { createCancellationScope, ownOperation } from '../internal/cancellation.js';
+import { readMessage, withMessages } from '../internal/messages.js';
 import {
-  AnnotationRow, AnnotationHeaderRow, MessageRow, ChangelistRow, DepotRow, DescribedFileRow, DirRow, FileRow,
+  AnnotationRow, AnnotationHeaderRow, ChangelistRow, DepotRow, DescribedFileRow, DirRow, FileRow,
   FileRevisionRow, HistoryRevisionRow, OpenedRow, StatRow, StreamRow, SyncRow,
-  UserRow, WhereRow, decodeRow
+  UserRow, WhereRow, decodeRow, setRowCommandContext, rowParseError
 } from '../internal/rows.js';
 import {
   P4DepotPathSchema, P4ClientPathSchema, P4LocalPathSchema,
@@ -99,6 +100,8 @@ import type {
   P4ClientOptions,
   P4CommandOptions,
   P4CommandResult,
+  P4ResultArray,
+  P4Message,
   P4CommandStreamEvent,
   P4OperationHandle,
   P4OperationOptions,
@@ -152,7 +155,7 @@ export class P4Client {
   private activeClient: string | null = null;
   private cacheEpoch = 0;
   private cachedEnvironment: P4EnvironmentSummary | null = null;
-  private cachedWorkspaces: P4WorkspaceSummary[] | null = null;
+  private cachedWorkspaces: P4ResultArray<P4WorkspaceSummary> | null = null;
   private cachedLocalEnvironment: { cacheKey: string; environment: P4EnvironmentSummary } | null = null;
   private cachedResolvedSettings: { cacheKey: string; resolved: P4ResolvedSettings } | null = null;
 
@@ -242,7 +245,9 @@ export class P4Client {
    * By default this method prefixes `-Mj -z tag` to the provided arguments.
    * Set `prefixTaggedJsonFlags` to `false` to pass fully-expanded arguments
    * yourself. Pass `schema` to validate rows and infer their decoded type.
-   * Without a schema, fields remain `unknown`.
+   * Without a schema, fields remain `unknown`. Message rows are separated before
+   * schema validation and retained in the returned array's `messages` property.
+   * Fatal messages raise P4CommandError, including failures with a zero exit code.
    *
    * @param args Perforce command arguments.
    * @param options Execution options and an optional Effect decoder.
@@ -252,20 +257,22 @@ export class P4Client {
   runTaggedJson<A>(
     args: string[],
     options: RunTaggedJsonOptions & { schema: Schema.Decoder<A> }
-  ): Promise<A[]>;
-  runTaggedJson(args: string[], options?: RunTaggedJsonOptions): Promise<Record<string, unknown>[]>;
+  ): Promise<P4ResultArray<A>>;
+  runTaggedJson(args: string[], options?: RunTaggedJsonOptions): Promise<P4ResultArray<Record<string, unknown>>>;
   async runTaggedJson(
     args: string[],
     options: RunTaggedJsonOptions & { schema?: Schema.Decoder<unknown> } = {}
-  ): Promise<unknown[]> {
+  ): Promise<P4ResultArray<unknown>> {
     options.signal?.throwIfAborted();
     const commandArgs = options.prefixTaggedJsonFlags === false
       ? args
       : ["-Mj", "-z", "tag", ...args];
-    const result = await this.run(commandArgs, options);
-    return options.schema === undefined
-      ? parseP4JsonLines(result.stdout)
-      : parseP4JsonLines(result.stdout, options.schema);
+    const result = await this.run(commandArgs, { ...options, allowNonZeroExit: true });
+    const rows = this.selectDataRows(commandArgs, result, () => true);
+    const schema = options.schema;
+    return schema === undefined ? rows : withMessages(
+      rows.map((row) => decodeRow(schema, row)), rows
+    );
   }
 
   /**
@@ -331,10 +338,10 @@ export class P4Client {
    * @throws {Error} When no user can be resolved from the options or current
    * environment.
    */
-  async listWorkspaces(options: ListWorkspacesOptions = {}): Promise<P4WorkspaceSummary[]> {
+  async listWorkspaces(options: ListWorkspacesOptions = {}): Promise<P4ResultArray<P4WorkspaceSummary>> {
     options.signal?.throwIfAborted();
     if (!options.refresh && !options.user && !options.hostName && !options.includeNonLocal && this.cachedWorkspaces) {
-      return this.cachedWorkspaces.map((workspace) => ({ ...workspace }));
+      return withMessages(this.cachedWorkspaces.map((workspace) => ({ ...workspace })), this.cachedWorkspaces);
     }
 
     const epoch = this.cacheEpoch;
@@ -367,10 +374,10 @@ export class P4Client {
 
     options.signal?.throwIfAborted();
     if (!options.user && !options.hostName && !options.includeNonLocal && epoch === this.cacheEpoch) {
-      this.cachedWorkspaces = workspaces;
+      this.cachedWorkspaces = withMessages(workspaces, allWorkspaces);
     }
 
-    return workspaces.map((workspace) => ({ ...workspace }));
+    return withMessages(workspaces.map((workspace) => ({ ...workspace })), allWorkspaces);
   }
 
   /**
@@ -414,7 +421,7 @@ export class P4Client {
    */
   async listPendingChangelists(
     options: ListPendingChangelistsOptions = {}
-  ): Promise<P4PendingChangelistSummary[]> {
+  ): Promise<P4ResultArray<P4PendingChangelistSummary>> {
     options.signal?.throwIfAborted();
     const commandArgs = ["changes", "-s", options.status ?? "pending"];
     if (options.limit !== undefined) {
@@ -433,7 +440,7 @@ export class P4Client {
     const includeDefault = options.includeDefault ?? true;
 
     if (!includeDefault || summaries.some((summary) => summary.isDefault)) {
-      return summaries;
+      return withMessages(summaries, changes);
     }
 
     const defaultOpenedOptions: GetOpenedFilesOptions = { ...options, change: "default" };
@@ -450,14 +457,14 @@ export class P4Client {
     const defaultOpened = await this.getOpenedFiles(defaultOpenedOptions);
 
     if (defaultOpened.length === 0) {
-      return summaries;
+      return withMessages(summaries, { messages: [...(changes.messages ?? []), ...(defaultOpened.messages ?? [])] });
     }
 
     const defaultClient = options.client ?? defaultOpened[0]?.client ?? null;
     const defaultUser = options.user ?? defaultOpened[0]?.user ?? null;
     const defaultDescription = defaultOpened[0]?.changelistDescription ?? "Default changelist";
 
-    return [
+    return withMessages([
       {
         change: "default",
         client: defaultClient,
@@ -469,7 +476,7 @@ export class P4Client {
         isDefault: true
       },
       ...summaries
-    ];
+    ], { messages: [...(changes.messages ?? []), ...(defaultOpened.messages ?? [])] });
   }
 
   /**
@@ -528,11 +535,11 @@ export class P4Client {
     if (options.refresh !== undefined) pendingOptions.refresh = options.refresh;
 
     const items = await this.listPendingChangelists(pendingOptions);
-    return {
+    return withMessages({
       items,
       hasMore: false,
       nextBeforeChange: null
-    };
+    }, items);
   }
 
   /**
@@ -541,7 +548,7 @@ export class P4Client {
    * Callers can filter by user, client, changelist, or file spec and can
    * regroup the returned rows in their own UI.
    */
-  async getOpenedFiles(options: GetOpenedFilesOptions = {}): Promise<P4OpenedFileSummary[]> {
+  async getOpenedFiles(options: GetOpenedFilesOptions = {}): Promise<P4ResultArray<P4OpenedFileSummary>> {
     options.signal?.throwIfAborted();
     const commandArgs = ["opened"];
     if (options.user) {
@@ -556,7 +563,7 @@ export class P4Client {
     this.appendFileSpecs(commandArgs, options.fileSpec);
 
     const files = await this.runTaggedJson(commandArgs, options);
-    return files.map((file) => this.toOpenedFileSummary(file));
+    return withMessages(files.map((file) => this.toOpenedFileSummary(file)), files);
   }
 
   /**
@@ -565,7 +572,7 @@ export class P4Client {
   async getChangelistFiles(
     change: number | "default",
     options: Omit<GetOpenedFilesOptions, "change"> = {}
-  ): Promise<P4OpenedFileSummary[]> {
+  ): Promise<P4ResultArray<P4OpenedFileSummary>> {
     options.signal?.throwIfAborted();
     return this.getOpenedFiles({ ...options, change });
   }
@@ -607,9 +614,9 @@ export class P4Client {
    * `p4 diff2`, either inferred from `action`/`revision` or supplied through
    * `fromRevision`/`toRevision`.
    *
-   * `p4 diff` and `p4 diff2` exit with code `1` when differences exist. This
-   * method treats exit codes `0` and `1` as success and only throws for exit
-   * code `2` or higher.
+   * Built-in diffs return zero for differences. A non-zero exit is a command
+   * failure, except exit one with an actual unified patch and empty stderr
+   * (supported for external diff tools).
    */
   async diffFile(options: DiffFileOptions): Promise<P4FileDiffResult> {
     options.signal?.throwIfAborted();
@@ -644,14 +651,16 @@ export class P4Client {
       allowNonZeroExit: true
     });
 
-    if (result.exitCode > 1) {
+    const hasPatch = /^@@ -\d/m.test(result.stdout);
+    if (result.exitCode > 1 || (result.exitCode !== 0 && !(result.exitCode === 1 && hasPatch && !result.stderr.trim()))) {
       throw this.toCommandError([plan.command, ...plan.args], result);
     }
 
     const unifiedDiff = result.stdout;
     const { additions, deletions } = summarizeUnifiedDiff(unifiedDiff);
+    const messages = this._selectPlainMessages([plan.command, ...plan.args], result);
 
-    return {
+    return withMessages({
       depotFile: decodeRow(P4DepotPathSchema, options.depotFile),
       localFile: this.toLocalPath(options.localFile),
       source: plan.source,
@@ -662,7 +671,7 @@ export class P4Client {
       exitCode: result.exitCode,
       additions,
       deletions
-    };
+    }, { messages });
   }
 
   /**
@@ -678,7 +687,10 @@ export class P4Client {
     const fileRows = await this.runTaggedJson(["files", filespec], options);
     const meta = fileRows[0];
     if (!meta) {
-      throw new Error(`Unable to resolve depot file metadata for ${filespec}.`);
+      return withMessages({
+        depotFile: decodeRow(P4DepotPathSchema, depotFile), revision: String(revision),
+        content: '', isBinary: false, type: null
+      }, fileRows);
     }
 
     const parsed = decodeRow(FileRow, meta);
@@ -688,23 +700,23 @@ export class P4Client {
       ?? (typeof revision === "number" || revision !== "have" ? String(revision) : null);
 
     if (isBinaryP4Type(type)) {
-      return {
+      return withMessages({
         depotFile: resolvedDepotFile,
         revision: resolvedRevision,
         content: "",
         isBinary: true,
         type
-      };
+      }, fileRows);
     }
 
     const result = await this.run(["print", "-q", filespec], options);
-    return {
+    return withMessages({
       depotFile: resolvedDepotFile,
       revision: resolvedRevision,
       content: result.stdout,
       isBinary: false,
       type
-    };
+    }, { messages: [...(fileRows.messages ?? []), ...this._selectPlainMessages(['print', '-q', filespec], result)] });
   }
 
   /**
@@ -744,7 +756,7 @@ export class P4Client {
       .slice(0, maxFiles)
       .map((row) => this.toDepotFileRevision(row));
 
-    return { items, hasMore };
+    return withMessages({ items, hasMore }, rows);
   }
 
   /**
@@ -753,12 +765,12 @@ export class P4Client {
    * These are the roots of the depot tree that {@link listDepotDirs} and
    * {@link listDepotFiles} expand.
    */
-  async listDepots(options: ListDepotsOptions = {}): Promise<P4Depot[]> {
+  async listDepots(options: ListDepotsOptions = {}): Promise<P4ResultArray<P4Depot>> {
     options.signal?.throwIfAborted();
     const args = ["-Mj", "-z", "tag", "depots"];
     const result = await this.runBrowse(args, options.signal);
     const rows = this.selectDataRows(args, result, (row) => 'name' in row);
-    return rows.map((row) => this.toDepot(row));
+    return withMessages(rows.map((row) => this.toDepot(row)), rows);
   }
 
   /**
@@ -781,14 +793,14 @@ export class P4Client {
 
     const allItems = rows.map((row) => this.toDepotDir(row));
     if (options.maxResults === undefined) {
-      return { items: allItems, hasMore: false };
+      return withMessages({ items: allItems, hasMore: false }, rows);
     }
 
     const maxResults = requirePositiveInteger(options.maxResults, "maxResults");
-    return {
+    return withMessages({
       items: allItems.slice(0, maxResults),
       hasMore: allItems.length > maxResults
-    };
+    }, rows);
   }
 
   /**
@@ -830,13 +842,13 @@ export class P4Client {
       });
 
     if (maxResults === undefined) {
-      return { items: listings, hasMore: false };
+      return withMessages({ items: listings, hasMore: false }, rows);
     }
 
-    return {
+    return withMessages({
       items: listings.slice(0, maxResults),
       hasMore: listings.length > maxResults
-    };
+    }, rows);
   }
 
   /**
@@ -849,7 +861,7 @@ export class P4Client {
    *
    * Files that do not exist resolve to no rows rather than throwing.
    */
-  async statFiles(options: StatFilesOptions): Promise<P4FileStat[]> {
+  async statFiles(options: StatFilesOptions): Promise<P4ResultArray<P4FileStat>> {
     options.signal?.throwIfAborted();
     const specs = Array.isArray(options.fileSpec) ? options.fileSpec : [options.fileSpec];
     if (specs.length === 0) {
@@ -864,7 +876,7 @@ export class P4Client {
       args.push("-Ol");
     }
     if (options.fields && options.fields.length > 0) {
-      args.push("-T", options.fields.join(" "));
+      args.push('-T', [...new Set(['depotFile', ...options.fields])].join(' '));
     }
     for (const spec of specs) {
       args.push(this.appendAtChange(spec, options.atChange));
@@ -872,7 +884,7 @@ export class P4Client {
 
     const result = await this.runBrowse(args, options.signal);
     const rows = this.selectDataRows(args, result, (row) => 'depotFile' in row);
-    return rows.map((row) => this.toFileStat(row));
+    return withMessages(rows.map((row) => this.toFileStat(row)), rows);
   }
 
   /**
@@ -880,11 +892,11 @@ export class P4Client {
    *
    * Use this for "reveal in workspace" / "open in editor" actions and to
    * resolve arbitrary depot paths to filesystem paths. Specs outside the client
-   * view resolve to no rows rather than throwing. A client view with
+   * view raise a typed `not_in_view` command error. A client view with
    * overlapping or exclusionary lines can produce multiple rows per spec;
    * exclusion rows are flagged with {@link P4WhereMapping.isExcluded}.
    */
-  async whereFiles(options: WhereFilesOptions): Promise<P4WhereMapping[]> {
+  async whereFiles(options: WhereFilesOptions): Promise<P4ResultArray<P4WhereMapping>> {
     options.signal?.throwIfAborted();
     const specs = Array.isArray(options.fileSpec) ? options.fileSpec : [options.fileSpec];
     if (specs.length === 0) {
@@ -894,7 +906,7 @@ export class P4Client {
     const args = ["-Mj", "-z", "tag", "where", ...specs];
     const result = await this.runBrowse(args, options.signal);
     const rows = this.selectDataRows(args, result, (row) => 'depotFile' in row);
-    return rows.map((row) => this.toWhereMapping(row));
+    return withMessages(rows.map((row) => this.toWhereMapping(row)), rows);
   }
 
   /**
@@ -933,7 +945,7 @@ export class P4Client {
 
     const row = rows[0];
     if (!row) {
-      return { depotFile: decodeRow(P4DepotPathSchema, options.depotFile), revisions: [] };
+      return withMessages({ depotFile: decodeRow(P4DepotPathSchema, options.depotFile), revisions: [] }, rows);
     }
 
     // `-m N` bounds each path separately, so the merged list can exceed the
@@ -942,10 +954,10 @@ export class P4Client {
     // specs resolved to depot syntax; with `-i` the first row is the requested
     // path, never an ancestor.
     const merged = this.mergeFileRevisions(rows);
-    return {
+    return withMessages({
       depotFile: decodeRow(P4DepotPathSchema, row.depotFile, row),
       revisions: maxRevisions === undefined ? merged : merged.slice(0, maxRevisions)
-    };
+    }, rows);
   }
 
   /**
@@ -955,7 +967,7 @@ export class P4Client {
    * This turns raw user IDs on changelists and file revisions into full names
    * and emails.
    */
-  async listUsers(options: ListUsersOptions = {}): Promise<P4User[]> {
+  async listUsers(options: ListUsersOptions = {}): Promise<P4ResultArray<P4User>> {
     options.signal?.throwIfAborted();
     const args = ["-Mj", "-z", "tag", "users"];
     if (options.maxResults !== undefined) {
@@ -967,7 +979,7 @@ export class P4Client {
 
     const result = await this.runBrowse(args, options.signal);
     const rows = this.selectDataRows(args, result, (row) => 'User' in row);
-    return rows.map((row) => this.toUser(row));
+    return withMessages(rows.map((row) => this.toUser(row)), rows);
   }
 
   /**
@@ -977,7 +989,7 @@ export class P4Client {
    * hierarchy of a stream depot without additional queries. Scope the listing
    * with `fileSpec` such as `//Project/...`.
    */
-  async listStreams(options: ListStreamsOptions = {}): Promise<P4Stream[]> {
+  async listStreams(options: ListStreamsOptions = {}): Promise<P4ResultArray<P4Stream>> {
     options.signal?.throwIfAborted();
     const args = ["-Mj", "-z", "tag", "streams"];
     if (options.maxResults !== undefined) {
@@ -987,7 +999,7 @@ export class P4Client {
 
     const result = await this.runBrowse(args, options.signal);
     const rows = this.selectDataRows(args, result, (row) => 'Stream' in row);
-    return rows.map((row) => this.toStream(row));
+    return withMessages(rows.map((row) => this.toStream(row)), rows);
   }
 
   /**
@@ -1009,11 +1021,10 @@ export class P4Client {
     args.push(spec);
 
     const result = await this.runBrowse(args, options.signal);
-    const rows = parseP4JsonLines(result.stdout);
+    const rows = this.selectDataRows(args, result, (row) => 'upper' in row || 'depotFile' in row);
 
     let depotFile: P4DepotPath | null = null;
     let revision: string | null = null;
-    let hasFatal = false;
     const lines: P4AnnotatedLine[] = [];
 
     for (const row of rows) {
@@ -1037,24 +1048,13 @@ export class P4Client {
         continue;
       }
 
-      const severity = normalizeNullableNumber(row.severity);
-      if (severity !== null && severity >= 3) {
-        hasFatal = true;
-      }
     }
 
-    if (hasFatal) {
-      throw this.toCommandError(args, result);
-    }
-    if (rows.length === 0 && result.exitCode !== 0) {
-      throw this.toCommandError(args, result);
-    }
-
-    return {
+    return withMessages({
       depotFile: depotFile ?? decodeRow(P4DepotPathSchema, options.depotFile),
       revision,
       lines
-    };
+    }, rows);
   }
 
   /**
@@ -1115,14 +1115,18 @@ export class P4Client {
     const items = await this.mapWithConcurrency(plans, concurrency, async (plan) => {
       options.signal?.throwIfAborted();
       await mkdir(dirname(plan.outputPath), { recursive: true });
-      await this.run([
+      const commandArgs = [
         "print",
         "-q",
         "-K",
         "-o",
         plan.outputPath,
         `${plan.file.depotFile}#${plan.file.revision}`
-      ], options);
+      ];
+      const printed = await this.run(commandArgs, options);
+      if (this._selectPlainMessages(commandArgs, printed).some((message) => message.reason === 'empty')) {
+        throw this.toCommandError(commandArgs, printed);
+      }
 
       return {
         file: plan.file,
@@ -1159,7 +1163,7 @@ export class P4Client {
     );
 
     if (!includeLineCounts) {
-      return { changelist, files: baseSummaries };
+      return withMessages({ changelist, files: baseSummaries }, changelist);
     }
 
     const describedFiles = new Map(changelist.files.map((file) => [file.depotFile, file]));
@@ -1204,7 +1208,7 @@ export class P4Client {
       }
     );
 
-    return { changelist, files };
+    return withMessages({ changelist, files }, changelist);
   }
 
   /**
@@ -1246,7 +1250,7 @@ export class P4Client {
       let sawProgress = false;
 
       const executeAttempt = async (args: string[]): Promise<{
-        rows: Record<string, unknown>[];
+        rows: P4ResultArray<Record<string, unknown>>;
       }> => {
         const rows: Record<string, unknown>[] = [];
         const handle = this.watch(args, { signal: scope.signal, allowNonZeroExit: true });
@@ -1257,7 +1261,7 @@ export class P4Client {
           }
 
           if (event.source === "stdout") {
-            const parsed = this.tryParseJsonLine(event.line);
+            const parsed = this.tryParseJsonLine(event.line, args);
             if (parsed) {
               rows.push(parsed);
               continue;
@@ -1274,16 +1278,10 @@ export class P4Client {
         }
 
         const commandResult = await handle.result;
-        if (commandResult.exitCode !== 0) {
-          throw new P4CommandError(
-            `${this.executable} ${formatCommandArgs(args)} exited with ${commandResult.exitCode}: ${
-              commandResult.stderr.trim() || commandResult.stdout.trim() || "Unknown error"
-            }`,
-            commandResult
-          );
-        }
-
-        return { rows };
+        const data = this.selectDataRows(args, {
+          ...commandResult, stdout: rows.map((row) => JSON.stringify(row)).join('\n')
+        }, () => true);
+        return { rows: data };
       };
 
       try {
@@ -1362,11 +1360,7 @@ export class P4Client {
     options.signal?.throwIfAborted();
     const commandArgs = ["-Mj", "-z", "tag", ...this.getSyncCommandArgs(options, false)];
     const result = await this.run(commandArgs, { ...options, allowNonZeroExit: true });
-    const rows = parseP4JsonLines(result.stdout);
-
-    if (result.exitCode !== 0 && rows.length === 0) {
-      throw this.toCommandError(commandArgs, result);
-    }
+    const rows = this.selectDataRows(commandArgs, result, () => true, true);
 
     return this.toSyncResult(rows);
   }
@@ -1388,6 +1382,7 @@ export class P4Client {
     const result = (async () => {
       const items: P4SyncItem[] = [];
       const errors: P4SyncErrorItem[] = [];
+      const capturedRows: Record<string, unknown>[] = [];
       const handle = this.watch(args, { signal: scope.signal, allowNonZeroExit: true });
 
       for await (const event of handle.events) {
@@ -1395,11 +1390,19 @@ export class P4Client {
           continue;
         }
 
-        const row = this.tryParseJsonLine(event.line);
+        const row = this.tryParseJsonLine(event.line, args);
         if (!row) {
+          if (event.line.trim()) throw new P4ParseError('Unrecognized sync output.', event.line, null).withCommand(this.executable, args);
           continue;
         }
 
+        setRowCommandContext(row, this.executable, this.withGlobalOptions(args));
+        capturedRows.push(row);
+        const message = readMessage(row);
+        if (message && !(message.kind === 'error' && message.reason === 'clobber')) {
+          queue.push({ type: 'message', message });
+          continue;
+        }
         if (this.isSyncErrorRow(row)) {
           const error = this.toSyncErrorItem(row);
           errors.push(error);
@@ -1407,7 +1410,7 @@ export class P4Client {
           continue;
         }
 
-        if (row.action !== undefined || row.depotFile !== undefined) {
+        {
           const item = this.toSyncItem(row);
           items.push(item);
           queue.push({
@@ -1419,15 +1422,10 @@ export class P4Client {
       }
 
       const commandResult = await handle.result;
-      if (commandResult.exitCode !== 0 && errors.length === 0) {
-        throw this.toCommandError(args, commandResult);
-      }
-
-      const syncResult: P4SyncResultWithErrors = {
-        items,
-        errors,
-        totalCount: items.length
-      };
+      const rows = this.selectDataRows(args, {
+        ...commandResult, stdout: capturedRows.map((row) => JSON.stringify(row)).join('\n')
+      }, () => true, true);
+      const syncResult: P4SyncResultWithErrors = withMessages({ items, errors, totalCount: items.length }, rows);
       queue.push({ type: "complete", result: syncResult });
       return syncResult;
     })();
@@ -1498,15 +1496,23 @@ export class P4Client {
       commandArgs.push("-c", options.client);
     }
     commandArgs.push("-m", String(limit + 1));
-    this.appendFileSpecs(commandArgs, options.fileSpec);
     if (options.beforeChange !== undefined) {
-      commandArgs.push(`@${requireNonNegativeInteger(options.beforeChange, "beforeChange")}`);
+      const before = requireNonNegativeInteger(options.beforeChange, 'beforeChange');
+      const scopes = options.fileSpec === undefined ? ['//...'] : Array.isArray(options.fileSpec) ? options.fileSpec : [options.fileSpec];
+      for (const scope of scopes) {
+        if (/[#@]/.test(scope)) throw new Error('beforeChange requires fileSpec without a revision specifier.');
+        commandArgs.push(`${scope}@${before}`);
+      }
+    } else {
+      this.appendFileSpecs(commandArgs, options.fileSpec);
     }
 
     const rows = await this.runTaggedJson(commandArgs, options);
-    const summaries = rows
+    const decoded = rows
       .map((row) => toSummary(row))
       .filter((summary): summary is TSummary => summary !== null);
+    const summaries = [...new Map(decoded.map((summary) => [summary.change, summary])).values()]
+      .sort((left, right) => right.change - left.change);
     const hasMore = summaries.length > limit;
     const items = hasMore ? summaries.slice(0, limit) : summaries;
     const oldestChange = items.reduce<number | null>(
@@ -1514,11 +1520,11 @@ export class P4Client {
       null
     );
 
-    return {
+    return withMessages({
       items,
       hasMore,
       nextBeforeChange: hasMore && oldestChange !== null ? oldestChange - 1 : null
-    };
+    }, rows);
   }
 
   private toSubmittedChangelistSummary(
@@ -1576,7 +1582,7 @@ export class P4Client {
     const openedFiles = await this.getOpenedFiles(openedOptions);
     const first = openedFiles[0];
 
-    return {
+    return withMessages({
       change: "default",
       user: first?.user ?? null,
       client: options.client ?? first?.client ?? null,
@@ -1587,17 +1593,18 @@ export class P4Client {
       files: openedFiles.flatMap((file) => file.depotFile === null
         ? []
         : [this.toDescribedFileFromOpened({ ...file, depotFile: file.depotFile })])
-    };
+    }, openedFiles);
   }
 
   private toChangelistDescription(
     change: number | "default",
-    rows: Record<string, unknown>[],
+    rows: P4ResultArray<Record<string, unknown>>,
     contentSource?: "opened" | "shelved"
   ): P4ChangelistDescription {
     const metadata = rows.find((row) => row.change !== undefined) ?? rows[0];
     if (!metadata) {
-      throw new Error(`Unable to parse changelist description for change ${String(change)}.`);
+      throw new P4ParseError('Missing Perforce changelist metadata.', JSON.stringify(rows), null)
+        .withCommand(this.executable, this.withGlobalOptions(['-Mj', '-z', 'tag', 'describe', ...(contentSource === 'shelved' ? ['-S'] : []), '-s', String(change)]));
     }
 
     const parsed = decodeRow(ChangelistRow, metadata);
@@ -1619,7 +1626,7 @@ export class P4Client {
       description.contentSource = contentSource;
     }
 
-    return description;
+    return withMessages(description, rows);
   }
 
   private toDescribedFiles(rows: Record<string, unknown>[]): P4DescribedFile[] {
@@ -1643,15 +1650,15 @@ export class P4Client {
           action: row[`action${index}`],
           type: row[`type${index}`],
           rev: row[`rev${index}`]
-        }));
+        }, row));
       }
     }
 
     return files;
   }
 
-  private toDescribedFile(row: Record<string, unknown>): P4DescribedFile {
-    const parsed = decodeRow(DescribedFileRow, row);
+  private toDescribedFile(row: Record<string, unknown>, source: Record<string, unknown> = row): P4DescribedFile {
+    const parsed = decodeRow(DescribedFileRow, row, source);
     return {
       depotFile: parsed.depotFile,
       action: parsed.action,
@@ -1736,8 +1743,8 @@ export class P4Client {
 
     return {
       depotFile: parsed.depotFile ?? null,
-      clientFile: this.toClientFile(parsed.clientFile),
-      localFile: this.toLocalFile(parsed.path) ?? this.toLocalFile(parsed.clientFile),
+      clientFile: this.toClientFile(parsed.clientFile, file),
+      localFile: this.toLocalPath(parsed.path, file) ?? this.toLocalFile(parsed.clientFile, file),
       action,
       type: normalizeNullableString(parsed.type),
       changelist,
@@ -1771,6 +1778,36 @@ export class P4Client {
     return this.run(args, options);
   }
 
+  /** Plain payload commands send their diagnostics to stderr, including zero-exit warnings. */
+  private _selectPlainMessages(args: string[], result: P4CommandResult): P4Message[] {
+    if (!result.stderr.trim()) return [];
+    if (result.stderr.trim().startsWith('{')) {
+      try {
+        const messages = parseP4JsonLines(result.stderr).map((row) => {
+          setRowCommandContext(row, this.executable, this.withGlobalOptions(args));
+          const message = readMessage(row);
+          if (!message) throw new P4ParseError('Unexpected Perforce stderr row.', JSON.stringify(row), null);
+          return message;
+        });
+        if (messages.some((message) => message.kind === 'error' || ['unknown_revision', 'unknown_changelist', 'unknown_user', 'unknown_client', 'not_in_view', 'permission_denied'].includes(message.reason))) {
+          throw this.toCommandError(args, result);
+        }
+        return messages;
+      } catch (error) {
+        if (error instanceof P4ParseError) error.withCommand(this.executable, this.withGlobalOptions(args));
+        throw error;
+      }
+    }
+    const parsed = readMessage({ data: result.stderr, code: result.exitCode === 0 ? 'warning' : 'error' });
+    if (!parsed) return [];
+    const isEmptyWarning = ['empty', 'not_opened', 'up_to_date'].includes(parsed.reason);
+    const message: P4Message = { ...parsed, kind: isEmptyWarning ? 'warning' : parsed.kind, code: null, raw: { data: result.stderr } };
+    if (message.kind === 'error' || !['command', 'empty', 'not_opened', 'up_to_date'].includes(message.reason)) {
+      throw this.toCommandError(args, result);
+    }
+    return [message];
+  }
+
   /**
    * Split tagged JSON rows into data rows versus Perforce message rows.
    *
@@ -1781,16 +1818,30 @@ export class P4Client {
   private selectDataRows(
     args: string[],
     result: P4CommandResult,
-    hasData: (row: Record<string, unknown>) => boolean
-  ): Record<string, unknown>[] {
-    const rows = parseP4JsonLines(result.stdout);
+    hasData: (row: Record<string, unknown>) => boolean,
+    collectSyncErrors = false
+  ): P4ResultArray<Record<string, unknown>> {
+    let rows: Record<string, unknown>[];
+    try {
+      rows = parseP4JsonLines(result.stdout);
+    } catch (error) {
+      if (error instanceof P4ParseError) error.withCommand(this.executable, this.withGlobalOptions(args));
+      throw error;
+    }
     const data: Record<string, unknown>[] = [];
+    const messages: P4Message[] = [];
     let hasFatal = false;
 
     for (const row of rows) {
-      const severity = normalizeNullableNumber(row.severity);
-      if (severity !== null && severity >= 3) {
-        hasFatal = true;
+      setRowCommandContext(row, this.executable, this.withGlobalOptions(args));
+      const message = readMessage(row);
+      if (message) {
+        messages.push(message);
+        if (collectSyncErrors && message.kind === 'error' && message.reason === 'clobber') {
+          data.push(row);
+        } else if (message.kind === 'error' || ['unknown_revision', 'unknown_changelist', 'unknown_user', 'unknown_client', 'not_in_view', 'permission_denied'].includes(message.reason)) {
+          hasFatal = true;
+        }
         continue;
       }
       if (hasData(row)) {
@@ -1798,18 +1849,20 @@ export class P4Client {
         continue;
       }
 
-      decodeRow(MessageRow, row);
+      throw new P4ParseError('Unrecognized Perforce data row.', JSON.stringify(row), null)
+        .withCommand(this.executable, this.withGlobalOptions(args));
     }
 
+    messages.push(...this._selectPlainMessages(args, result));
     if (hasFatal) {
       throw this.toCommandError(args, result);
     }
 
-    if (rows.length === 0 && result.exitCode !== 0) {
+    if (result.exitCode !== 0 && messages.length === 0) {
       throw this.toCommandError(args, result);
     }
 
-    return data;
+    return withMessages(data, { messages });
   }
 
   /**
@@ -1842,7 +1895,7 @@ export class P4Client {
     const name = parsed.name;
     return {
       name,
-      depotPath: decodeRow(P4DepotPathSchema, `//${name}`),
+      depotPath: decodeRow(P4DepotPathSchema, `//${name}`, row),
       type: normalizeNullableString(parsed.type),
       map: normalizeNullableString(parsed.map),
       description: normalizeNullableString(parsed.desc)
@@ -1903,7 +1956,7 @@ export class P4Client {
 
     return {
       depotFile,
-      localFile: this.toLocalPath(parsed.clientFile),
+      localFile: this.toLocalPath(parsed.clientFile, row),
       isMapped: row.isMapped !== undefined,
       headAction,
       headType,
@@ -1943,8 +1996,8 @@ export class P4Client {
 
     return {
       depotFile: decodeRow(P4DepotPathSchema, parsed.depotFile.replace(/^-/, ''), row),
-      clientFile: this.toClientPath(stripExclusion(normalizeNullableString(parsed.clientFile))),
-      localFile: this.toLocalPath(stripExclusion(normalizeNullableString(parsed.path))),
+      clientFile: this.toClientPath(stripExclusion(normalizeNullableString(parsed.clientFile)), row),
+      localFile: this.toLocalPath(stripExclusion(normalizeNullableString(parsed.path)), row),
       isExcluded
     };
   }
@@ -1963,10 +2016,7 @@ export class P4Client {
     const seen = new Set<string>();
 
     for (const row of rows) {
-      const depotFile = this.toDepotPath(row.depotFile);
-      if (depotFile === null) {
-        continue;
-      }
+      const depotFile = decodeRow(P4DepotPathSchema, row.depotFile, row);
 
       for (const revision of this.toFileRevisions(row, depotFile)) {
         // A wide integration graph can surface the same path in several rows.
@@ -2039,7 +2089,7 @@ export class P4Client {
       stream,
       name: normalizeNullableString(parsed.Name) ?? this.depotBaseName(stream),
       owner: normalizeNullableString(parsed.Owner),
-      parent: parent !== null && parent !== "none" ? this.toDepotPath(parent) : null,
+      parent: parent !== null && parent !== "none" ? this.toDepotPath(parent, row) : null,
       type: normalizeNullableString(parsed.Type),
       description: normalizeNullableString(parsed.desc)
     };
@@ -2102,22 +2152,20 @@ export class P4Client {
     const parsed = decodeRow(OpenedRow, row);
     const action = normalizeNullableString(parsed.action);
     if (action !== "add" && action !== "edit" && action !== "delete") {
-      throw new P4ParseError(
-        `Unsupported reconcile action "${String(parsed.action)}".`, JSON.stringify(row), null
-      );
+      throw rowParseError(`Unsupported reconcile action "${String(parsed.action)}".`, row, null);
     }
 
     return {
       depotFile: parsed.depotFile ?? null,
-      clientFile: this.toClientFile(parsed.clientFile),
-      localFile: this.toLocalFile(parsed.path) ?? this.toLocalFile(parsed.clientFile),
+      clientFile: this.toClientFile(parsed.clientFile, row),
+      localFile: this.toLocalPath(parsed.path, row) ?? this.toLocalFile(parsed.clientFile, row),
       action,
       type: normalizeNullableString(parsed.type),
       changelist: parsed.change ?? null
     };
   }
 
-  private toReconcilePreviewResult(rows: Record<string, unknown>[]): P4ReconcilePreviewResult {
+  private toReconcilePreviewResult(rows: P4ResultArray<Record<string, unknown>>): P4ReconcilePreviewResult {
     const result: P4ReconcilePreviewResult = {
       added: [],
       edited: [],
@@ -2125,24 +2173,13 @@ export class P4Client {
     };
 
     for (const row of rows) {
-      if (this.isReconcileMessageRow(row)) {
-        continue;
-      }
       const candidate = this.toReconcileCandidate(row);
       if (candidate.action === "add") result.added.push(candidate);
       else if (candidate.action === "edit") result.edited.push(candidate);
       else result.deleted.push(candidate);
     }
 
-    return result;
-  }
-
-  private isReconcileMessageRow(row: Record<string, unknown>): boolean {
-    const severity = normalizeNullableNumber(row.severity);
-    return normalizeNullableString(row.action) === null
-      && severity !== null
-      && severity < 3
-      && normalizeNullableString(row.data) !== null;
+    return withMessages(result, rows);
   }
 
   private getSyncCommandArgs(
@@ -2163,14 +2200,11 @@ export class P4Client {
     return commandArgs;
   }
 
-  private toSyncResult(rows: Record<string, unknown>[]): P4SyncResult {
+  private toSyncResult(rows: P4ResultArray<Record<string, unknown>>): P4SyncResult {
     const items: P4SyncItem[] = [];
     const errors: P4SyncErrorItem[] = [];
 
     for (const row of rows) {
-      if (this.isP4MessageRow(row)) {
-        continue;
-      }
       if (this.isSyncErrorRow(row)) {
         errors.push(this.toSyncErrorItem(row));
         continue;
@@ -2187,15 +2221,15 @@ export class P4Client {
       result.errors = errors;
     }
 
-    return result;
+    return withMessages(result, rows);
   }
 
   private toSyncItem(row: Record<string, unknown>): P4SyncItem {
     const parsed = decodeRow(SyncRow, row);
     return {
-      depotFile: this.toDepotPath(parsed.depotFile),
-      clientFile: this.toClientFile(parsed.clientFile),
-      localFile: this.toLocalFile(parsed.path) ?? this.toLocalFile(parsed.clientFile),
+      depotFile: this.toDepotPath(parsed.depotFile, row),
+      clientFile: this.toClientFile(parsed.clientFile, row),
+      localFile: this.toLocalPath(parsed.path, row) ?? this.toLocalFile(parsed.clientFile, row),
       revision: parsed.rev ?? null,
       action: parsed.action ?? null,
       fileSize: parsed.fileSize ?? null
@@ -2207,66 +2241,59 @@ export class P4Client {
     return severity !== null && severity >= 3;
   }
 
-  private isP4MessageRow(row: Record<string, unknown>): boolean {
-    const hasFileField = [row.depotFile, row.clientFile, row.path].some(
-      (value) => normalizeNullableString(value) !== null
-    );
-    const severity = normalizeNullableNumber(row.severity);
-    return !hasFileField
-      && severity !== null
-      && severity < 3
-      && normalizeNullableString(row.data) !== null;
-  }
-
   private toSyncErrorItem(row: Record<string, unknown>): P4SyncErrorItem {
     const data = normalizeNullableString(row.data);
-    const clientFile = this.toClientFile(row.clientFile)
-      ?? this.toLocalPath(row.path)
-      ?? (data ? this.toLocalPath(this.extractFilePathFromSyncErrorData(data)) : null);
+    const clientFile = this.toClientFile(row.clientFile, row)
+      ?? this.toLocalPath(row.path, row)
+      ?? (data ? this.toLocalPath(this.extractFilePathFromSyncErrorData(data), row) : null);
 
     return {
       clientFile,
-      depotFile: this.toDepotPath(row.depotFile),
+      depotFile: this.toDepotPath(row.depotFile, row),
       message: data ?? normalizeNullableString(row.generic) ?? "Perforce sync failed."
     };
   }
 
-  private toDepotPath(value: unknown): P4DepotPath | null {
+  private toDepotPath(value: unknown, source: unknown = value): P4DepotPath | null {
     if (value === null || value === undefined || value === '') return null;
     const normalized = typeof value === 'string' ? value.trim() : value;
-    return decodeRow(P4DepotPathSchema, normalized);
+    return decodeRow(P4DepotPathSchema, normalized, source);
   }
-  private toClientFile(value: unknown): P4ClientPath | P4LocalPath | null {
+  private toClientFile(value: unknown, source: unknown = value): P4ClientPath | P4LocalPath | null {
     if (typeof value === 'string' && !value.startsWith('//')) {
-      return this.toLocalPath(value);
+      return this.toLocalPath(value, source);
     }
-    return this.toClientPath(value);
+    return this.toClientPath(value, source);
   }
 
-  private toClientPath(value: unknown): P4ClientPath | null {
+  private toClientPath(value: unknown, source: unknown = value): P4ClientPath | null {
     if (value === null || value === undefined || value === '') return null;
     const normalized = typeof value === 'string' ? value.trim() : value;
-    return decodeRow(P4ClientPathSchema, normalized);
+    return decodeRow(P4ClientPathSchema, normalized, source);
   }
-  private toLocalPath(value: unknown): P4LocalPath | null {
+  private toLocalPath(value: unknown, source: unknown = value): P4LocalPath | null {
     if (value === null || value === undefined || value === '') return null;
     const normalized = typeof value === 'string' ? value.trim() : value;
-    return decodeRow(P4LocalPathSchema, normalized);
+    return decodeRow(P4LocalPathSchema, normalized, source);
   }
-  private toLocalFile(value: unknown): P4LocalPath | null {
+  private toLocalFile(value: unknown, source: unknown = value): P4LocalPath | null {
     const normalized = normalizeNullableString(value);
     if (normalized === null) {
       return null;
     }
-    if (isAbsolute(normalized) || !normalized.startsWith("//")) {
-      return decodeRow(P4LocalPathSchema, normalized);
+    if (!normalized.startsWith('//')) {
+      return decodeRow(P4LocalPathSchema, normalized, source);
     }
 
     const clientRelativePath = /^\/\/[^/]+\/(.+)$/.exec(normalized)?.[1];
     if (clientRelativePath === undefined || this.cwd === undefined) {
       return null;
     }
-    return decodeRow(P4LocalPathSchema, resolve(this.cwd, ...clientRelativePath.split("/")));
+    const escapedCharacters: Record<string, string> = { '40': '@', '23': '#', '25': '%', '2a': '*' };
+    // Decode exactly once: %2523 is a literal %23 filename, not a # character.
+    const localRelativePath = clientRelativePath.replace(/%(40|23|25|2a)/gi,
+      (match: string, code: string) => escapedCharacters[code.toLowerCase()] ?? match);
+    return decodeRow(P4LocalPathSchema, resolve(this.cwd, ...localRelativePath.split('/')), source);
   }
 
   private extractFilePathFromSyncErrorData(message: string): string | null {
@@ -2469,8 +2496,13 @@ export class P4Client {
     );
   }
 
-  private tryParseJsonLine(line: string): Record<string, unknown> | null {
-    return parseTaggedJsonLine(line);
+  private tryParseJsonLine(line: string, args: string[]): Record<string, unknown> | null {
+    try {
+      return parseTaggedJsonLine(line);
+    } catch (error) {
+      if (error instanceof P4ParseError) error.withCommand(this.executable, this.withGlobalOptions(args));
+      throw error;
+    }
   }
 
   private isUnsupportedProgressError(result: P4CommandResult): boolean {

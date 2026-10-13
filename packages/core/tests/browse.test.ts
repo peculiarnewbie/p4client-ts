@@ -77,7 +77,7 @@ describe("P4Client depot browsing", () => {
       })
     });
 
-    await expect(p4.listDepotDirs({ depotPath: "//depot/empty" })).resolves.toEqual({
+    await expect(p4.listDepotDirs({ depotPath: "//depot/empty" })).resolves.toMatchObject({
       items: [],
       hasMore: false
     });
@@ -341,7 +341,7 @@ describe("P4Client statFiles", () => {
         "50",
         "-Ol",
         "-T",
-        "headRev fileSize digest",
+        "depotFile headRev fileSize digest",
         "//depot/main/*"
       ]
     ]);

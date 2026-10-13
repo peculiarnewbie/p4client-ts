@@ -7,7 +7,8 @@ export {
   P4NonNegativeIntegerSchema,
   P4PositiveIntegerSchema,
   P4ChangeSchema,
-  P4JsonWorkspaceSchema
+  P4JsonWorkspaceSchema,
+  P4MessageRowSchema
 } from './schemas.js';
 export {
   P4ClientOperationError,
@@ -16,9 +17,10 @@ export {
   P4ParseError,
   P4TimeoutError,
   classifyP4Error,
+  classifyP4Failure,
   isP4ConnectionError
 } from "./errors.js";
-export type { P4ErrorCategory } from "./errors.js";
+export type { P4ErrorCategory, P4FailureReason } from "./errors.js";
 export type { P4ServiceError } from "./errors.js";
 export {
   createP4Service,
@@ -91,6 +93,7 @@ export {
 export { formatCommandArgs, redactCommandArgs } from "./command-format.js";
 export type { ResolvedDiffPlan } from "./helpers.js";
 export type {
+  P4Message, P4MessageCarrier, P4MessageReason, P4ResultArray,
   DescribeChangelistOptions,
   DiffFileOptions,
   GetChangelistDiffSummaryOptions,

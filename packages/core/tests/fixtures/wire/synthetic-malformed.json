@@ -2,5 +2,8 @@
   "origin": "synthetic malformed rows derived from disposable sync and describe captures",
   "sync": { "depotFile": "//depot/main/a.txt", "rev": "invalid", "action": "updated" },
   "describe": { "change": "100", "depotFile0": "//depot/main/a.txt", "action0": "add", "rev0": "invalid" },
-  "message": { "data": "informational message", "level": "invalid" }
+  "message": { "data": "informational message", "level": "invalid" },
+  "reconcile": { "depotFile": "//depot/main/a.txt", "action": "move/add" },
+  "history": { "depotFile": "relative.txt", "rev0": "1", "action0": "add" },
+  "opened": { "depotFile": "//depot/main/a.txt", "clientFile": "//client/main/a\u0000.txt", "action": "edit" }
 }
