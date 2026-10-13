@@ -21,6 +21,11 @@ export function isFatalMessage(message: P4Message): boolean {
   return message.kind === 'error' || FATAL_MESSAGE_REASONS.has(message.reason);
 }
 
+/** A print warning meaning the requested revision has no content, so nothing was printed. */
+export function isUnavailableContent(message: P4Message): boolean {
+  return message.reason === 'empty' || message.reason === 'unknown_revision';
+}
+
 /** Preserve sync's per-file failure contract while keeping connection/session/spec failures fatal. */
 export function isSyncFileError(message: P4Message): boolean {
   if (

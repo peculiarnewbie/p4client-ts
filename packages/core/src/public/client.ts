@@ -6,7 +6,13 @@ import type { Schema } from 'effect';
 import { createAsyncEventQueue } from "../internal/async-queue.js";
 import { createCancellationScope, ownOperation, settleOperation } from '../internal/cancellation.js';
 import { diagnosticText } from '../internal/diagnostics.js';
-import { isFatalMessage, isSyncFileError, readMessage, withMessages } from '../internal/messages.js';
+import {
+  isFatalMessage,
+  isSyncFileError,
+  isUnavailableContent,
+  readMessage,
+  withMessages
+} from '../internal/messages.js';
 import {
   AnnotationRow, AnnotationHeaderRow, ChangelistRow, DepotRow, DescribedFileRow, DirRow, FileRow,
   FileRevisionRow, HistoryRevisionRow, OpenedRow, StatRow, StreamRow, SyncRow,
@@ -714,7 +720,7 @@ export class P4Client {
     const printArgs = ['print', '-q', filespec];
     const result = await this.run(printArgs, { ...options, allowNonZeroExit: true });
     const messages = this._selectPlainMessages(printArgs, result);
-    if (messages.some((message) => message.reason === 'empty' || message.reason === 'unknown_revision') || result.exitCode !== 0) {
+    if (messages.some(isUnavailableContent) || result.exitCode !== 0) {
       throw this.toCommandError(printArgs, result);
     }
     return withMessages({
@@ -1076,6 +1082,8 @@ export class P4Client {
    * @returns Local paths for all successfully materialized revisions.
    * @throws {P4MaterializationError} When the bound, depot path, or destination
    * directory is invalid.
+   * @throws {P4CommandError} When a requested file or revision does not exist, as
+   * {@link printFile} does. A deleted revision prints nothing and is not detected.
    */
   async materializeDepotFiles(
     options: MaterializeDepotFilesOptions
@@ -1131,7 +1139,7 @@ export class P4Client {
         `${plan.file.depotFile}#${plan.file.revision}`
       ];
       const printed = await this.run(commandArgs, options);
-      if (this._selectPlainMessages(commandArgs, printed).some((message) => message.reason === 'empty')) {
+      if (this._selectPlainMessages(commandArgs, printed).some(isUnavailableContent)) {
         throw this.toCommandError(commandArgs, printed);
       }
 
@@ -1277,6 +1285,11 @@ export class P4Client {
                 rows.push(parsed);
                 continue;
               }
+              // Without -I this is the command previewReconcile runs, which rejects such a line.
+              if (!args.includes('-I')) {
+                if (!event.line.trim()) continue;
+                throw new P4ParseError('Unable to parse tagged Perforce JSON output.', event.line, null);
+              }
             }
 
             if (event.source === 'stderr') {
@@ -1392,6 +1405,12 @@ export class P4Client {
 
   /**
    * Perform `p4 sync` while streaming typed progress and per-file error rows.
+   *
+   * Rows are classified as {@link sync} classifies them. Each per-file failure in the
+   * result's `errors` is announced by an `error-row` event and each notice in `messages`
+   * by a `message` event; diagnostics on stderr are announced once the command exits.
+   * A fatal row (session, server, or view failure) rejects the operation instead of
+   * being announced as a notice.
    */
   watchSync(options: SyncOptions = {}): P4OperationHandle<P4SyncProgressEvent, P4SyncResultWithErrors> {
     const queue = this.createAsyncEventQueue<P4SyncProgressEvent>();
@@ -1408,6 +1427,7 @@ export class P4Client {
       const items: P4SyncItem[] = [];
       const errors: P4SyncErrorItem[] = [];
       const emittedErrors = new WeakSet<object>();
+      const emittedMessages = new WeakSet<object>();
       const capturedRows: Record<string, unknown>[] = [];
       const handle = this.watch(args, { signal: scope.signal, allowNonZeroExit: true });
       let context = { command: this.executable, args: this.withGlobalOptions(args) };
@@ -1428,7 +1448,12 @@ export class P4Client {
           capturedRows.push(row);
           const message = readMessage(row);
           if (message && !isSyncFileError(message)) {
-            queue.push({ type: 'message', message });
+            // A fatal row rejects the operation once the command completes, as sync() throws;
+            // it is not a notice beside a successful sync.
+            if (!isFatalMessage(message)) {
+              emittedMessages.add(row);
+              queue.push({ type: 'message', message });
+            }
             continue;
           }
           if (message) {
@@ -1453,11 +1478,16 @@ export class P4Client {
         const commandResult = await handle.result;
         context = { command: commandResult.command, args: commandResult.args };
         const rows = this.selectParsedRows(args, commandResult, capturedRows, () => true, true);
+        // Rows on stderr arrive only with the final result; emit them so the events cover the
+        // same errors and messages that sync() returns.
         for (const message of rows.messages ?? []) {
-          if (isSyncFileError(message) && !emittedErrors.has(message.raw)) {
+          if (isSyncFileError(message)) {
+            if (emittedErrors.has(message.raw)) continue;
             const error = this.toSyncErrorItem(message.raw);
             errors.push(error);
             queue.push({ type: 'error-row', error });
+          } else if (!emittedMessages.has(message.raw)) {
+            queue.push({ type: 'message', message });
           }
         }
         const syncResult: P4SyncResultWithErrors = withMessages({ items, errors, totalCount: items.length }, rows);

@@ -113,6 +113,90 @@ were produced on the disposable server. The collector also records the failed
 exclusive edit, although edit is not a built-in read API. No write scenario used
 the production server.
 
+## Classification consistency (0.12.1 follow-up)
+
+The 0.12.0 `previewSync` regression came from one method taking a stricter path than
+its sibling. This pass checks that the same row lands in the same place (data, per-file
+error, message, or fatal failure) whichever method receives it. The tables below are
+enforced by `packages/core/tests/classification.test.ts`: every case sends one data row
+plus the row under test through each method and requires them to agree.
+`scenarios.sync-clobber` and `scenarios.classification` reproduce the live rows on the
+disposable server.
+
+Four extra probes ran on disposable servers (none on production):
+
+- A writable, changed, unopened file in a `noclobber` workspace, superseded by a second client.
+- Opened-for-add and opened-for-delete files whose head moved on.
+- A tracked file held open with no sharing.
+- A tracked file and an untracked folder denied read access.
+
+**Perforce 2026.1 never sent a per-file error to `sync -n` or `reconcile -n`.** The clobber
+check runs only when a real sync writes the file. Opened-file blockers are level-0 info
+rows. Reconcile reports an unreadable file as `delete`, reports a locked file as `edit`, and
+skips an unreadable folder, all with exit 0. A real sync onto the unreadable file returns
+`open for write: …: Access is denied.` (severity 3, generic 33) beside its other rows.
+
+"Before" refers to 0.12.0. `errors`, `messages` and fatal failures are as returned by
+the method; watched events are listed where they differ from the final result.
+
+### Sync: `previewSync`, `sync`, `watchSync`
+
+| Row | Seen live | All three now | Before |
+| --- | --- | --- | --- |
+| `Can't clobber writable file` (severity 3) | Real `sync` only | `errors`; watched `error-row` | `previewSync` rejected (fixed in 0.12.1) |
+| `open for write: …: Access is denied.` (severity 3) | Real `sync -f` | `errors`; watched `error-row` | `previewSync` rejected (fixed in 0.12.1) |
+| Per-file error as JSON on stderr | Synthetic | `errors`; watched `error-row` at exit | Same as now, except `previewSync` |
+| `is opened for add and can't be replaced`, `is opened for delete - not changed` (level 0) | Real, preview and sync | `messages`; watched `message` | Same |
+| `file(s) up-to-date.` (severity 2) | Real | `messages`; watched `message` | Same |
+| Plain stderr notice, exit 0 | Synthetic | `messages`; watched `message` at exit | `watchSync` emitted no event |
+| `must refer to client` (severity 3), `file(s) not in client view.` (warning), expired ticket | Real | Fatal `P4CommandError` | `watchSync` first emitted the row as a `message` event |
+| Non-JSON stdout line | Synthetic | `P4ParseError` | Same |
+
+### Reconcile preview: `previewReconcile`, `watchPreviewReconcile`
+
+| Row | Seen live | Both now | Before |
+| --- | --- | --- | --- |
+| Per-file error (severity 3) | Not produced (see probes) | Fatal | Same; reconcile previews have no `errors` field |
+| `no file(s) to reconcile.` (severity 2), info rows, plain stderr notice | Real (first) | `messages` | Same |
+| Not in client view, expired ticket | Synthetic | Fatal | Same |
+| Non-JSON stdout line | Synthetic | `P4ParseError`; with `-I` the watched form reports it as progress | The watched fallback without `-I` (the same command as `previewReconcile`) also reported it as progress |
+
+### File readers
+
+`getOpenedFiles` (and through it `getChangelistFiles`, `describeChangelist('default')`, the
+default entry of `listPendingChangelists` and the diff-summary lookup),
+`listSubmittedChangelists`, `statFiles`, `whereFiles`, `getFileHistory`, `listDepotFiles`
+and `annotateFile` agree on every row, before and after this pass:
+
+| Row | All readers |
+| --- | --- |
+| `no such file(s).`, `no file(s) at that revision.` (severity 2) | Valid rows plus `messages` |
+| Info row, plain stderr notice | `messages` |
+| Not in client view, any severity-3 row, expired ticket | Fatal; reads have no per-file error channel, so one failing spec fails the batch |
+| Non-JSON stdout line | `P4ParseError` |
+
+### Content readers: `printFile`, `materializeDepotFiles`, `diffFile`
+
+| Row | Now | Before |
+| --- | --- | --- |
+| `print`: `no such file(s).` on stderr, exit 0 | Both print methods raise `P4CommandError` | Same |
+| `print`: `no file(s) at that revision.` on stderr, exit 0 (real) | Both raise `unknown_revision` | `materializeDepotFiles` resolved with a `localPath` that was never written |
+| `print`: deleted revision, no output and no message (real) | Both resolve: empty `content`, or a path that was not written | Same; Perforce sends nothing to classify (gap, not fixed) |
+| `diff`: not opened, warning on stderr, exit 0 | Empty diff plus `messages` | Same |
+| `diff2`: bad revision, exit 1 | Fatal | Same |
+
+### Intended differences
+
+- `printFile` and `materializeDepotFiles` raise for a missing file or revision, whereas
+  `statFiles` keeps the same warning. The caller asked for content that does not exist.
+- `watchSync` results always carry `errors` (`P4SyncResultWithErrors`); `sync` and
+  `previewSync` omit an empty `errors`.
+- Readers built on `runTaggedJson` (opened, changes, describe, `files -e`,
+  `previewReconcile`) reject any non-zero exit before reading rows. Browse readers and
+  watched forms classify the rows instead. The two differ only for a non-zero exit carrying
+  no error-level row. No recorded command did that: every non-zero exit carried an
+  error-level row, which every path treats as fatal.
+
 ## Output-mode differences
 
 | Callback / mode | `-ztag` | `-Mj -z tag` | `-G` |
