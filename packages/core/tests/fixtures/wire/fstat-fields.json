@@ -1,0 +1,29 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "fstat",
+    "-T",
+    "depotFile headType headRev",
+    "//p4ts/main/wire/text.txt"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"depotFile\":\"//p4ts/main/wire/text.txt\",\"headRev\":\"1\",\"headType\":\"text\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data"
+  ]
+}

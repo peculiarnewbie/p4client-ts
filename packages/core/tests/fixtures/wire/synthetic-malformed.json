@@ -1,0 +1,6 @@
+{
+  "origin": "synthetic malformed rows derived from disposable sync and describe captures",
+  "sync": { "depotFile": "//depot/main/a.txt", "rev": "invalid", "action": "updated" },
+  "describe": { "change": "100", "depotFile0": "//depot/main/a.txt", "action0": "add", "rev0": "invalid" },
+  "message": { "data": "informational message", "level": "invalid" }
+}

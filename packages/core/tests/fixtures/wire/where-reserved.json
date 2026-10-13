@@ -1,0 +1,27 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "where",
+    "//p4ts/main/wire/literal%40%23%25.txt"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"clientFile\":\"//p4ts_e2e_client/wire/literal%40%23%25.txt\",\"depotFile\":\"//p4ts/main/wire/literal%40%23%25.txt\",\"path\":\"<WORKSPACE>\\\\wire\\\\literal@#%.txt\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data"
+  ]
+}

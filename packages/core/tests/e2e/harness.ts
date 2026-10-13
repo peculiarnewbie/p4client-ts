@@ -1,6 +1,7 @@
 import { appendFileSync, copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { P4Client } from "../../src/public/client.js";
+import { runCommand, watchCommand } from '../../src/internal/command.js';
 import type { P4CommandOptions, P4CommandResult, SyncOptions } from "../../src/public/types.js";
 import type { E2EConfig } from "./config.js";
 import { assertSeededWorkspace, type E2EFixture, type FixtureSentinel } from "./fixture.js";
@@ -21,8 +22,22 @@ export class P4E2EHarness {
     this.client = new P4Client({
       executable: config.p4Executable,
       cwd: config.workspaceRoot,
-      env: config.p4Env
+      env: config.p4Env,
+      executor: (command, args, options) => {
+        this.assertIsolated(args, options);
+        return runCommand(command, ['-p', config.p4Port, '-u', config.user, ...args], options);
+      },
+      streamExecutor: (command, args, options) => {
+        this.assertIsolated(args, options);
+        return watchCommand(command, ['-p', config.p4Port, '-u', config.user, ...args], options);
+      }
     });
+  }
+
+  private assertIsolated(args: string[], options: P4CommandOptions): void {
+    if (options.env?.P4PORT !== this.config.p4Port || this.config.p4Port !== process.env.P4_TS_E2E_ISOLATED_PORT || !/^127\.0\.0\.1:\d+$/.test(this.config.p4Port) || args.some((arg) => arg.startsWith('-p') || arg.startsWith('-x'))) {
+      throw new Error('Refusing command outside the disposable localhost server.');
+    }
   }
 
   getPath(relativePath: string) {

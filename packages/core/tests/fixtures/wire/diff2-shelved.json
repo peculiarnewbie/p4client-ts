@@ -1,0 +1,24 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "plain",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "diff2",
+    "-du",
+    "//p4ts/main/wire/text.txt#1",
+    "//p4ts/main/wire/text.txt@=7"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "==== //p4ts/main/wire/text.txt#1 (text) - //p4ts/main/wire/text.txt#1 (text) ==== content\r\n@@ -1,2 +1,2 @@\r\n one\r\n-two\r\n+changed line\r\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": []
+}

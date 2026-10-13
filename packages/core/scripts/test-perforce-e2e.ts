@@ -1,3 +1,4 @@
+import { Effect } from 'effect';
 import { createHash } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { access, chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -54,11 +55,15 @@ interface FixtureManifest {
   readonly seedRoot: string;
 }
 
-interface Fixture {
+export interface Fixture {
   readonly environment: NodeJS.ProcessEnv;
   readonly p4Executable: string;
   readonly projectRoot: string;
   readonly baselineChange: number;
+  readonly pauseServer: () => Promise<void>;
+  readonly resumeServer: () => Promise<void>;
+  readonly p4dExecutable: string;
+  readonly serverRoot: string;
   readonly stop: () => Promise<void>;
 }
 
@@ -91,11 +96,11 @@ const platformBinaries: Partial<Record<NodeJS.Platform, PlatformBinaries>> = {
     directory: "bin.ntx64",
     p4: {
       name: "p4.exe",
-      sha256: "1fe2730acda5df7dee244aa4d22d6dfe3698176a2d127eb801ba94a9cf41d9b4"
+      sha256: "f7962fec744cfc809f53338a19ebc9bb718bf76fb349a9eb0229f301f4b202a3"
     },
     p4d: {
       name: "p4d.exe",
-      sha256: "025b87752de37047ed1398f31b88c6f6c6d62086e74ca6600fc1617fd24f22e1"
+      sha256: "eee7ac13927872282bcb3e4b037af960f2ec0905a1e6747cb343e77ac1e7091d"
     }
   }
 };
@@ -252,7 +257,8 @@ async function waitForServer(
   let lastError: unknown;
   for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
-      await run(p4, ["info"], { cwd, env: environment, timeoutMs: 1_000 });
+      assert(environment.P4PORT === isolatedPort, 'Server readiness must use the isolated endpoint.');
+      await run(p4, ['-p', environment.P4PORT ?? '', '-u', fixtureUser, 'info'], { cwd, env: environment, timeoutMs: 1_000 });
       return;
     } catch (error) {
       lastError = error;
@@ -375,9 +381,13 @@ async function runP4(
   input?: string,
   timeoutMs = commandTimeoutMs
 ): Promise<CommandResult> {
-  const result = await run(p4, args, { cwd, env: environment, input, timeoutMs });
+  assert(environment.P4PORT === isolatedPort && /^127\.0\.0\.1:\d+$/.test(isolatedPort ?? ''), 'Refusing p4 outside the disposable server.');
+  assert(!args.some((arg) => arg.startsWith('-p') || arg.startsWith('-x')), 'Do not override the disposable endpoint or hide arguments.');
+  const result = await run(p4, ['-p', environment.P4PORT ?? '', '-u', fixtureUser, ...args], { cwd, env: environment, ...(input === undefined ? {} : { input }), timeoutMs });
   return result;
 }
+
+let isolatedPort: string | undefined;
 
 async function latestSubmittedChange(
   p4: string,
@@ -495,7 +505,7 @@ async function seedFixture(
       `P4TICKETS=${environment.P4TICKETS}`,
       `P4TRUST=${environment.P4TRUST}`,
       `P4IGNORE=${ignoreFileName}`,
-      "P4CHARSET=none",
+      `P4CHARSET=${environment.P4CHARSET ?? 'none'}`,
       ""
     ].join("\n"),
     "utf8"
@@ -523,7 +533,7 @@ async function stopServer(
   await waitForProcessExit(server);
 }
 
-async function startFixture(): Promise<Fixture> {
+export async function startFixture(options: { readonly unicode?: boolean } = {}): Promise<Fixture> {
   const binaries = await resolveBinaries();
   const { manifest, seedRoot } = await loadFixtureManifest();
   const operationRoot = await mkdtemp(join(tmpdir(), "p4-ts-e2e-"));
@@ -534,8 +544,10 @@ async function startFixture(): Promise<Fixture> {
   const enviro = join(operationRoot, "p4enviro.txt");
   const port = await getAvailablePort();
   const p4Port = `127.0.0.1:${port}`;
+  isolatedPort = p4Port;
   const environment = cleanP4Environment({
-    P4CHARSET: "none",
+    P4CHARSET: options.unicode ? 'utf8' : 'none',
+    P4ALIASES: join(operationRoot, 'disabled-aliases'),
     P4CLIENT: fixtureClient,
     P4CONFIG: configFileName,
     P4ENVIRO: enviro,
@@ -561,6 +573,9 @@ async function startFixture(): Promise<Fixture> {
 
   try {
     await Promise.all([mkdir(serverRoot), mkdir(workspace), writeFile(enviro, "", "utf8")]);
+    if (options.unicode) {
+      await Effect.runPromise(Effect.promise(() => run(binaries.p4d, ['-r', serverRoot, '-xi'], { cwd: operationRoot, env: cleanP4Environment() })));
+    }
     const startServer = (): ChildProcess =>
       spawn(
         binaries.p4d,
@@ -611,6 +626,15 @@ async function startFixture(): Promise<Fixture> {
       p4Executable: binaries.p4,
       projectRoot: workspace,
       baselineChange,
+      p4dExecutable: binaries.p4d,
+      serverRoot,
+      pauseServer: () => Effect.runPromise(Effect.promise(() => stopServer(server, binaries.p4, environment, operationRoot)).pipe(
+        Effect.tap(() => Effect.sync(() => { server = undefined; }))
+      )),
+      resumeServer: () => Effect.runPromise(Effect.gen(function* () {
+        server = yield* Effect.sync(startServer);
+        yield* Effect.promise(() => waitForServer(binaries.p4, environment, operationRoot));
+      })),
       stop
     };
   } catch (error) {
@@ -623,6 +647,7 @@ async function runE2E(fixture: Fixture): Promise<void> {
   const environment = cleanP4Environment({
     ...fixture.environment,
     P4_TS_E2E_P4_EXECUTABLE: fixture.p4Executable,
+    P4_TS_E2E_ISOLATED_PORT: fixture.environment.P4PORT,
     P4_TS_E2E_STREAM: fixtureStream,
     P4_TS_E2E_SYNC_BASE_CHANGE: String(fixture.baselineChange),
     P4_TS_E2E_WORKSPACE_ROOT: fixture.projectRoot
@@ -640,7 +665,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  report("FAIL", errorMessage(error));
-  process.exitCode = 1;
-});
+if (import.meta.main) {
+  main().catch((error: unknown) => {
+    report("FAIL", errorMessage(error));
+    process.exitCode = 1;
+  });
+}

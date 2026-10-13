@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic; Unicode argv and literal asterisk unavailable on this Windows CLI",
+  "mode": "json",
+  "args": ["-Mj", "-z", "tag", "files", "//depot/main/*"],
+  "exitCode": 0,
+  "stdout": "{\"depotFile\":\"//depot/main/café_日本 space.txt\",\"action\":\"add\",\"rev\":\"1\",\"change\":\"100\",\"type\":\"text\"}\n{\"depotFile\":\"//depot/main/literal%40%23%25%2A.txt\",\"action\":\"add\",\"rev\":\"1\",\"change\":\"100\",\"type\":\"text\"}\n",
+  "stderr": ""
+}

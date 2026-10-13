@@ -1,0 +1,27 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "streams",
+    "//p4ts/missing"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"code0\":554768892,\"data\":\"//p4ts/missing - no such stream.\\n\",\"fmt0\":\"[%argc% - no|No] such stream.\",\"generic\":17,\"severity\":2,\"severityformat\":\"warning\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "message"
+  ]
+}

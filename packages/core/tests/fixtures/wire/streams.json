@@ -1,0 +1,30 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "streams",
+    "-m",
+    "50",
+    "//p4ts/..."
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"Access\":\"1791920164\",\"Name\":\"consumer\",\"Options\":\"allsubmit unlocked notoparent nofromparent mergedown\",\"Owner\":\"p4ts-e2e\",\"Parent\":\"none\",\"ParentView\":\"inherit\",\"Stream\":\"//p4ts/consumer\",\"Type\":\"mainline\",\"Update\":\"1791920164\",\"baseParent\":\"none\",\"changeFlowsFromParent\":\"false\",\"changeFlowsToParent\":\"false\",\"desc\":\"Import fixture\\n\",\"firmerThanParent\":\"n/a\"}\n{\"Access\":\"1791920163\",\"Name\":\"main\",\"Options\":\"allsubmit unlocked notoparent nofromparent mergedown\",\"Owner\":\"p4ts-e2e\",\"Parent\":\"none\",\"ParentView\":\"inherit\",\"Stream\":\"//p4ts/main\",\"Type\":\"mainline\",\"Update\":\"1791920163\",\"baseParent\":\"none\",\"changeFlowsFromParent\":\"false\",\"changeFlowsToParent\":\"false\",\"desc\":\"Disposable p4-ts E2E mainline stream.\\n\",\"firmerThanParent\":\"n/a\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data",
+    "data"
+  ]
+}

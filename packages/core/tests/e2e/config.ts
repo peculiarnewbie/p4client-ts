@@ -31,13 +31,17 @@ function readRequiredPositiveIntegerEnv(name: string): number {
 export function loadE2EConfig(): E2EConfig {
   const repoRoot = resolve(import.meta.dir, "../../../../");
   const client = readRequiredEnv("P4CLIENT");
+  const p4Port = readRequiredEnv('P4PORT');
+  if (p4Port !== readRequiredEnv('P4_TS_E2E_ISOLATED_PORT') || !/^127\.0\.0\.1:\d+$/.test(p4Port)) {
+    throw new Error('Refusing E2E commands outside the disposable localhost server.');
+  }
   return {
     workspaceRoot: readRequiredEnv("P4_TS_E2E_WORKSPACE_ROOT"),
     client,
     stream: readRequiredEnv("P4_TS_E2E_STREAM"),
     p4Executable: readRequiredEnv("P4_TS_E2E_P4_EXECUTABLE"),
     user: readRequiredEnv("P4USER"),
-    p4Port: readRequiredEnv("P4PORT"),
+    p4Port,
     syncBaseChange: readRequiredPositiveIntegerEnv("P4_TS_E2E_SYNC_BASE_CHANGE"),
     testStreamPackageRoot: resolve(repoRoot, "packages/test-stream"),
     p4Env: { ...process.env, P4CLIENT: client }

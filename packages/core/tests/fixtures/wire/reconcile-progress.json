@@ -1,0 +1,30 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "-I",
+    "reconcile",
+    "-n",
+    "//p4ts/main/wire/..."
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"action\":\"edit\",\"clientFile\":\"<WORKSPACE>\\\\wire\\\\text.txt\",\"depotFile\":\"//p4ts/main/wire/text.txt\",\"type\":\"text\",\"workRev\":\"2\"}\n{\"action\":\"add\",\"clientFile\":\"<WORKSPACE>\\\\wire\\\\new file.txt\",\"depotFile\":\"//p4ts/main/wire/new file.txt\",\"type\":\"text\",\"workRev\":\"1\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data",
+    "data"
+  ]
+}

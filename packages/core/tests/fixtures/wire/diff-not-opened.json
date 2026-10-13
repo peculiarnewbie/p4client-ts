@@ -1,0 +1,28 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "diff",
+    "-du",
+    "//p4ts/main/wire/text.txt"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"code0\":554768766,\"data\":\"//p4ts/main/wire/text.txt - file(s) not opened on this client.\\n\",\"fmt0\":\"[%argc% - file(s)|File(s)] not opened on this client.\",\"generic\":17,\"severity\":2,\"severityformat\":\"warning\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "message"
+  ]
+}

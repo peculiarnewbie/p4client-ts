@@ -1,0 +1,29 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "reconcile",
+    "-n",
+    "-w",
+    "//p4ts/main/wire/text.txt"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"code0\":554769067,\"data\":\"//p4ts/main/wire/text.txt - no file(s) to reconcile.\\n\",\"fmt0\":\"[%argc% - no|No] file(s) to reconcile.\",\"generic\":17,\"severity\":2,\"severityformat\":\"warning\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "message"
+  ]
+}

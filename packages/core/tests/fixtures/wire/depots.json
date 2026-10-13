@@ -1,0 +1,27 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "depots"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"desc\":\"Default depot\",\"map\":\"depot/...\",\"name\":\"depot\",\"time\":\"1791920162\",\"type\":\"local\"}\n{\"depth\":\"1\",\"desc\":\"Disposable p4-ts E2E conformance depot.\\n\",\"map\":\"p4ts/...\",\"name\":\"p4ts\",\"time\":\"1791920163\",\"type\":\"stream\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data",
+    "data"
+  ]
+}

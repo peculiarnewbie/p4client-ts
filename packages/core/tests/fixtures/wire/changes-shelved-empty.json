@@ -1,0 +1,28 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "changes",
+    "-s",
+    "shelved",
+    "-m",
+    "5"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": []
+}
