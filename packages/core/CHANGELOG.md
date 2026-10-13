@@ -4,6 +4,13 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
+## Unreleased
+
+### Fixed
+
+- `previewSync()` keeps per-file failures such as `Can't clobber writable file <path>` in
+  `errors[]`, like `sync()`, instead of failing the whole preview (a regression in 0.12.0).
+
 ## 0.12.0 - 2026-10-14
 
 ### Breaking changes

@@ -1326,6 +1326,31 @@ describe("P4Client", () => {
     });
   });
 
+  it("keeps per-file failures as errors in a sync preview", async () => {
+    const p4 = new P4Client({
+      executor: createExecutor(async (command, args) => ({
+        command,
+        args,
+        stdout: [
+          JSON.stringify({ depotFile: "//Project/main/foo.txt", path: "C:\\work\\foo.txt", rev: "8", action: "updated" }),
+          JSON.stringify({ severity: "3", data: "Can't clobber writable file E:\\Game\\Content\\Asset.uasset" })
+        ].join("\n"),
+        stderr: "",
+        exitCode: 1
+      }))
+    });
+
+    await expect(p4.previewSync()).resolves.toMatchObject({
+      items: [{ depotFile: "//Project/main/foo.txt", action: "updated" }],
+      errors: [
+        {
+          clientFile: "E:\\Game\\Content\\Asset.uasset",
+          message: "Can't clobber writable file E:\\Game\\Content\\Asset.uasset"
+        }
+      ]
+    });
+  });
+
   it("streams sync progress and error rows", async () => {
     const calls: string[][] = [];
     const p4 = new P4Client({
