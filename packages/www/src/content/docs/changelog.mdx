@@ -5,6 +5,13 @@ description: Release notes for p4client-ts.
 
 All notable changes to `p4client-ts` are documented here.
 
+## 0.12.1 - 2026-10-14
+
+### Fixed
+
+- `previewSync()` keeps per-file error rows in `errors[]`, like `sync()`, instead of
+  failing the whole preview (a 0.12.0 regression).
+
 ## 0.12.0 - 2026-10-14
 
 ### Breaking changes

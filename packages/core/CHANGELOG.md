@@ -4,6 +4,15 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
+## 0.12.1 - 2026-10-14
+
+### Fixed
+
+- `previewSync()` keeps per-file error rows in `errors[]`, like `sync()` and `watchSync()`,
+  instead of failing the whole preview (a regression in 0.12.0). Session, server and view
+  failures still raise. Perforce 2026.1 reports a writable-file clobber only during a real
+  sync, not in its preview; both cases now have a disposable-server E2E scenario.
+
 ## 0.12.0 - 2026-10-14
 
 ### Breaking changes

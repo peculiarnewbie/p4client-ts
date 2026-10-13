@@ -19,10 +19,20 @@ export class P4E2EHarness {
     readonly config: E2EConfig,
     readonly fixture: E2EFixture
   ) {
-    this.client = new P4Client({
+    this.client = this.createWorkspaceClient(config.workspaceRoot);
+  }
+
+  /**
+   * A library client for a disposable workspace, with the same localhost isolation checks.
+   * Pass `client` to target a workspace other than the fixture's `P4CLIENT`.
+   */
+  createWorkspaceClient(cwd: string, client?: string): P4Client {
+    const config = this.config;
+    return new P4Client({
       executable: config.p4Executable,
-      cwd: config.workspaceRoot,
+      cwd,
       env: config.p4Env,
+      ...(client === undefined ? {} : { client }),
       executor: (command, args, options) => {
         this.assertIsolated(args, options);
         return runCommand(command, ['-p', config.p4Port, '-u', config.user, ...args], options);

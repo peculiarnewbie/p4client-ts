@@ -1366,9 +1366,11 @@ export class P4Client {
    */
   async previewSync(options: PreviewSyncOptions = {}): Promise<P4SyncPreviewResult> {
     options.signal?.throwIfAborted();
-    const rows = await this.runTaggedJson(
-      this.getSyncCommandArgs(options, true), options
-    );
+    // Like sync: a preview reports per-file failures (a writable file it would clobber) as
+    // errors beside the files it would update, not as a failure of the whole preview.
+    const commandArgs = ["-Mj", "-z", "tag", ...this.getSyncCommandArgs(options, true)];
+    const result = await this.run(commandArgs, { ...options, allowNonZeroExit: true });
+    const rows = this.selectDataRows(commandArgs, result, () => true, true);
 
     return this.toSyncResult(rows);
   }
