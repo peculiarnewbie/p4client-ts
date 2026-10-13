@@ -11,6 +11,9 @@ All notable changes to `p4client-ts` are documented here.
 
 - `previewSync()` keeps per-file error rows in `errors[]`, like `sync()`, instead of
   failing the whole preview (a 0.12.0 regression).
+- `materializeDepotFiles()` raises for a missing revision, as `printFile()` does.
+- `watchSync()` events match the `errors` and `messages` of `sync()`; fatal rows only reject.
+- `watchPreviewReconcile()` without `-I` rejects unparseable output like `previewReconcile()`.
 
 ## 0.12.0 - 2026-10-14
 
