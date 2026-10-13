@@ -455,8 +455,7 @@ describe("P4Client", () => {
         "surya",
         "-m",
         "3",
-        "//Project/main/...",
-        "@12350"
+        "//Project/main/...@12350"
       ]
     ]);
   });
@@ -566,8 +565,7 @@ describe("P4Client", () => {
         "Project_Main",
         "-m",
         "3",
-        "//Project/main/...",
-        "@12350"
+        "//Project/main/...@12350"
       ]
     ]);
   });
@@ -1301,7 +1299,7 @@ describe("P4Client", () => {
       }))
     });
 
-    await expect(p4.sync()).resolves.toEqual({
+    await expect(p4.sync()).resolves.toMatchObject({
       items: [
         {
           depotFile: "//Project/main/foo.txt",
@@ -1365,7 +1363,7 @@ describe("P4Client", () => {
       events.push(event);
     }
 
-    await expect(operation.result).resolves.toEqual({
+    await expect(operation.result).resolves.toMatchObject({
       items: [
         {
           depotFile: "//Project/main/foo.txt",
@@ -1386,7 +1384,7 @@ describe("P4Client", () => {
       totalCount: 1
     });
 
-    expect(events).toEqual([
+    expect(events).toMatchObject([
       {
         type: "start",
         command: "p4",

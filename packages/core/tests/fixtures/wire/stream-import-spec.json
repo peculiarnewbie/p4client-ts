@@ -1,0 +1,28 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "stream",
+    "-o",
+    "//p4ts/consumer"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"Access\":\"2026/10/14 02:36:04\",\"Description\":\"Import fixture\\n\",\"Name\":\"consumer\",\"Options\":\"allsubmit unlocked notoparent nofromparent mergedown\",\"Owner\":\"p4ts-e2e\",\"Parent\":\"none\",\"ParentView\":\"inherit\",\"Paths0\":\"share ...\",\"Paths1\":\"import vendor/... //p4ts/main/src/...\",\"Stream\":\"//p4ts/consumer\",\"Type\":\"mainline\",\"Update\":\"2026/10/14 02:36:04\",\"baseParent\":\"none\",\"extraTag0\":\"firmerThanParent\",\"extraTag1\":\"baseParent\",\"extraTag2\":\"streamSpecDigest\",\"extraTagType0\":\"word\",\"extraTagType1\":\"word\",\"extraTagType2\":\"digest\",\"firmerThanParent\":\"n/a\",\"streamSpecDigest\":\"5FA03A06CFF6F4DCC7A9676DD49965DD\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data"
+  ]
+}

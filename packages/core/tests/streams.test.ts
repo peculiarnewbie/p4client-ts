@@ -127,7 +127,7 @@ describe("P4Client annotateFile", () => {
 
     await expect(
       p4.annotateFile({ depotFile: "//depot/main/missing.txt" })
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       depotFile: "//depot/main/missing.txt",
       revision: null,
       lines: []

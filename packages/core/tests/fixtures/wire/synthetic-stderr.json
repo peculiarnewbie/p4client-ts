@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic mixed-channel variant of disposable files and sync warnings",
+  "mode": "json",
+  "args": ["-Mj", "-z", "tag", "files", "//depot/main/a.txt"],
+  "exitCode": 0,
+  "stdout": "{\"depotFile\":\"//depot/main/a.txt\",\"action\":\"add\",\"rev\":\"1\",\"change\":\"100\",\"type\":\"text\"}\n",
+  "stderr": "{\"data\":\"//depot/main/a.txt - file(s) up-to-date.\\n\",\"severity\":2,\"generic\":17}\n{\"data\":\"//depot/main/permission/P4CHARSET.txt - no such file(s).\\n\",\"severity\":2,\"generic\":17}\n"
+}

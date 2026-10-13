@@ -1,0 +1,28 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "missing-client",
+    "-Mj",
+    "-z",
+    "tag",
+    "sync",
+    "-n",
+    "//p4ts/main/wire/text.txt"
+  ],
+  "exitCode": 1,
+  "stopped": null,
+  "stdout": "{\"code0\":855775267,\"data\":\"Client 'missing-client' unknown - use 'client' command to create it.\\n\",\"fmt0\":\"%type% '%name%' unknown - use '%command%' command to create it.\",\"generic\":2,\"severity\":3,\"severityformat\":\"error\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "message"
+  ]
+}

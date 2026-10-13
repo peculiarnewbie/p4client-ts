@@ -1,0 +1,28 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "changes",
+    "-m",
+    "1"
+  ],
+  "exitCode": 1,
+  "stopped": null,
+  "stdout": "{\"code0\":805575992,\"data\":\"Your session has expired, please login again.\\n\",\"fmt0\":\"Your session has expired, please %'login'% again.\",\"generic\":4,\"severity\":3,\"severityformat\":\"error\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "message"
+  ]
+}

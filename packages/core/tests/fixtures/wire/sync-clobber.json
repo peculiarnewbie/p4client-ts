@@ -1,0 +1,28 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "sync",
+    "//p4ts/main/wire/clobber.txt"
+  ],
+  "exitCode": 1,
+  "stopped": null,
+  "stdout": "{\"action\":\"updated\",\"change\":\"8\",\"clientFile\":\"<WORKSPACE>\\\\wire\\\\clobber.txt\",\"depotFile\":\"//p4ts/main/wire/clobber.txt\",\"fileSize\":\"13\",\"rev\":\"2\",\"totalFileCount\":\"1\",\"totalFileSize\":\"13\"}\n{\"code0\":824320004,\"data\":\"Can't clobber writable file <WORKSPACE>\\\\wire\\\\clobber.txt\\n\",\"fmt0\":\"Can't clobber writable file %file%\",\"generic\":34,\"severity\":3,\"severityformat\":\"error\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data",
+    "message"
+  ]
+}

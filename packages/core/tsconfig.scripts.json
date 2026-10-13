@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "bun"]
+  },
+  "include": ["scripts/**/*.ts", "tests/wire*.test.ts", "tests/prod-readonly-p4.test.ts"]
+}

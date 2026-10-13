@@ -1,0 +1,28 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "describe",
+    "-s",
+    "9"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"action0\":\"move/add\",\"action1\":\"move/delete\",\"change\":\"9\",\"changeType\":\"public\",\"client\":\"p4ts_e2e_client\",\"depotFile0\":\"//p4ts/main/wire/renamed.txt\",\"depotFile1\":\"//p4ts/main/wire/text.txt\",\"desc\":\"Wire move fixture\",\"digest0\":\"64782508BE6BBB8B63A26A5618632559\",\"fileSize0\":\"23\",\"path\":\"//p4ts/main/wire/*\",\"rev0\":\"1\",\"rev1\":\"3\",\"status\":\"submitted\",\"time\":\"1791920168\",\"type0\":\"text\",\"type1\":\"text\",\"user\":\"p4ts-e2e\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data"
+  ]
+}

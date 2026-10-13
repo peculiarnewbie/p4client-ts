@@ -369,7 +369,7 @@ export interface P4SubmittedChangelistSummary {
 /**
  * Paged submitted changelist list.
  */
-export interface ListSubmittedChangelistsResult {
+export interface ListSubmittedChangelistsResult extends P4MessageCarrier {
   items: P4SubmittedChangelistSummary[];
   hasMore: boolean;
   nextBeforeChange: number | null;
@@ -408,7 +408,7 @@ export interface P4ShelvedChangelistSummary {
 /**
  * Paged shelved changelist list.
  */
-export interface ListShelvedChangelistsResult {
+export interface ListShelvedChangelistsResult extends P4MessageCarrier {
   items: P4ShelvedChangelistSummary[];
   hasMore: boolean;
   nextBeforeChange: number | null;
@@ -440,7 +440,7 @@ export interface ListChangelistsOptions extends P4OperationOptions {
 /**
  * Unified changelist list result.
  */
-export interface ListChangelistsResult {
+export interface ListChangelistsResult extends P4MessageCarrier {
   items: P4ChangelistListSummary[];
   hasMore: boolean;
   nextBeforeChange: number | null;
@@ -509,7 +509,7 @@ export interface P4ReconcileCandidate {
 /**
  * Grouped reconcile preview result keyed by preview action.
  */
-export interface P4ReconcilePreviewResult {
+export interface P4ReconcilePreviewResult extends P4MessageCarrier {
   added: P4ReconcileCandidate[];
   edited: P4ReconcileCandidate[];
   deleted: P4ReconcileCandidate[];
@@ -587,7 +587,7 @@ export interface P4SyncItem {
 /**
  * Result returned by `sync()`.
  */
-export interface P4SyncResult {
+export interface P4SyncResult extends P4MessageCarrier {
   /** Individual sync rows emitted by Perforce. */
   items: P4SyncItem[];
   /** Per-file sync failures emitted as tagged error rows. Present only when non-empty. */
@@ -608,7 +608,7 @@ export interface P4SyncErrorItem {
 /**
  * Sync result shape that always includes parsed error rows.
  */
-export interface P4SyncResultWithErrors {
+export interface P4SyncResultWithErrors extends P4MessageCarrier {
   items: P4SyncItem[];
   errors: P4SyncErrorItem[];
   totalCount: number;
@@ -621,7 +621,32 @@ export type P4SyncProgressEvent =
   | { type: "start"; command: string; args: string[] }
   | { type: "progress"; item: P4SyncItem; filesSynced: number }
   | { type: "error-row"; error: P4SyncErrorItem }
+  | { type: 'message'; message: P4Message }
   | { type: "complete"; result: P4SyncResultWithErrors };
+
+/** A classified wire message, with every original server tag retained. */
+export interface P4Message {
+  kind: 'info' | 'warning' | 'error';
+  message: string;
+  severity: number | null;
+  level: number | null;
+  generic: number | null;
+  code: string | null;
+  reason: P4MessageReason;
+  raw: Record<string, unknown>;
+}
+
+/** Informational/empty cases and recognized command failures. */
+export type P4MessageReason = import('./errors.js').P4FailureReason | 'empty' | 'up_to_date'
+  | 'not_opened' | 'opened_unchanged' | 'resolve_required' | 'exclusive_open';
+
+/** Non-enumerable diagnostics; extract explicitly before serialization. Absent when none were emitted. */
+export interface P4MessageCarrier {
+  readonly messages?: readonly P4Message[];
+}
+
+/** Array result with accessible, non-enumerable message metadata. */
+export type P4ResultArray<A> = A[] & P4MessageCarrier;
 
 /**
  * Options for changing the active Perforce client setting.
@@ -689,7 +714,7 @@ export interface P4DescribedFile {
 /**
  * Normalized changelist description returned by `describeChangelist()`.
  */
-export interface P4ChangelistDescription {
+export interface P4ChangelistDescription extends P4MessageCarrier {
   change: number | "default";
   user: string | null;
   client: string | null;
@@ -762,7 +787,7 @@ export interface DiffFileOptions extends P4OperationOptions {
 /**
  * Unified diff result for a single file.
  */
-export interface P4FileDiffResult {
+export interface P4FileDiffResult extends P4MessageCarrier {
   depotFile: P4DepotPath;
   localFile: P4LocalPath | null;
   /** Whether the workspace or two depot revisions were compared. */
@@ -796,7 +821,7 @@ export interface PrintFileOptions extends P4OperationOptions {
 /**
  * Depot file content returned by `printFile()`.
  */
-export interface P4PrintResult {
+export interface P4PrintResult extends P4MessageCarrier {
   depotFile: P4DepotPath;
   revision: string | null;
   /**
@@ -839,7 +864,7 @@ export interface P4DepotFileRevision {
 /**
  * Bounded depot listing at a submitted changelist.
  */
-export interface ListDepotFilesAtChangeResult {
+export interface ListDepotFilesAtChangeResult extends P4MessageCarrier {
   items: P4DepotFileRevision[];
   /** Whether another matching revision exists beyond {@link items}. */
   hasMore: boolean;
@@ -905,7 +930,7 @@ export interface P4DepotDir {
 /**
  * Bounded single-level directory listing.
  */
-export interface ListDepotDirsResult {
+export interface ListDepotDirsResult extends P4MessageCarrier {
   items: P4DepotDir[];
   /** Whether another subdirectory exists beyond {@link items}. */
   hasMore: boolean;
@@ -970,7 +995,7 @@ export interface P4DepotFileListing {
 /**
  * Bounded single-level file listing.
  */
-export interface ListDepotFilesResult {
+export interface ListDepotFilesResult extends P4MessageCarrier {
   items: P4DepotFileListing[];
   /** Whether another file exists beyond {@link items}. */
   hasMore: boolean;
@@ -1150,7 +1175,7 @@ export interface P4FileRevision {
 /**
  * File revision history returned by `getFileHistory()`.
  */
-export interface P4FileHistory {
+export interface P4FileHistory extends P4MessageCarrier {
   /**
    * The requested head path, resolved to depot syntax. Following integrations
    * never repoints this at an ancestor.
@@ -1273,7 +1298,7 @@ export interface P4AnnotatedLine {
  * {@link P4Client.getFileHistory} or `describeChangelist()` to resolve authors
  * and descriptions.
  */
-export interface P4AnnotationResult {
+export interface P4AnnotationResult extends P4MessageCarrier {
   /** Depot path that was annotated. */
   depotFile: P4DepotPath;
   /** Revision reported by Perforce for the annotated file, when available. */
@@ -1346,7 +1371,7 @@ export interface P4ChangelistDiffFileSummary {
 /**
  * Changelist-level diff summary without per-file patch bodies.
  */
-export interface P4ChangelistDiffSummary {
+export interface P4ChangelistDiffSummary extends P4MessageCarrier {
   changelist: P4ChangelistDescription;
   files: P4ChangelistDiffFileSummary[];
 }
@@ -1371,10 +1396,10 @@ export interface P4Service {
   getP4Environment: (
     options?: boolean | GetEnvironmentOptions
   ) => import("effect").Effect.Effect<P4EnvironmentSummary, P4ServiceError>;
-  listP4Workspaces: (refresh?: boolean) => import("effect").Effect.Effect<P4WorkspaceSummary[], P4ServiceError>;
+  listP4Workspaces: (refresh?: boolean) => import("effect").Effect.Effect<P4ResultArray<P4WorkspaceSummary>, P4ServiceError>;
   listPendingChangelists: (
     options?: ListPendingChangelistsOptions
-  ) => import("effect").Effect.Effect<P4PendingChangelistSummary[], P4ServiceError>;
+  ) => import("effect").Effect.Effect<P4ResultArray<P4PendingChangelistSummary>, P4ServiceError>;
   listSubmittedChangelists: (
     options?: ListSubmittedChangelistsOptions
   ) => import("effect").Effect.Effect<ListSubmittedChangelistsResult, P4ServiceError>;
@@ -1386,11 +1411,11 @@ export interface P4Service {
   ) => import("effect").Effect.Effect<ListChangelistsResult, P4ServiceError>;
   getOpenedFiles: (
     options?: GetOpenedFilesOptions
-  ) => import("effect").Effect.Effect<P4OpenedFileSummary[], P4ServiceError>;
+  ) => import("effect").Effect.Effect<P4ResultArray<P4OpenedFileSummary>, P4ServiceError>;
   getChangelistFiles: (
     change: number | "default",
     options?: Omit<GetOpenedFilesOptions, "change">
-  ) => import("effect").Effect.Effect<P4OpenedFileSummary[], P4ServiceError>;
+  ) => import("effect").Effect.Effect<P4ResultArray<P4OpenedFileSummary>, P4ServiceError>;
   previewReconcile: (
     options?: PreviewReconcileOptions
   ) => import("effect").Effect.Effect<P4ReconcilePreviewResult, P4ServiceError>;
@@ -1435,7 +1460,7 @@ export interface P4Service {
   ) => import("effect").Effect.Effect<P4ChangelistDiffSummary, P4ServiceError>;
   listDepots: (
     options?: ListDepotsOptions
-  ) => import("effect").Effect.Effect<P4Depot[], P4ServiceError>;
+  ) => import("effect").Effect.Effect<P4ResultArray<P4Depot>, P4ServiceError>;
   listDepotDirs: (
     options: ListDepotDirsOptions
   ) => import("effect").Effect.Effect<ListDepotDirsResult, P4ServiceError>;
@@ -1444,19 +1469,19 @@ export interface P4Service {
   ) => import("effect").Effect.Effect<ListDepotFilesResult, P4ServiceError>;
   statFiles: (
     options: StatFilesOptions
-  ) => import("effect").Effect.Effect<P4FileStat[], P4ServiceError>;
+  ) => import("effect").Effect.Effect<P4ResultArray<P4FileStat>, P4ServiceError>;
   whereFiles: (
     options: WhereFilesOptions
-  ) => import("effect").Effect.Effect<P4WhereMapping[], P4ServiceError>;
+  ) => import("effect").Effect.Effect<P4ResultArray<P4WhereMapping>, P4ServiceError>;
   getFileHistory: (
     options: GetFileHistoryOptions
   ) => import("effect").Effect.Effect<P4FileHistory, P4ServiceError>;
   listUsers: (
     options?: ListUsersOptions
-  ) => import("effect").Effect.Effect<P4User[], P4ServiceError>;
+  ) => import("effect").Effect.Effect<P4ResultArray<P4User>, P4ServiceError>;
   listStreams: (
     options?: ListStreamsOptions
-  ) => import("effect").Effect.Effect<P4Stream[], P4ServiceError>;
+  ) => import("effect").Effect.Effect<P4ResultArray<P4Stream>, P4ServiceError>;
   annotateFile: (
     options: AnnotateFileOptions
   ) => import("effect").Effect.Effect<P4AnnotationResult, P4ServiceError>;

@@ -5,6 +5,39 @@ description: Release notes for p4client-ts.
 
 All notable changes to `p4client-ts` are documented here.
 
+## 0.12.0 - 2026-10-14
+
+### Breaking changes
+
+- Perforce messages are separated from data. Recognized failures raise
+  `P4CommandError` even when `p4` exits zero.
+- `P4ErrorCategory` adds `permission`, `not_in_view`, `revision`, `changelist`,
+  `user`, and `charset`. Classification ignores data rows and command arguments.
+- `whereFiles()` raises `not_in_view` instead of returning an empty mapping.
+  `printFile()` raises when metadata or content is unavailable.
+- `beforeChange` applies to each filespec and rejects revision-qualified filespecs.
+
+### Added
+
+- `P4CommandError.reason`, `classifyP4Failure()`, and the `P4FailureReason` type.
+- Non-enumerable `messages` on results, a watched-sync `message` event, and the
+  `P4Message`, `P4MessageCarrier`, `P4ResultArray`, and `P4MessageRowSchema` exports.
+- Command context on `P4ParseError`.
+
+### Fixed
+
+- `sync` previews no longer fail on `OutputInfo` rows without file fields.
+- Per-file sync failures stay in `errors[]`; session and server failures stay fatal.
+- Selected `statFiles()` fields, escaped local paths, and watched-command cleanup.
+
+## 0.11.0 - 2026-10-08
+
+### Added
+
+- `P4ClientOptions.client` runs every command in that workspace by passing the
+  global `-c <client>` option, taking precedence over `P4CLIENT`, P4CONFIG files,
+  and `p4 set`.
+
 ## 0.10.0 - 2026-09-09
 
 ### Breaking changes

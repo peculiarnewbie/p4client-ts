@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic progress-channel variant of disposable reconcile rows and warnings",
+  "mode": "json",
+  "args": ["-I", "-Mj", "-z", "tag", "reconcile", "-n"],
+  "exitCode": 0,
+  "stdout": "{\"depotFile\":\"//depot/main/a.txt\",\"action\":\"edit\"}\n",
+  "stderr": "Scanning workspace: 1/4 (25%)\nHashing files: 4/4 (100%)\n//depot/main/missing.txt - no file(s) to reconcile.\n"
+}

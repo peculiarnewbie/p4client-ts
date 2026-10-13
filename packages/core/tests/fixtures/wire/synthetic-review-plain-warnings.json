@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic stderr variants of disposable OutputInfo plus an invented warning",
+  "mode": "plain",
+  "args": ["diff", "-du", "//depot/main/a.txt"],
+  "exitCode": 0,
+  "stdout": "",
+  "stderr": "//depot/main/a.txt - must resolve #2 before submitting.\n//depot/main/a.txt - opened and not being changed.\nAn unfamiliar advisory from the server.\n"
+}

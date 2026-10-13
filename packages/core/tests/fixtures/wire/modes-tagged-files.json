@@ -1,0 +1,23 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "tagged",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-ztag",
+    "files",
+    "//p4ts/main/wire/text.txt"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "... depotFile //p4ts/main/wire/text.txt\r\n... rev 1\r\n... change 4\r\n... action add\r\n... type text\r\n... time 1791920164\r\n\r\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": []
+}

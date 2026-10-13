@@ -1,0 +1,28 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "describe",
+    "-s",
+    "7"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"action0\":\"edit\",\"change\":\"7\",\"changeType\":\"public\",\"client\":\"p4ts_e2e_client\",\"depotFile0\":\"//p4ts/main/wire/text.txt\",\"desc\":\"Pending wire fixture\\n\",\"rev0\":\"1\",\"status\":\"pending\",\"time\":\"1791920167\",\"type0\":\"text\",\"user\":\"p4ts-e2e\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data"
+  ]
+}

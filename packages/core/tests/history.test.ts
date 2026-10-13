@@ -60,7 +60,7 @@ describe("P4Client whereFiles", () => {
     ]);
   });
 
-  it("returns no rows for a spec outside the client view", async () => {
+  it('raises a typed failure for a spec outside the client view', async () => {
     const p4 = new P4Client({
       executor: async (command, args) => ({
         command,
@@ -71,7 +71,7 @@ describe("P4Client whereFiles", () => {
       })
     });
 
-    await expect(p4.whereFiles({ fileSpec: "//other/foo.txt" })).resolves.toEqual([]);
+    await expect(p4.whereFiles({ fileSpec: "//other/foo.txt" })).rejects.toMatchObject({ category: 'not_in_view', reason: 'not_in_view' });
   });
 });
 
@@ -363,7 +363,7 @@ describe("P4Client getFileHistory", () => {
 
     await expect(
       p4.getFileHistory({ depotFile: "//depot/main/missing.txt" })
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       depotFile: "//depot/main/missing.txt",
       revisions: []
     });

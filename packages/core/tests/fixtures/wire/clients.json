@@ -1,0 +1,28 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "clients",
+    "-u",
+    "p4ts-e2e"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"Access\":\"1791920163\",\"Backup\":\"enable\",\"Description\":\"\",\"Host\":\"\",\"LineEnd\":\"local\",\"Options\":\"allwrite clobber nocompress unlocked nomodtime rmdir noaltsync\",\"Owner\":\"p4ts-e2e\",\"Root\":\"<WORKSPACE>\",\"Stream\":\"//p4ts/main\",\"SubmitOptions\":\"submitunchanged\",\"Type\":\"writeable\",\"Update\":\"1791920164\",\"client\":\"p4ts_e2e_client\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data"
+  ]
+}

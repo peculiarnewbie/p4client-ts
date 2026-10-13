@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic Windows rename failure combined with disposable sync data shapes",
+  "mode": "json",
+  "args": ["-Mj", "-z", "tag", "sync", "//depot/main/..."],
+  "exitCode": 1,
+  "stdout": "{\"depotFile\":\"//depot/main/a.txt\",\"action\":\"updated\",\"rev\":\"2\"}\n{\"depotFile\":\"//depot/main/b.txt\",\"action\":\"updated\",\"rev\":\"2\"}\n{\"data\":\"rename: C:\\\\fixture\\\\c.tmp to C:\\\\fixture\\\\c.txt: Access is denied.\\n\",\"severity\":3,\"generic\":33}\n",
+  "stderr": ""
+}
