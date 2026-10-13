@@ -4,8 +4,9 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { Effect } from 'effect';
 import type { Schema } from 'effect';
 import { createAsyncEventQueue } from "../internal/async-queue.js";
-import { createCancellationScope, ownOperation } from '../internal/cancellation.js';
-import { readMessage, withMessages } from '../internal/messages.js';
+import { createCancellationScope, ownOperation, settleOperation } from '../internal/cancellation.js';
+import { diagnosticText } from '../internal/diagnostics.js';
+import { isFatalMessage, isSyncFileError, readMessage, withMessages } from '../internal/messages.js';
 import {
   AnnotationRow, AnnotationHeaderRow, ChangelistRow, DepotRow, DescribedFileRow, DirRow, FileRow,
   FileRevisionRow, HistoryRevisionRow, OpenedRow, StatRow, StreamRow, SyncRow,
@@ -600,7 +601,6 @@ export class P4Client {
       : ["describe", "-s", String(change)];
     const rows = await this.runTaggedJson(commandArgs, options);
     return this.toChangelistDescription(
-      change,
       rows,
       options.shelved ? "shelved" : undefined
     );
@@ -679,18 +679,18 @@ export class P4Client {
    *
    * Binary files return `isBinary: true` with empty `content` without fetching
    * the payload. Text files return UTF-8 string content from a quiet print.
+   * @throws {P4CommandError} When the requested file revision is unavailable, including `#have` for an unsynced file.
    */
   async printFile(depotFile: string, options: PrintFileOptions = {}): Promise<P4PrintResult> {
     options.signal?.throwIfAborted();
     const revision = options.revision ?? "have";
     const filespec = `${depotFile}#${revision}`;
-    const fileRows = await this.runTaggedJson(["files", filespec], options);
+    const metadataArgs = ['-Mj', '-z', 'tag', 'files', filespec];
+    const metadata = await this.run(metadataArgs, { ...options, allowNonZeroExit: true });
+    const fileRows = this.selectDataRows(metadataArgs, metadata, (row) => 'depotFile' in row);
     const meta = fileRows[0];
     if (!meta) {
-      return withMessages({
-        depotFile: decodeRow(P4DepotPathSchema, depotFile), revision: String(revision),
-        content: '', isBinary: false, type: null
-      }, fileRows);
+      throw this.toCommandError(metadataArgs, metadata);
     }
 
     const parsed = decodeRow(FileRow, meta);
@@ -709,14 +709,19 @@ export class P4Client {
       }, fileRows);
     }
 
-    const result = await this.run(["print", "-q", filespec], options);
+    const printArgs = ['print', '-q', filespec];
+    const result = await this.run(printArgs, { ...options, allowNonZeroExit: true });
+    const messages = this._selectPlainMessages(printArgs, result);
+    if (messages.some((message) => message.reason === 'empty' || message.reason === 'unknown_revision') || result.exitCode !== 0) {
+      throw this.toCommandError(printArgs, result);
+    }
     return withMessages({
       depotFile: resolvedDepotFile,
       revision: resolvedRevision,
       content: result.stdout,
       isBinary: false,
       type
-    }, { messages: [...(fileRows.messages ?? []), ...this._selectPlainMessages(['print', '-q', filespec], result)] });
+    }, { messages: [...(fileRows.messages ?? []), ...messages] });
   }
 
   /**
@@ -1242,7 +1247,7 @@ export class P4Client {
     queue.push({
       type: "start",
       command: this.executable,
-      args: redactCommandArgs(argsWithProgress),
+      args: redactCommandArgs(this.withGlobalOptions(argsWithProgress)),
       progressRequested: true
     });
 
@@ -1253,35 +1258,51 @@ export class P4Client {
         rows: P4ResultArray<Record<string, unknown>>;
       }> => {
         const rows: Record<string, unknown>[] = [];
+        const stderrLines: string[] = [];
         const handle = this.watch(args, { signal: scope.signal, allowNonZeroExit: true });
-
-        for await (const event of handle.events) {
-          if (event.type !== "line") {
-            continue;
-          }
-
-          if (event.source === "stdout") {
-            const parsed = this.tryParseJsonLine(event.line, args);
-            if (parsed) {
-              rows.push(parsed);
+        let completed = false;
+        let context = { command: this.executable, args: this.withGlobalOptions(args) };
+        try {
+          for await (const event of handle.events) {
+            if (event.type === 'start') context = { command: event.command, args: event.args };
+            if (event.type !== "line") {
               continue;
             }
+
+            if (event.source === "stdout") {
+              const parsed = this.tryParseJsonLine(event.line, args);
+              if (parsed) {
+                rows.push(parsed);
+                continue;
+              }
+            }
+
+            if (event.source === 'stderr') {
+              stderrLines.push(event.line);
+              if (!args.includes('-I') || !this._isProgressLine(event.line)) continue;
+            }
+            sawProgress = true;
+            queue.push({
+              type: "progress",
+              source: event.source,
+              rawLine: event.line,
+              snapshot: parseP4ProgressLine(event.line)
+            });
           }
 
-          sawProgress = true;
-          queue.push({
-            type: "progress",
-            source: event.source,
-            rawLine: event.line,
-            snapshot: parseP4ProgressLine(event.line)
-          });
+          const commandResult = await handle.result;
+          completed = true;
+          context = { command: commandResult.command, args: commandResult.args };
+          const stderr = (commandResult.stderr || stderrLines.join('\n')).split(/\r?\n/)
+            .filter((line) => !args.includes('-I') || !this._isProgressLine(line)).join('\n');
+          const data = this.selectParsedRows(args, commandResult, rows, () => true, false, stderr);
+          return { rows: data };
+        } catch (error) {
+          if (!completed) scope.abort();
+          await Effect.runPromise(settleOperation(handle.result));
+          if (error instanceof P4ParseError) error.withCommand(context.command, context.args);
+          throw error;
         }
-
-        const commandResult = await handle.result;
-        const data = this.selectDataRows(args, {
-          ...commandResult, stdout: rows.map((row) => JSON.stringify(row)).join('\n')
-        }, () => true);
-        return { rows: data };
       };
 
       try {
@@ -1376,58 +1397,74 @@ export class P4Client {
     queue.push({
       type: "start",
       command: this.executable,
-      args: redactCommandArgs(args)
+      args: redactCommandArgs(this.withGlobalOptions(args))
     });
 
     const result = (async () => {
       const items: P4SyncItem[] = [];
       const errors: P4SyncErrorItem[] = [];
+      const emittedErrors = new WeakSet<object>();
       const capturedRows: Record<string, unknown>[] = [];
       const handle = this.watch(args, { signal: scope.signal, allowNonZeroExit: true });
+      let context = { command: this.executable, args: this.withGlobalOptions(args) };
+      try {
+        for await (const event of handle.events) {
+          if (event.type === 'start') context = { command: event.command, args: event.args };
+          if (event.type !== "line" || event.source !== "stdout") {
+            continue;
+          }
 
-      for await (const event of handle.events) {
-        if (event.type !== "line" || event.source !== "stdout") {
-          continue;
+          const row = this.tryParseJsonLine(event.line, args);
+          if (!row) {
+            if (event.line.trim()) throw new P4ParseError('Unrecognized sync output.', event.line, null).withCommand(context.command, context.args);
+            continue;
+          }
+
+          setRowCommandContext(row, context.command, context.args);
+          capturedRows.push(row);
+          const message = readMessage(row);
+          if (message && !isSyncFileError(message)) {
+            queue.push({ type: 'message', message });
+            continue;
+          }
+          if (message) {
+            const error = this.toSyncErrorItem(row);
+            emittedErrors.add(row);
+            errors.push(error);
+            queue.push({ type: "error-row", error });
+            continue;
+          }
+
+          {
+            const item = this.toSyncItem(row);
+            items.push(item);
+            queue.push({
+              type: "progress",
+              item,
+              filesSynced: items.length
+            });
+          }
         }
 
-        const row = this.tryParseJsonLine(event.line, args);
-        if (!row) {
-          if (event.line.trim()) throw new P4ParseError('Unrecognized sync output.', event.line, null).withCommand(this.executable, args);
-          continue;
+        const commandResult = await handle.result;
+        context = { command: commandResult.command, args: commandResult.args };
+        const rows = this.selectParsedRows(args, commandResult, capturedRows, () => true, true);
+        for (const message of rows.messages ?? []) {
+          if (isSyncFileError(message) && !emittedErrors.has(message.raw)) {
+            const error = this.toSyncErrorItem(message.raw);
+            errors.push(error);
+            queue.push({ type: 'error-row', error });
+          }
         }
-
-        setRowCommandContext(row, this.executable, this.withGlobalOptions(args));
-        capturedRows.push(row);
-        const message = readMessage(row);
-        if (message && !(message.kind === 'error' && message.reason === 'clobber')) {
-          queue.push({ type: 'message', message });
-          continue;
-        }
-        if (this.isSyncErrorRow(row)) {
-          const error = this.toSyncErrorItem(row);
-          errors.push(error);
-          queue.push({ type: "error-row", error });
-          continue;
-        }
-
-        {
-          const item = this.toSyncItem(row);
-          items.push(item);
-          queue.push({
-            type: "progress",
-            item,
-            filesSynced: items.length
-          });
-        }
+        const syncResult: P4SyncResultWithErrors = withMessages({ items, errors, totalCount: items.length }, rows);
+        queue.push({ type: "complete", result: syncResult });
+        return syncResult;
+      } catch (error) {
+        scope.abort();
+        await Effect.runPromise(settleOperation(handle.result));
+        if (error instanceof P4ParseError) error.withCommand(context.command, context.args);
+        throw error;
       }
-
-      const commandResult = await handle.result;
-      const rows = this.selectDataRows(args, {
-        ...commandResult, stdout: capturedRows.map((row) => JSON.stringify(row)).join('\n')
-      }, () => true, true);
-      const syncResult: P4SyncResultWithErrors = withMessages({ items, errors, totalCount: items.length }, rows);
-      queue.push({ type: "complete", result: syncResult });
-      return syncResult;
     })();
 
     void result.then(
@@ -1597,14 +1634,12 @@ export class P4Client {
   }
 
   private toChangelistDescription(
-    change: number | "default",
     rows: P4ResultArray<Record<string, unknown>>,
-    contentSource?: "opened" | "shelved"
+    contentSource?: "shelved"
   ): P4ChangelistDescription {
     const metadata = rows.find((row) => row.change !== undefined) ?? rows[0];
     if (!metadata) {
-      throw new P4ParseError('Missing Perforce changelist metadata.', JSON.stringify(rows), null)
-        .withCommand(this.executable, this.withGlobalOptions(['-Mj', '-z', 'tag', 'describe', ...(contentSource === 'shelved' ? ['-S'] : []), '-s', String(change)]));
+      throw rowParseError('Missing Perforce changelist metadata.', rows, null);
     }
 
     const parsed = decodeRow(ChangelistRow, metadata);
@@ -1780,32 +1815,41 @@ export class P4Client {
 
   /** Plain payload commands send their diagnostics to stderr, including zero-exit warnings. */
   private _selectPlainMessages(args: string[], result: P4CommandResult): P4Message[] {
-    if (!result.stderr.trim()) return [];
-    if (result.stderr.trim().startsWith('{')) {
+    const messages = this._readStderrMessages(result);
+    if (messages.some(isFatalMessage)) throw this.toCommandError(args, result);
+    return messages;
+  }
+
+  /** Decode each diagnostic independently; ordinary zero-exit notices remain warnings. */
+  private _readStderrMessages(result: P4CommandResult, stderr = result.stderr): P4Message[] {
+    return stderr.split(/\r?\n/).filter((line) => line.trim()).map((line) => {
       try {
-        const messages = parseP4JsonLines(result.stderr).map((row) => {
-          setRowCommandContext(row, this.executable, this.withGlobalOptions(args));
+        const row = parseTaggedJsonLine(line);
+        if (row) {
+          setRowCommandContext(row, result.command, result.args);
           const message = readMessage(row);
-          if (!message) throw new P4ParseError('Unexpected Perforce stderr row.', JSON.stringify(row), null);
+          if (!message) throw rowParseError('Unexpected Perforce stderr row.', row, null);
           return message;
-        });
-        if (messages.some((message) => message.kind === 'error' || ['unknown_revision', 'unknown_changelist', 'unknown_user', 'unknown_client', 'not_in_view', 'permission_denied'].includes(message.reason))) {
-          throw this.toCommandError(args, result);
         }
-        return messages;
+        const parsed = readMessage({ data: line, code: result.exitCode === 0 ? 'warning' : 'error' });
+        if (!parsed) throw new P4ParseError('Invalid Perforce diagnostic.', line, null);
+        const isEmptyWarning = ['empty', 'not_opened', 'up_to_date'].includes(parsed.reason)
+          || /no file\(s\) at that revision/i.test(line);
+        return { ...parsed, kind: isEmptyWarning ? 'warning' as const : parsed.kind, code: null, raw: { data: line } };
       } catch (error) {
-        if (error instanceof P4ParseError) error.withCommand(this.executable, this.withGlobalOptions(args));
+        if (error instanceof P4ParseError) error.withCommand(result.command, result.args);
         throw error;
       }
-    }
-    const parsed = readMessage({ data: result.stderr, code: result.exitCode === 0 ? 'warning' : 'error' });
-    if (!parsed) return [];
-    const isEmptyWarning = ['empty', 'not_opened', 'up_to_date'].includes(parsed.reason);
-    const message: P4Message = { ...parsed, kind: isEmptyWarning ? 'warning' : parsed.kind, code: null, raw: { data: result.stderr } };
-    if (message.kind === 'error' || !['command', 'empty', 'not_opened', 'up_to_date'].includes(message.reason)) {
-      throw this.toCommandError(args, result);
-    }
-    return [message];
+    });
+  }
+
+  /** Recognize numeric progress hints without treating every stderr line as progress. */
+  private _isProgressLine(line: string): boolean {
+    if (line.trim().startsWith('{')) return false;
+    const snapshot = parseP4ProgressLine(line);
+    return snapshot !== null
+      && (snapshot.completed !== null || snapshot.percent !== null)
+      && /^(?:scan(?:ning)?|hash(?:ing)?|reconcil(?:e|ing)|check(?:ing)?|compar(?:e|ing)|transfer(?:ring)?|process(?:ing)?|progress|\d{1,3}%)(?:\b|\s)/i.test(line.trim());
   }
 
   /**
@@ -1825,23 +1869,35 @@ export class P4Client {
     try {
       rows = parseP4JsonLines(result.stdout);
     } catch (error) {
-      if (error instanceof P4ParseError) error.withCommand(this.executable, this.withGlobalOptions(args));
+      if (error instanceof P4ParseError) error.withCommand(result.command, result.args);
       throw error;
     }
+    return this.selectParsedRows(args, result, rows, hasData, collectSyncErrors);
+  }
+
+  /** Partition already-parsed watch rows without serializing and parsing their contents again. */
+  private selectParsedRows(
+    args: string[],
+    result: P4CommandResult,
+    rows: readonly Record<string, unknown>[],
+    hasData: (row: Record<string, unknown>) => boolean,
+    collectSyncErrors = false,
+    stderr = result.stderr
+  ): P4ResultArray<Record<string, unknown>> {
     const data: Record<string, unknown>[] = [];
     const messages: P4Message[] = [];
     let hasFatal = false;
 
+    const collect = (message: P4Message): void => {
+      messages.push(message);
+      if (collectSyncErrors && isSyncFileError(message)) data.push(message.raw);
+      else if (isFatalMessage(message)) hasFatal = true;
+    };
     for (const row of rows) {
-      setRowCommandContext(row, this.executable, this.withGlobalOptions(args));
+      setRowCommandContext(row, result.command, result.args);
       const message = readMessage(row);
       if (message) {
-        messages.push(message);
-        if (collectSyncErrors && message.kind === 'error' && message.reason === 'clobber') {
-          data.push(row);
-        } else if (message.kind === 'error' || ['unknown_revision', 'unknown_changelist', 'unknown_user', 'unknown_client', 'not_in_view', 'permission_denied'].includes(message.reason)) {
-          hasFatal = true;
-        }
+        collect(message);
         continue;
       }
       if (hasData(row)) {
@@ -1850,10 +1906,10 @@ export class P4Client {
       }
 
       throw new P4ParseError('Unrecognized Perforce data row.', JSON.stringify(row), null)
-        .withCommand(this.executable, this.withGlobalOptions(args));
+        .withCommand(result.command, result.args);
     }
 
-    messages.push(...this._selectPlainMessages(args, result));
+    for (const message of this._readStderrMessages(result, stderr)) collect(message);
     if (hasFatal) {
       throw this.toCommandError(args, result);
     }
@@ -1862,6 +1918,7 @@ export class P4Client {
       throw this.toCommandError(args, result);
     }
 
+    setRowCommandContext(data, result.command, result.args);
     return withMessages(data, { messages });
   }
 
@@ -2237,8 +2294,8 @@ export class P4Client {
   }
 
   private isSyncErrorRow(row: Record<string, unknown>): boolean {
-    const severity = normalizeNullableNumber(row.severity);
-    return severity !== null && severity >= 3;
+    const message = readMessage(row);
+    return message !== null && isSyncFileError(message);
   }
 
   private toSyncErrorItem(row: Record<string, unknown>): P4SyncErrorItem {
@@ -2488,10 +2545,10 @@ export class P4Client {
     this.cachedResolvedSettings = null;
   }
 
-  private toCommandError(args: string[], result: P4CommandResult): P4CommandError {
-    const details = result.stderr.trim() || result.stdout.trim() || "Unknown error";
+  private toCommandError(_args: string[], result: P4CommandResult): P4CommandError {
+    const details = diagnosticText(result).trim() || 'No command diagnostics were returned';
     return new P4CommandError(
-      `${this.executable} ${formatCommandArgs(args)} exited with ${result.exitCode}: ${details}`,
+      `${result.command} ${formatCommandArgs(result.args)} exited with ${result.exitCode}: ${details}`,
       result
     );
   }

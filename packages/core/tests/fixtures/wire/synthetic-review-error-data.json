@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic changelist data alongside a disposable revision error shape",
+  "mode": "json",
+  "args": ["-Mj", "-z", "tag", "changes"],
+  "exitCode": 1,
+  "stdout": "{\"change\":\"100\",\"desc\":\"Fix not logged in and connection refused notices\",\"status\":\"submitted\"}\n{\"data\":\"Invalid revision number 'invalid'.\\n\",\"severity\":3,\"generic\":1}\n",
+  "stderr": ""
+}

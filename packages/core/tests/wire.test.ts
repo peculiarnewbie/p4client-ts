@@ -280,17 +280,15 @@ describe('recorded Perforce wire regressions', () => {
       p4.diffFile({ depotFile: file, fromRevision: 'invalid', toRevision: 1 }),
     ).rejects.toBeInstanceOf(P4CommandError);
   });
-  it('retains plain diff warnings and returns empty print content for missing files', async () => {
+  it('retains plain diff warnings and reports missing print metadata as a command error', async () => {
     const diff = await replay('diff-not-opened-plain').diffFile({
       depotFile: file,
     });
     expect(diff.unifiedDiff).toBe('');
     expect(diff.messages?.[0]?.reason).toBe('not_opened');
-    const printed = await replay('files-empty').printFile(file, {
+    await expect(replay('files-empty').printFile(file, {
       revision: 'head',
-    });
-    expect(printed.content).toBe('');
-    expect(printed.messages?.[0]?.reason).toBe('empty');
+    })).rejects.toBeInstanceOf(P4CommandError);
   });
   it('does not report a missing materialized revision as a downloaded file', async () => {
     const missing = replay('print-empty-plain');

@@ -640,7 +640,7 @@ export interface P4Message {
 export type P4MessageReason = import('./errors.js').P4FailureReason | 'empty' | 'up_to_date'
   | 'not_opened' | 'opened_unchanged' | 'resolve_required' | 'exclusive_open';
 
-/** Messages emitted alongside command data; absent when no message was emitted. */
+/** Non-enumerable diagnostics; extract explicitly before serialization. Absent when none were emitted. */
 export interface P4MessageCarrier {
   readonly messages?: readonly P4Message[];
 }

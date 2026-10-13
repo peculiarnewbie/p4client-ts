@@ -10,6 +10,39 @@ const config = loadE2EConfig();
 const harness = new P4E2EHarness(config, loadFixture(config));
 
 describe('real Perforce message and pagination regressions', () => {
+  it('retains valid stats beside a missing-revision warning', async () => {
+    const result = await harness.client.statFiles({
+      fileSpec: [
+        `${config.stream}/src/app/config.json#999999`,
+        `${config.stream}/docs/guide/getting-started.md`,
+      ],
+    });
+    expect(result).toHaveLength(1);
+    expect(result.messages?.[0]).toMatchObject({
+      severity: 2,
+      reason: 'unknown_revision',
+    });
+  });
+  it('distinguishes an unsynced have revision from an empty text file', async () => {
+    const local = harness.getPath('protocol/empty.txt');
+    const depot = `${config.stream}/protocol/empty.txt`;
+    mkdirSync(dirname(local), { recursive: true });
+    writeFileSync(local, '');
+    await harness.run(['add', local]);
+    await harness.run(['submit', '-d', 'Protocol empty text fixture']);
+    expect((await harness.client.printFile(depot)).content).toBe('');
+    await harness.run(['sync', `${depot}#none`]);
+    try {
+      await expect(harness.client.printFile(depot)).rejects.toBeInstanceOf(
+        P4CommandError,
+      );
+      expect(
+        (await harness.client.printFile(depot, { revision: 'head' })).content,
+      ).toBe('');
+    } finally {
+      await harness.run(['sync', depot]);
+    }
+  });
   it('parses level-only sync messages and applies a cursor to the same filespec', async () => {
     const local = harness.getPath('protocol/opened.txt');
     const depot = `${config.stream}/protocol/opened.txt`;

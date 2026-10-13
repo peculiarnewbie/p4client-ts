@@ -1,0 +1,27 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "none",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "files",
+    "//p4ts/main/src/app/config.json#have"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"code0\":554768760,\"data\":\"//p4ts/main/src/app/config.json#have - file(s) not on client.\\n\",\"fmt0\":\"[%argc% - file(s)|File(s)] not on client.\",\"generic\":17,\"severity\":2,\"severityformat\":\"warning\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "message"
+  ]
+}

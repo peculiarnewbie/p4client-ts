@@ -4,7 +4,7 @@ Validation started on 2026-10-13 and completed on 2026-10-14 on Windows with Bun
 1.4.2. The recorded CLI is `P4/NTX64/2026.1/3089746`. The inventory is in
 [wire-inventory.md](wire-inventory.md).
 
-The corpus contains 112 captures from disposable localhost servers and three
+The corpus contains 114 captures from disposable localhost servers and eight
 explicitly synthetic fixtures. Each capture records its argument vector, output
 mode, charset, exit status, stdout, stderr and JSON data/message row classification.
 Private byte-preserving captures are in the ignored `.captures/disposable/` folder;
@@ -36,14 +36,14 @@ live E2E coverage. The before/after replay never launched `p4`.
 | `sync -n`, opened file behind head | Two stdout JSON records: `data`/`level: 0`, then `data`/`level: 1`; no `severity` or file fields; exit 0 | `P4ParseError` from the sync file schema | Zero file rows; retained `opened_unchanged` and `resolve_required` messages |
 | `sync` / watched sync, same case | Same OutputInfo records | Buffered sync failed; watched sync discarded info | Buffered results retain messages; watched operations emit `message` events and retain final messages |
 | `sync -n`, up to date | `severity: 2`, `generic: 17`, `code0`, `fmt0`, `severityformat`; exit 0 | Warning discarded | Empty items with typed `up_to_date` warning |
-| `sync`, writable clobber | A file row followed by severity 3 / generic 34 error; exit 1 | Partial items and per-file errors | Same partial-result contract, plus full classified message metadata |
+| `sync`, writable clobber or Windows rename failure | Successful file rows followed by a per-file error; exit 1 | Partial items and per-file errors | Partial-result contract preserved for clobber and other filesystem failures; watched sync emits `error-row`; session/server/spec failures remain fatal |
 | `sync`, expired ticket | Severity 3 / generic 4 message; exit 1 | Mistakenly returned as a per-file sync error | Fatal `P4CommandError`, category `authentication`, reason `ticket_expired` |
 | `changes`, no login / expired login | Distinct password-invalid/unset and session-expired messages | Command error with coarse authentication category | Specific `not_logged_in` / `ticket_expired` reasons |
 | `sync -n`, unknown client | Severity 3 / generic 2; exit 1 | Coarse client error | `unknown_client` reason |
 | `sync -n` / `where`, invalid namespace or outside view | `must refer to client` or `not in client view` message | View warnings could be silently treated as empty | Typed `not_in_view` failure, including warning-level variants |
-| `files`, missing file | Severity 2 / generic 17; exit 0 | Browse returned empty but discarded message; print metadata parsing failed | Empty listing or empty print content with retained warning |
+| `files`, missing file | Severity 2 / generic 17; exit 0 | Browse returned empty but discarded message; print metadata parsing failed | Empty listing with retained warning; unavailable print metadata raises a command error |
 | `files`, bad revision syntax | Severity 3 / generic 1; exit 1 | Coarse command error | Category `revision`, reason `unknown_revision` |
-| `files`, nonexistent numeric revision | Severity 2 / generic 17; exit 0 | `P4ParseError` when used as print metadata | Typed `unknown_revision` failure |
+| `files` / `fstat`, nonexistent numeric revision | Severity 2 / generic 17; exit 0; other matching files can still return data | Empty or mixed reads supported; print metadata parsing failed | Warning retained with `unknown_revision` reason; valid rows preserved; print raises a typed failure because its requested content is unavailable |
 | `files @=change`, no files at changelist | Severity 2 / generic 17 | Unhandled in generic typed workflows | Empty data with retained message |
 | `describe -s`, unknown changelist | Severity 2 / generic 17; exit 0 | `P4ParseError` from missing `change` | Typed `unknown_changelist` failure |
 | `describe -s`, 1001 files | One JSON object with indexed `depotFileN`, `actionN`, `typeN`, `revN` | Indexed representation supported | 1001 validated files; indexed-row failures retain original record and command context |
@@ -63,7 +63,7 @@ live E2E coverage. The before/after replay never launched `p4`.
 | `stream -o`, import paths | Indexed `PathsN` including an import mapping | No built-in stream-spec API | Raw capture documents shape; `listStreams` still returns stream summaries |
 | `diff -du`, not opened | Empty stdout, warning on stderr, exit 0 | Warning discarded | Empty diff with retained `not_opened` message |
 | `diff2 -du`, invalid revision | Empty stdout, diagnostic on stderr, exit 1 | Returned as a successful empty diff | Typed revision error; exit-one compatibility requires an actual unified patch and empty stderr |
-| `print -q`, missing file | Empty stdout, warning on stderr, exit 0 | Metadata failure or successful-looking missing materialization | Empty print result retains warning; materialization raises a typed error instead of claiming a download |
+| `print -q`, missing file or unsynced `#have` | Empty metadata or payload; warning; exit 0 | Metadata failure or successful-looking missing materialization | Print/materialization raises a typed error instead of claiming an empty text file or a download; a real empty text revision remains successful |
 | `print -q`, utf16 | Translated text on stdout; CRLF retained | Text path supported | Confirmed; binary detection does not misclassify utf16 |
 | `reconcile -n [-m] [-w]`, clean / changed | Empty warning or add/edit/delete records | Basic actions supported, warnings discarded | Typed empty warning preserved; data grouped after message partitioning |
 | `-I ... reconcile -n` | JSON records; this build emits no separate progress in the recorded case | Progress fallback supported | Shared final message validation; old-version unsupported-progress fallback remains covered by existing synthetic tests |
@@ -72,6 +72,34 @@ live E2E coverage. The before/after replay never launched `p4`.
 | Server unreachable with `-Mj` | Empty stdout; plain transport error on stderr | Connection error | Connection category with specific `server_unreachable` reason |
 | Timeout | Child killed before completion; partial capture and stop reason | `P4TimeoutError` supported by command adapter | Existing command timeout regressions pass; byte-capture guard records timeout and exit |
 | Truly malformed JSON/data/message | Invalid required fields, invalid numeric fields or unknown data rows | Parse failure, usually row only | `P4ParseError` retains offending row, schema cause, executable and redacted arguments |
+
+## PR review follow-up
+
+The ten review items were checked against the PR implementation. Twenty-three new
+unit regressions and two new live E2E scenarios cover the corrections. The two
+additional real captures record a mixed missing-revision `fstat` response and an
+unsynced `files #have` response on a non-Unicode disposable server. Windows rename
+failure, mixed error/data, stderr notices and progress variants are explicitly
+synthetic fixtures; the Windows rename failure was not induced on production.
+
+| Review item | Validation | Change |
+| --- | --- | --- |
+| 1. Per-file sync failures | Confirmed: a non-clobber filesystem error discarded successful rows | Shared per-file policy retains tagged filesystem errors on either output channel, including watched `error-row` events; global failures still raise typed errors |
+| 2. Missing numeric revisions | Confirmed by a real severity-2 warning beside a valid stat | Read queries retain valid rows and the warning; malformed revision syntax remains fatal |
+| 3. Blank missing prints | Confirmed with real unsynced `#have` output | Require file metadata and a successful content read; unavailable content is a command error, while a real zero-byte file is valid |
+| 4. Error category contamination | Confirmed with a description containing authentication/connection phrases | Classification and connection detection inspect diagnostic records and plain stderr, excluding tagged data, payload stdout and command text; raw results remain available |
+| 5. Plain-line process leak / context | The leak was not reproduced: iterator return already aborts and joins the producer. Missing global command context was confirmed | Explicit failure cleanup joins the owned command, preserving the parse error; actual start/result arguments replace guessed context. A real-child test verifies termination before rejection |
+| 6. Warnings and progress | Confirmed for harmless stderr notices and stderr progress | Zero-exit notices are retained; global failure reasons remain fatal; recognized reconcile progress is emitted separately and excluded from diagnostics |
+| 7. Serialized message metadata | Confirmed for object results | `messages` is non-enumerable on both arrays and objects, preserving JSON/IPC shapes |
+| 8. Repeated watch parsing | Confirmed JSON stringify/parse round trip | Shared partitioning accepts parsed rows; watched message events and final results retain the same wire objects |
+| 9. Duplicated fatal policy | Confirmed duplicated lists | One policy covers both channels and sync event classification, including authentication, expiry and charset reasons |
+| 10. Default changelist context | The claimed path is unreachable: defaults already use a separate opened mapper. Reconstructed numbered-describe context was unnecessary | Empty-metadata errors use the executed command context carried with the row array; default opened errors and empty defaults have regressions |
+
+No new production requests were made during review follow-up. All new writing
+scenarios used disposable localhost fixtures. One focused capture helper called
+the wrong cleanup method; its local server was stopped separately. Automatic
+approval review then blocked deleting its TEMP scratch folder, which remains on
+disk. The canonical E2E runner cleaned up its separate fixture successfully.
 
 Normal reserved names, spaces, deleted heads, `binary+l`, `binary+F`, `utf16`,
 symlinks, shelves, explicit locks, concurrent clients and resolve-required state
@@ -135,10 +163,9 @@ rg '"command":"(submit|edit|add|delete|move|copy|integrate|merge|resolve|revert|
 - Read `result.messages` and handle the new watched-sync `message` event. Show
   resolve-required notices separately from completed file counts. The inspected
   consumer loop currently handles only `progress` events and per-file failures.
-- Array results carry non-enumerable `messages` metadata. Extract it before
-  JSON/RPC serialization or `map`/spread operations; object results include an
-  enumerable `messages` field when non-empty. Update consumer schemas if they
-  discard unknown object fields.
+- Array and object results carry non-enumerable `messages` metadata. Extract it
+  explicitly before JSON/RPC serialization or `map`/spread operations. Existing
+  serialized result shapes do not gain raw diagnostic fields.
 - Error switches should account for the new categories and use `reason` for
   specific cases. `whereFiles` now raises `not_in_view` instead of treating that
   failure as a silently empty mapping. `runTaggedJson` returns data rows with
@@ -173,8 +200,8 @@ rg '"command":"(submit|edit|add|delete|move|copy|integrate|merge|resolve|revert|
 ## Final checks and privacy
 
 - Strict typecheck, including script and new fixture-test types: passed.
-- Unit tests: 363 passed; guard tests and recorded-fixture regressions included.
-- Disposable E2E tests: 17 passed, including live OutputInfo and cursor regressions.
+- Unit tests: 386 passed; guard tests and recorded-fixture regressions included.
+- Disposable E2E tests: 19 passed, including live OutputInfo, cursor, missing-revision and unsynced-print regressions.
 - Core build, generated API/site documentation check, package dry run and `git diff --check`: passed.
 - Production log replay and forbidden-command grep: zero violations.
 - Before each commit, the staged diff was scanned for the handoff's six private

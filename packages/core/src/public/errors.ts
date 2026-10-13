@@ -1,4 +1,5 @@
 import { formatCommandArgs, redactCommandArgs } from "./command-format.js";
+import { diagnosticText } from '../internal/diagnostics.js';
 import type { P4CommandResult } from "./types.js";
 
 /**
@@ -83,7 +84,7 @@ const connectionErrorPatterns: readonly RegExp[] = [
 ];
 
 /**
- * Classify a Perforce command failure from combined stderr/stdout text.
+ * Classify diagnostic text from a Perforce command failure.
  *
  * This helper maps common Perforce CLI failures into coarse categories that are
  * stable enough for UI and application error handling.
@@ -112,7 +113,7 @@ export function classifyP4Error(text: string): P4ErrorCategory {
  */
 export function isP4ConnectionError(error: unknown): boolean {
   const text = error instanceof P4CommandError
-    ? [error.message, error.result.stderr, error.result.stdout].filter(Boolean).join("\n")
+    ? diagnosticText(error.result)
     : error instanceof Error
       ? error.message
       : String(error);
@@ -121,7 +122,7 @@ export function isP4ConnectionError(error: unknown): boolean {
 }
 
 /**
- * Error thrown when a `p4` command exits non-zero and non-zero exits were not allowed.
+ * Error thrown for fatal command diagnostics or a disallowed non-zero exit.
  *
  * The raw {@link P4CommandResult} is preserved on {@link P4CommandError.result}
  * for debugging, while {@link P4CommandError.category} provides a typed failure
@@ -145,13 +146,13 @@ export class P4CommandError extends Error {
    * @param message Human-readable failure message.
    * @param result Raw command result including stdout, stderr, and exit code.
    * @param category Optional explicit category. When omitted, the category is
-   * inferred from the message text.
+   * inferred from command diagnostics, excluding data rows and command arguments.
    */
   constructor(message: string, result: P4CommandResult, category?: P4ErrorCategory) {
     super(message);
     this.name = "P4CommandError";
     this.result = result;
-    const text = [result.stderr, result.stdout, message].join('\n');
+    const text = diagnosticText(result);
     this.category = category ?? classifyP4Error(text);
     this.reason = classifyP4Failure(text);
   }

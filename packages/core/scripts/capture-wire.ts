@@ -280,6 +280,10 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       ['have', ['have', file]],
     ];
     for (const [name, args, mode] of normal) yield* capture(name, args, mode);
+    yield* capture('fstat-mixed-revision', ['fstat', `${file}#999999`, '//p4ts/main/docs/guide/getting-started.md']);
+    yield* write(['sync', `${file}#none`]);
+    yield* capture('files-unsynced-have', ['files', `${file}#have`]);
+    yield* write(['sync', file]);
     for (const mode of ['json', 'tagged', 'marshal'] as const) {
       yield* capture(`modes-${mode}-files`, ['files', file], mode);
       yield* capture(

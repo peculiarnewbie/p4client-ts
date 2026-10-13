@@ -1,0 +1,8 @@
+{
+  "origin": "synthetic filesystem permission failures alongside a disposable sync row shape",
+  "mode": "json",
+  "args": ["-Mj", "-z", "tag", "sync", "//depot/main/..."],
+  "exitCode": 1,
+  "stdout": "{\"depotFile\":\"//depot/main/a.txt\",\"action\":\"updated\",\"rev\":\"2\"}\n{\"data\":\"rename: /fixture/b.tmp to /fixture/b.txt: Permission denied.\\n\",\"severity\":3,\"generic\":33}\n{\"data\":\"open for write: /fixture/c.txt: Permission denied.\\n\",\"severity\":3,\"generic\":33}\n",
+  "stderr": ""
+}
