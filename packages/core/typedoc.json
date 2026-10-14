@@ -6,6 +6,7 @@
   "out": ".typedoc/api",
   "readme": "none",
   "hideGenerator": true,
+  "treatWarningsAsErrors": true,
   "excludePrivate": true,
   "excludeProtected": true,
   "excludeInternal": true,

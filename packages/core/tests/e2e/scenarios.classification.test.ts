@@ -22,7 +22,7 @@ describe('real Perforce rows classified alike by sibling methods', () => {
       const materialized = harness.client.materializeDepotFiles({
         directory,
         maxFiles: 1,
-        files: [{ depotFile, revision: 999 }]
+        fileSpec: [{ depotFile, revision: 999 }]
       });
       await expect(materialized).rejects.toBeInstanceOf(P4CommandError);
       await expect(materialized).rejects.toMatchObject({ reason: 'unknown_revision' });

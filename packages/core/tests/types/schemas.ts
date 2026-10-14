@@ -63,7 +63,7 @@ const action: P4FileAction = P4FileAction.make('edit');
 // @ts-expect-error Constructors take unbranded strings, not numbers.
 P4DepotPath.make(123);
 const rootExists: Promise<boolean> = client.workspaceRootExists({ root: '.' });
-const materialize = client.watch.materializeDepotFiles({ files: [], directory: '.', maxFiles: 1 });
+const materialize = client.watch.materializeDepotFiles({ fileSpec: [], directory: '.', maxFiles: 1 });
 const failures = async () => {
   for await (const event of client.watch.previewSync({}).events) {
     if (event._tag === 'failure') {

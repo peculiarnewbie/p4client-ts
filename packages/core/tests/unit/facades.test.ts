@@ -391,11 +391,11 @@ describe('Phase 5 facades', () => {
       const handle = child.watch.findWorkspaceForPath({ path: process.cwd() });
       expect(await handle.result).toMatchObject({ match: null });
       expect(await child.workspaceRootExists({ root: process.cwd() })).toBe(true);
-      await expect(child.materializeDepotFiles({ files: [], directory: '.', maxFiles: 0 }))
+      await expect(child.materializeDepotFiles({ fileSpec: [], directory: '.', maxFiles: 0 }))
         .rejects.toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'maxFiles' });
-      const written = await child.materializeDepotFiles({ files: [], directory: process.cwd(), maxFiles: 1 });
+      const written = await child.materializeDepotFiles({ fileSpec: [], directory: process.cwd(), maxFiles: 1 });
       expect(written).toMatchObject({ items: [], messages: [] });
-      const materialize = child.watch.materializeDepotFiles({ files: [], directory: '.', maxFiles: 0 });
+      const materialize = child.watch.materializeDepotFiles({ fileSpec: [], directory: '.', maxFiles: 0 });
       await expect(materialize.result).rejects.toMatchObject({ _tag: 'P4InvalidArgumentError' });
       const aborted = new AbortController();
       const reason = new Error('cancel root check');

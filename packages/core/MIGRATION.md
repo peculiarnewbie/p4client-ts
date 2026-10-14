@@ -56,11 +56,11 @@ Node helper methods are exported separately from `/node`.
 | `getChangelistFiles(change)` | `listOpenedFiles({ change })` |
 | `describeChangelist(change, opts)` | `describeChangelist({ ...opts, change })` |
 | `getChangelistDiffSummary(change, opts)` | `getChangelistDiffSummary({ ...opts, change })`; no `patchLoadState`, unloaded line counts are `null` |
-| `diffFile(opts)` | Same options; no process `exitCode` in the result |
+| `diffFile({ depotFile, ...opts })` | `diffFile({ file: depotFile, ...opts })`; no process `exitCode` in the result |
 | `printFile(depotFile, opts)` | `printFile({ ...opts, file: depotFile })`; head is the default, use `revision: 'have'` explicitly; bytes replace string content |
 | `listDepots()` | `listDepots({})`; `.items` |
 | `listDepotDirs(opts)`, `listDepotFiles(opts)` | Same methods; `limit` replaces command-specific maximum fields |
-| `listDepotFilesAtChange({ maxFiles, ...opts })` | `listDepotFilesAtChange({ limit, ...opts })`; materialization retains `maxFiles` |
+| `listDepotFilesAtChange({ depotPath, maxFiles, ...opts })` | `listDepotFilesAtChange({ file: depotPath, limit, ...opts })`; materialization retains `maxFiles` |
 | `statFiles(opts)`, `whereFiles(opts)` | `.items`, `.messages`, `.failures`; see exclusions below |
 | `getFileHistory({ depotFile, maxRevisions, ...opts })` | `getFileHistory({ file, limit, ...opts })`; `.items` replaces `.revisions`, adds `hasMore` and revision `integrations` |
 | `listUsers(opts)`, `listStreams(opts)` | Same methods; `.items`; missing requested users are item failures |
@@ -68,7 +68,7 @@ Node helper methods are exported separately from `/node`.
 | `previewSync(opts)`, `sync(opts)` | `.items`, `.failures` always present; no `.errors` or `.totalCount`; transfer estimates are `totalFileCount` / `totalFileSize` (nullable) |
 | `previewReconcile(opts)` | Same method; candidates retain added/edited/deleted groups; no `-I` fallback |
 | `watchSync(opts)`, `watchPreviewReconcile(opts)` | `client.watch.sync(opts)`, `client.watch.previewReconcile(opts)`; every neutral op can be watched |
-| `materializeDepotFiles(opts)` | Same Promise method; `.items.length` replaces total count; Effect export is an operation run with `runOperation` / `watchOperation` |
+| `materializeDepotFiles({ files, ...opts })` | `materializeDepotFiles({ fileSpec: files, ...opts })`; `.items.length` replaces total count; Effect export is an operation run with `runOperation` / `watchOperation` |
 | `runTaggedJson(args, opts)` | `runTagged({ ...opts, args, schema, policy })`; schema determines item type |
 | `run(args)`, raw `watch(args)` | No plain raw facade; use guarded `runTagged` / `watch.runTagged`; custom process code can use `/node` executor |
 | `resolveP4Settings*` | Promise `resolveConnection({ sources })`, or Node Effect `resolveConnection`; cwd comes from configuration; returns `{ connection, sources }` |
@@ -77,6 +77,26 @@ New methods include `listFiles`, `listHaveFiles`, `getStream`, `printBatch`,
 `findWorkspaceForPath`, `workspaceRootExists`. `followMoves` is a pure history helper.
 Workspace resolution accepts `{ path, altRoots: true }` and chooses the deepest
 matching root, including AltRoots when requested, with Windows case folding and realpath resolution.
+
+## File input names
+
+All operations use `file` for one file spec and `fileSpec` for lists of specs.
+Metadata, opened, changelist, stream, sync and reconcile filters retain `fileSpec`;
+those accepting `FileSpecs` still allow a single string as shorthand for a list.
+
+- `diffFile({ file })` and the pure `resolveDiffPlan({ file })` helper replace
+  `depotFile`. Diff still requires a depot path.
+- `listDepotFilesAtChange({ file, change, limit })` replaces `depotPath`. Like
+  `getFileHistory({ file })`, it takes one spec that may contain wildcards.
+- `printFile`, `annotateFile` and `getFileHistory` retain `file`; they also accept
+  client/local syntax where supported by the CLI.
+- `printBatch({ fileSpec: ['//depot/a#2', '//depot/b'] })` replaces `files`.
+- `materializeDepotFiles({ fileSpec: [{ depotFile: '//depot/a', revision: 2 }],
+  directory, maxFiles })` replaces `files`; the list still requires exact revisions.
+
+Directory browsing (`listDepotDirs`, `listDepotFiles`) retains `depotPath` because
+it selects a directory. Result records retain `depotFile` and `files`; mapping hints
+such as diff's `localFile` are unchanged. No aliases for the renamed inputs remain.
 
 ## Envelopes, errors and messages
 
@@ -149,3 +169,12 @@ validation with casts when consuming untrusted CLI or IPC data.
   of `changelist`. Workspace options need only `{ root }`. Moves group into added/deleted.
 - Message `disposition` uses `fail | item | empty | notice`, rather than the plan's
   proposed `fatal` spelling for a failing outcome.
+
+## Package verification
+
+`bun run pack:core` validates npm's dry-run file list against every declared runtime
+and declaration entry, including all four subpaths. It fails if the current build is
+incomplete or an entry is excluded from packing. It does not build: run
+`bun run clean` and `bun run build` before retrying after missing output. This catches
+a retained incremental cache with missing dist files. Phase 7 still needs an actual
+tarball pack and consumer trial installation.

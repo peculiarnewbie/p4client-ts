@@ -29,7 +29,7 @@ describe('print operations: argv', () => {
     argvCase('printFile reads #have when asked', printFile, { file: '//d/a.txt', revision: 'have' }, [
       [...MARSHAL, 'print', '-k', '//d/a.txt#have'],
     ]),
-    argvCase('printBatch passes the specs on stdin', printBatch, { files: ['//d/a.txt', '//d/b.bin#2'] }, [
+    argvCase('printBatch passes the specs on stdin', printBatch, { fileSpec: ['//d/a.txt', '//d/b.bin#2'] }, [
       [...MARSHAL, '-x', '-', 'print', '-k'],
     ]),
   ]);
@@ -37,7 +37,7 @@ describe('print operations: argv', () => {
   it('printBatch writes one spec per line with a trailing line break', async () => {
     const recorder = recordingExecutor(scriptedExecutor(() => ({})));
     await Effect.runPromise(Effect.provide(
-      Effect.exit(printBatch.program({ files: ['//d/a.txt', '//d/b.bin#2'] }, {
+      Effect.exit(printBatch.program({ fileSpec: ['//d/a.txt', '//d/b.bin#2'] }, {
         item: () => Effect.void, message: () => Effect.void, failure: () => Effect.void, progress: () => Effect.void,
       })),
       Layer.merge(recorder.layer, configLayer({})),
@@ -108,7 +108,7 @@ describe('printBatch', () => {
   const files = BATCH_INPUT.trim().split('\n');
 
   it('prints each file and reports missing ones as failures', async () => {
-    const result = await run(printBatch, { files }, replay('print-marshal-batch'));
+    const result = await run(printBatch, { fileSpec: files }, replay('print-marshal-batch'));
     expect(result.items.map((item) => [item.file.depotFile, item.file.type, printedText(item)])).toEqual([
       ['//p4ts/main/wire/text.txt', 'text', 'one\ntwo\n'],
       ['//p4ts/main/wire/full.uasset', 'binary+F', 'full binary\u0000data'],
@@ -120,7 +120,7 @@ describe('printBatch', () => {
   });
 
   it('streams files as they complete, in output order, with file and byte progress', async () => {
-    const events = await watch(printBatch, { files }, replayExecutor(fixtures('print-marshal-batch'), {
+    const events = await watch(printBatch, { fileSpec: files }, replayExecutor(fixtures('print-marshal-batch'), {
       chunkSize: 7,
     }));
     expect(events.filter((event) => event._tag !== 'progress').map((event) => event._tag === 'item'
@@ -140,7 +140,7 @@ describe('printBatch', () => {
   });
 
   it('leaves content to the events when asked not to keep it', async () => {
-    const events = await watch(printBatch, { files, keepContent: false }, replay('print-marshal-batch'));
+    const events = await watch(printBatch, { fileSpec: files, keepContent: false }, replay('print-marshal-batch'));
     const done = events.at(-1);
     if (done?._tag !== 'done') throw new Error('Expected a result.');
     expect(done.result.items).toEqual([]);
@@ -155,8 +155,8 @@ describe('printBatch', () => {
     const none = scriptedExecutor(() => {
       throw new Error('p4 must not run');
     });
-    expect(await failure(printBatch, { files: [] }, none)).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'files' });
-    expect(await failure(printBatch, { files: ['//d/a\n-o'] }, none)).toMatchObject({ _tag: 'P4InvalidArgumentError' });
+    expect(await failure(printBatch, { fileSpec: [] }, none)).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'fileSpec' });
+    expect(await failure(printBatch, { fileSpec: ['//d/a\n-o'] }, none)).toMatchObject({ _tag: 'P4InvalidArgumentError' });
   });
 });
 

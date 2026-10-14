@@ -42,6 +42,7 @@ export default defineConfig({
           },
           typeDoc: {
             hideGenerator: true,
+            treatWarningsAsErrors: true,
             readme: "none",
             sort: ["source-order"]
           }

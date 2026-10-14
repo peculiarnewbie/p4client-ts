@@ -22,53 +22,75 @@ User decisions:
 
 Work on a feature branch off `main`. The current 0.12.1 code stays alongside the new code until cutover, so `bun run test` stays green throughout.
 
-## Target architecture (`packages/core/src`)
+## Implemented architecture (`packages/core/src`)
+
+This sketch describes the Phase 6 implementation and its feedback fixes. Earlier
+phase notes below retain the historical decisions and deviations.
 
 ```
-wire/        pure, no I/O
-  record.ts     -Mj line | -G marshal dict | plain text → WireRecord { _tag: Data | Message | Text }
-  marshal.ts    incremental Python-marshal decoder (resumable across chunks)
-  message.ts    code0 → { severity, argc, generic, subsystem, subcode }; builds P4Message
-  template.ts   fmt0 compiler: %x%, %'lit'%, [a|b], [ for %x%] → named args extracted from data
-  catalog.ts    'subsystem:subcode' → { reason, refine?(args) }; then GENERIC table; then severity default
-  fallback.ts   the ONLY place English regexes live: pre-protocol stderr and plain-mode text
-  policy.ts     reason → Disposition ('fatal' | 'item' | 'empty' | 'notice'); category derived from reason (total map)
+wire/        pure protocol and message classification, no I/O
+  record.ts     -Mj JSON lines and decoded -G dictionaries → WireRecord { _tag: data | message }
+                print content remains bytes; plain stdout is handled by the engine
+  marshal.ts    incremental Python-marshal decoder, resumable across chunks
+  message.ts    code0 decoding and P4Message construction
+  template.ts   fmt0 compilation and named argument extraction
+  catalog.ts    subsystem:subcode reasons, then generic codes, then severity defaults
+  fallback.ts   English classification regexes for unstructured diagnostics
+  policy.ts     fail | item | empty | notice dispositions
+  reasons.ts    reason/category definitions
 exec/
-  Executor.ts   ServiceMap.Service P4Executor { exec(inv): Stream<ProcessEvent, P4SpawnError> }, emits bytes + Exit
-  guard.ts      read-only allowlist (ported from scripts/prod-readonly-p4.ts); inspects `-x -` stdin
-connection/
-  Config.ts     ServiceMap.Service P4Config { connection, cwd, timeoutMs, allowMutation, executable }
-  argv.ts       global flags: -p -u -c [-C] -zprog=p4client-ts -zversion=<v>
-                isolated mode sets P4CONFIG/P4ENVIRO to sentinels
-  resolve.ts    port of settings.ts (env, p4 set -q, P4CONFIG, enviro, P4V XML, registry), all via P4Executor,
-                returns per-key sources
-  workspace.ts  resolveWorkspaceForPath(dir): clients for user+host, matched on Root/AltRoots
-                (win32 case-insensitive + realpath)
+  executor.ts   ServiceMap.Service P4Executor; run(invocation) streams stdout/stderr bytes and exit
+  guard.ts      read-only allowlist, including inspection of -x - stdin
+connection/  platform-neutral flags and pure settings parsers
+  argv.ts       -p -u -c [-C], program/version flags, redaction
+                isolated mode overrides both P4CONFIG and P4ENVIRO with sentinels
+  settings.ts   p4 set and P4V XML parsers and settings merge helpers
 engine/
-  spec.ts       CommandSpec<O, E, R>: name, mutates, format json|marshal|plain, argv(o), input?(o),
-                decode(rec) → E | null, policy overrides, fold { initial, step, finish(state, messages) }
-  run.ts        stream(spec, o): Stream<E | P4Message, P4Error>; collect(spec, o) = Stream.runFold
-                (buffered IS the stream, collected)
-                timeout via Effect.timeout in the engine; partial output attached to P4TimeoutError
-commands/     one family per file. Multi-command ops are Effect compositions of specs, not folds.
-  environment.ts (info -s via -Mj), workspaces.ts, changelists.ts, opened.ts, describe.ts,
-  files.ts (depots/dirs/files/fstat/where), history.ts (filelog + lineage + hasMore),
-  print.ts (printFile, printBatch -G -x -, materialize), diff.ts, annotate.ts, users.ts, streams.ts,
-  sync.ts, reconcile.ts, raw.ts (runTagged)
-ops.ts        registry: each entry is effectOp(spec|program) or streamOp(...)
-              the P4 service shape AND the Promise facade types are derived from `typeof ops`
-P4.ts         ServiceMap.Service P4; P4.layer; with(patch) = Effect.updateService(P4Config, merge(patch))
-errors.ts     Schema.TaggedErrorClass: P4CommandError { reason, category, messages, command(redacted), exitCode },
-              P4TimeoutError, P4ParseError, P4SpawnError, P4MaterializationError, P4ReadOnlyError
-              + P4ErrorSchema union, encodeP4Error/decodeP4Error (IPC codec)
-schemas.ts    existing brands + exported constructors (P4DepotPath.make etc.)
-node/         NodeExecutor (port of internal/command.ts: SIGKILL + destroy pipes, stdin EPIPE race,
-              windowsHide, timer max), P4.layerNode(config)
-promise/      createP4Client(config): ManagedRuntime per client; op(opts & { signal }) → Promise;
-              stream ops → { events: AsyncIterable, result: Promise }; with(), dispose()
-testing/      replayExecutor(fixtures) with strict normalized-argv matching (nearest-fixture hint on miss),
-              recordingExecutor, P4.layerTest(partialOps)
+  config.ts     ServiceMap.Service P4Config; immutable options, mergeOptions, withOptions
+  command.ts    P4CommandSpec<A> { args, format: json | marshal, decode, input?, globalArgs?, policy? }
+                streamCommand emits data/message/failure; runCommand collects that stream
+                runPlainCommand returns bytes, with an optional exit acceptance rule
+                shared guard, classifier, exit policy and timeout interruption with partial output
+  operation.ts  P4Operation<O,I,R> { name, progressUnit, program(options, sink) }
+                runOperation and watchOperation run the same Effect program;
+                sink reports item/message/failure/progress, watch adds heartbeats and done
+  failure.ts    shared { spec, reason, message } item failure conversion
+commands/    typed operation families; multi-command operations compose Effects
+  environment.ts, workspaces.ts, changelists.ts, default-changelist.ts, opened.ts,
+  describe.ts, files.ts, history.ts, print.ts, diff.ts, diff-text.ts, annotate.ts,
+  users.ts, streams.ts, sync.ts, reconcile.ts, raw.ts, shared.ts
+ops.ts        neutral operation registry; P4 service and neutral Promise methods derive from it
+P4.ts         ServiceMap.Service P4; P4.layer, P4.with(patch), P4.layerTest
+errors.ts     Schema.TaggedErrorClass domain errors and P4ErrorSchema;
+              encodeP4Error/decodeP4Error for IPC
+schemas.ts    brand schemas and P4DepotPath/P4ClientPath/P4LocalPath/P4FileAction.make constructors
+node/
+  executor.ts   runNodeProcess and NodeP4Executor; process/pipe cleanup and interruption
+  connection.ts resolveConnection({ sources }): Effect; cwd comes from P4Config
+  workspace.ts  findWorkspaceForPath({ path, altRoots: true }): operation;
+                deepest matching root, realpath and Windows case folding
+                workspaceRootExists({ root }): synchronous filesystem helper
+  materialize.ts materializeDepotFiles({ fileSpec, directory, maxFiles, ... }): operation
+  index.ts      layerNode(config) supplies P4, P4Config and P4Executor
+promise/
+  index.ts      createP4Client(config) / createP4ClientFromLayer(...): ManagedRuntime per client
+                methods accept one options object with signal; watch methods return { events, result }
+                includes Node helpers as well as neutral ops; Node operations also have watches
+                with(patch) owns an independent runtime; dispose every client
+internal/
+  async-queue.ts bounded single-consumer Promise watch event buffer
+public/
+  index.ts      platform-neutral public export barrel, re-exported by src/index.ts
+version.ts    package version used in CLI identification
+testing/     executor.ts: strict replay, recording and scripted executors;
+              fixture.ts: fixture decoding; index.ts: layerTest(partialOps)
 ```
+
+File input options use `file` for one spec and `fileSpec` for lists. Directory
+browsing uses `depotPath`; output records retain `depotFile` and `files`.
+`printBatch.fileSpec` contains strings; materialization's list contains exact
+`{ depotFile, revision }` records. Single-spec history and snapshot queries may
+match multiple files via wildcards.
 
 ### Package exports (`packages/core/package.json`)
 - `.` is platform-neutral. It must not import `node:child_process`, so Electron renderers can import types, schemas and the error codec.
@@ -83,29 +105,30 @@ testing/      replayExecutor(fixtures) with strict normalized-argv matching (nea
 
 ### Message and exit policy (one rule set for every command)
 - **Default dispositions:**
-  - **fatal**: session, connection and auth problems (generic 38/36, text fallback), charset, the session's own unknown client, permission (generic 6), usage (generic 1), and any otherwise-unmapped severity ≥ 3.
+  - **fail**: session, connection and auth problems (generic 38/36, text fallback), charset, the session's own unknown client, permission (generic 6), usage (generic 1), and any otherwise-unmapped severity ≥ 3.
   - **empty**: EV_EMPTY (generic 17) warnings.
   - **notice**: anything else with severity ≤ 2.
-- **Exit rule:** a nonzero exit is OK only if every severity ≥ 3 message was disposed of as `item` or `empty`. A nonzero exit with no messages, or with any fatal message, fails *after* process exit, with every message attached. This is the same rule whether the op is buffered or streamed, which removes the TJ/BR split.
+- **Exit rule:** a nonzero exit is OK only if every severity ≥ 3 message was disposed of as `item` or `empty`. A nonzero exit with no messages, or with any failing message, fails *after* process exit, with every message attached. This is the same rule whether the op is buffered or streamed, which removes the TJ/BR split.
 - **Per-command overrides** (these fix the listed inconsistencies):
   - `where`/`fstat`/`files`: not_in_view → `item`.
   - `sync`/`previewSync`: EV_CLIENT (34) clobber and EV_FAULT (33) OS errors → `item`; `failures` is always present.
-  - `describe`: "no such changelist" → `fatal` (`unknown_changelist`); status `'shelved'` when `-S` is used.
-  - `printFile`: empty/unknown revision → `fatal`. `printBatch`: → `item`.
+  - `describe`: "no such changelist" → `fail` (`unknown_changelist`); status `'shelved'` when `-S` is used.
+  - `printFile`: empty/unknown revision → `fail`. `printBatch`: → `item`.
   - `users` with ids: missing user → `item`.
-  - `listPendingChangelists` always passes `-l`. Default-changelist synthesis and the diff summary share a single `opened -c default`.
+  - `listChangelists({ status: 'pending' })` always passes `-l`. Default-changelist synthesis and the diff summary share a single `opened -c default`.
 
 ### Feature gaps closed
-- `runTagged(args, { schema, policy })` in both APIs, using the shared classifier and the guard.
-- `resolveConnection({ cwd, sources })` plus isolated mode; `resolveWorkspaceForPath`. This replaces both apps' P4CONFIG hacks. electroswag's P4V retry becomes a `sources` order.
+- `runTagged({ args, schema, policy })` in both APIs, using the shared classifier and the guard.
+- `resolveConnection({ sources })` using configured cwd, plus isolated mode;
+  `findWorkspaceForPath({ path, altRoots: true })`. This replaces both apps' P4CONFIG hacks. electroswag's P4V retry becomes a `sources` order.
 - `getFileHistory`:
   - `hasMore` (`-m N+1` per path, then merge/sort/slice)
   - `integrations[]` per revision, decoded from `how{n},{m}`/`file{n},{m}`/`srev`/`erev`
   - a `followMoves` lineage helper
 - Binary content:
-  - `printFile` uses `-G`, returning `content: Uint8Array` plus a `text()` helper.
+  - `printFile` uses `-G`, returning `content: Uint8Array` plus the separate `printedText(result)` helper.
   - `printBatch` uses `-G -x - print`, streaming `{ file, content }` or item failures.
-  - A single `keywords: 'raw' | 'expand'` option (default raw) replaces the inconsistent `-K` use.
+  - A single `keywords: 'raw' | 'expand'` option (default raw) uses `-k` for raw content and no flag for expansion.
 - History `hasMore` and `where` exclusions are documented in `MIGRATION.md`, so the apps drop their own parsers.
 
 ## Phases
@@ -118,7 +141,7 @@ testing/      replayExecutor(fixtures) with strict normalized-argv matching (nea
 | 3 Engine + connection | `engine/*`, `errors.ts`, `connection/*` (settings logic moves into `resolve.ts`; `reg query` goes through the executor). | Port `settings.test.ts`, `errors.test.ts`; engine fold tests on synthetic event streams; buffered vs streamed parity property test. |
 | 4 Commands | One family at a time into `commands/*` + `ops.ts`. | Convert the `client.test.ts` argv pins into a table `{ op, options, argv, fixture }`, asserting subcommand argv and global flags separately and replaying via the strict replay executor. Port browse/history/streams/schemas/wire/wire-review/classification. Deliberate behavior changes go in `MIGRATION.md`. |
 | 5 Facades | `P4.ts`, `promise/`, `testing/`, `node/` layer, package `exports`, peer dep. | Port `service.test.ts`. A type test checks facade keys equal ops keys. Abort/interrupt tests through the facade. Rewrite `tests/types/schemas.ts`. |
-| 6 Cutover | Delete `src/public/{client,service,types,helpers,command-format,settings}.ts`, `src/internal/*` (keep `async-queue` only if the facade needs it). Rewrite `tests/e2e/harness.ts` (assert `-p` equals the isolated port; allow `-x -` only for print) and update the scenarios. Rewrite the `packages/www` guides (index, getting-started, effect-service, testing-and-fixtures). Write `MIGRATION.md` (old → new op map) and the CHANGELOG. Update CLAUDE.md (ServiceMap note, layout). | Full unit + e2e + `docs:check` + `pack:core`. |
+| 6 Cutover | Delete `src/public/{client,service,types,helpers,command-format,settings,errors,schemas,legacy}.ts`, `src/internal/*` (keep `async-queue` only if the facade needs it). Rewrite `tests/e2e/harness.ts` (assert `-p` equals the isolated port; allow `-x -` only for print) and update the scenarios. Rewrite both READMEs and the `packages/www` guides (index, getting-started, effect-service, testing-and-fixtures); document all four package entries. Write `MIGRATION.md` (old → new op map) and the CHANGELOG. Update CLAUDE.md (ServiceMap note, layout). | Full unit + e2e + `docs:check` + `pack:core`. |
 | 7 Consumer trial | Pack the tarball and trial-upgrade electroswag and ue-shed on throwaway branches (typecheck + their p4 tests, e.g. electroswag `sync-output.test.ts`). Feed the findings back before release. Nothing is pushed in those repos without asking. | App test suites. |
 
 ### Reuse
@@ -519,19 +542,21 @@ Verification on the cutover tree:
 1. **Fixed: real opened rows exceeded the corpus assumptions.** `none` revisions
    on adds were rejected by the new decoder. The live consumer workflow caught it;
    it is now accepted as `null` with regression coverage.
-2. **File option names still vary.** Printing, annotation and history use `file`,
-   diff uses `depotFile`, and metadata/sync use `fileSpec`. Some distinction is
-   useful, but migrating similarly shaped calls needs method-by-method attention.
-   No new alias API was introduced at cutover; the migration map names the actual options.
+2. **Fixed: file option names follow input cardinality.** Single-spec operations
+   use `file`; lists use `fileSpec`, including batch print and materialization.
+   Diff plan options and the snapshot operation are included. Directory inputs
+   retain `depotPath`; output records retain their existing fields. The migration
+   guide lists every rename and distinguishes string specs from exact revision records.
 3. **A result's messages are not all its diagnostics.** Item failures live in
    `failures[].message`, not `messages`. A mixed fstat result's `messages` can be
    empty despite a missing revision. This is consistent with the event split but
    surprising when migrating old notice-only UI code. Guides now explain both arrays.
-4. **Counters and cursor names can mislead.** Sync's `totalFileCount` is a nullable
-   server transfer estimate, not a replacement for the old result `totalCount`;
-   use `items.length` for decoded items. Changelist `cursor` is an inclusive bound
-   even though its JSDoc says "below"; `nextCursor` already subtracts one. History
-   has a limit/hasMore but no resumable cursor. Documented without changing behavior.
+4. **Counters and cursor names can mislead; cursor documentation fixed.** Sync's
+   `totalFileCount` is a nullable server transfer estimate, not a replacement for
+   the old result `totalCount`; use `items.length` for decoded items. Changelist
+   `cursor` is an inclusive bound, and its JSDoc now says so; `nextCursor` already
+   subtracts one and must be passed unchanged. History has a limit/hasMore but no
+   resumable cursor. No paging or counter behavior changed.
 5. **Opened paths need an explicit mapping step.** The guessed local path is gone;
    `clientFile` can be client syntax. For filesystem work, call `whereFiles` and
    inspect `localFile` while excluding `isExcluded` rows. A `diffFile.localFile`
@@ -545,27 +570,72 @@ Verification on the cutover tree:
    object; Effect watches take a second settings object. `keepContent: false`
    omits bytes from results, but buffered watch events still retain bytes; the
    buffer limit counts events, not bytes. Guides document these constraints.
-8. **API documentation exposes some incomplete type references.** Registry-derived
-   mapped signatures reference private aliases, and exported engine helpers reference
-   unexported engine types. Including all four entries makes the facade visible,
-   but eight TypeDoc warnings remain. Consumers still get precise TypeScript types;
-   improving generated signature presentation remains a possible follow-up.
-9. **The architecture sketch is not the implemented naming contract.** Use
-   `layerNode`, not `P4.layerNode`; `findWorkspaceForPath({ path, altRoots: true })`,
-   not `resolveWorkspaceForPath(dir)`; connection resolution uses configured cwd;
-   `printedText`, not an envelope method; `fail` disposition, not `fatal`. The
-   Phase 0/5 notes already corrected several of these. Phase 6 docs use actual exports.
-   The Phase 6 deletion list also omitted the legacy errors/schemas/barrel, which
-   had to be deleted with their dependencies. Both README copies and all package
-   entry points needed documentation updates beyond the four named guides.
-10. **Pack dry-run alone does not prove package completeness.** npm successfully
-    listed a partial package after deleting dist while retaining the incremental
-    TypeScript cache. Clearing both regenerated every entry. Before Phase 7, do a
-    full clean build, then pack and trial-install the actual tarball. Do not assume
-    `pack:core` builds or validates entry-point existence; it currently only runs
-    `npm pack --dry-run`.
+8. **Fixed: API documentation type references resolve.** Removed private aliases
+   from mapped signatures, documented `P4PromiseOps`, and exported the referenced
+   engine types. All four entries build without TypeDoc warnings. Both TypeDoc
+   configurations treat warnings as errors to catch future regressions.
+9. **Fixed: the architecture sketch matches the implementation.** It now names
+   `layerNode`, `findWorkspaceForPath({ path, altRoots: true })`, configured-cwd
+   connection resolution, `printedText`, `fail` dispositions, lowercase wire tags
+   and sink-based operations. The cutover scope includes the legacy
+   errors/schemas/barrel deletion, both READMEs and all four package entry docs.
+10. **Fixed: pack dry-run validates package completeness.** `pack:core` compares
+    npm's actual file list with every runtime and declaration entry in the manifest,
+    rejecting missing or excluded output even with a retained incremental cache.
+    It does not build. Before Phase 7, run a full clean build, then pack and
+    trial-install the actual tarball; installation remains a separate check.
 
 The first broad deletion script was rejected by automatic approval review. It was
 replaced with a verified explicit file list after checking Phase 6 authorization,
 replacement tests and remaining imports; that narrower deletion was approved.
 No approval-related work remains blocked.
+
+### Phase 6 feedback fixes handoff (2026-10-14)
+
+Requested feedback **2, 4, 8, 9 and 10** is addressed:
+
+- **2:** `diffFile` and `resolveDiffPlan` take `file`, as does the single-spec
+  `listDepotFilesAtChange` snapshot operation. `printBatch` and
+  `materializeDepotFiles` take `fileSpec` lists. Other operations already follow
+  the convention. Wire/result records keep their existing names; directory
+  browsing keeps `depotPath`. No compatibility aliases were added. Updated unit,
+  facade, type and live e2e callers and the migration guide.
+- **4:** Cursor JSDoc now states the inclusive upper bound and that `nextCursor`
+  is already last numbered change minus one. It must be passed unchanged;
+  revision-bearing specs cannot be combined with a cursor. No paging behavior changed.
+- **8:** Removed private aliases from exported mapped signatures, documented the
+  combined `P4PromiseOps` type, and exported the three engine types that public
+  helpers reference. Both TypeDoc configurations now treat warnings as errors.
+- **9:** Replaced the architecture sketch with the actual modules, signatures,
+  lowercase wire tags, sink-based operations, Node helper boundaries and `fail`
+  disposition. Corrected feature-gap spellings and the cutover deletion/docs scope.
+- **10:** `pack:core` checks npm's JSON dry-run file list against `main`, `types`
+  and every conditional export target. Missing JS or declarations now fail with
+  a clean-build instruction. It validates the current build without silently
+  rebuilding it. Regression fixtures cover each of the eight entry files,
+  missing dist with a retained incremental cache, and files excluded from packing.
+
+New API feedback encountered:
+
+- **Naming is about input cardinality, not matches.** History and snapshot queries
+  take one `file` string that may include wildcards and match several files.
+  Directory browsers take `depotPath`. Batch `fileSpec` values also differ:
+  print uses strings (including revision suffixes), while materialization requires
+  exact `{ depotFile, revision }` records. Diff still requires depot syntax, even
+  though print/history/annotate accept client or local paths. These constraints
+  are documented in the migration guide; their domains were not expanded.
+
+Not done: other Phase 6 feedback behavior changes, Phase 7 consumer trials,
+actual tarball installation, release, commit or push.
+
+Verification:
+
+- `bun run typecheck`: passes; the seven existing advisory Schema/JSON diagnostics
+  in scripts remain.
+- `bun run test`: **485 pass**, 31 files, including all 11 package-check regressions.
+- `bun run test:e2e`: **24 pass**, 10 files; disposable localhost server cleanup succeeds.
+- `bun run docs:check`: passes, **zero TypeDoc warnings**, zero Astro errors/warnings/hints;
+  284 pages built. The existing missing-404 content notice remains nonfatal.
+- `bun run clean` followed by `bun run build`: passes.
+- `bun run pack:core`: passes; **209 files**, all eight runtime/declaration entry files included.
+- `git diff --check`: passes.

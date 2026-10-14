@@ -32,23 +32,23 @@ function collect<A>(spec: P4CommandSpec<A>, ...names: string[]) {
 
 describe('diff operations: argv', () => {
   argvTable([
-    argvCase('a pending file diffs the workspace with -Mj diff', diffFile, { depotFile: '//d/a.txt' }, [
+    argvCase('a pending file diffs the workspace with -Mj diff', diffFile, { file: '//d/a.txt' }, [
       [...TAG, 'diff', '-du', '//d/a.txt'],
     ]),
     argvCase('explicit revisions diff the depot with plain diff2', diffFile, {
-      depotFile: '//d/a.txt', fromRevision: 1, toRevision: 'head', diffFlags: ['-dw'],
+      file: '//d/a.txt', fromRevision: 1, toRevision: 'head', diffFlags: ['-dw'],
     }, [['diff2', '-dw', '//d/a.txt#1', '//d/a.txt#head']]),
     argvCase('a submitted edit compares with the previous revision', diffFile, {
-      depotFile: '//d/a.txt', changelistStatus: 'submitted', action: 'edit', revision: 3,
+      file: '//d/a.txt', changelistStatus: 'submitted', action: 'edit', revision: 3,
     }, [['diff2', '-du', '//d/a.txt#2', '//d/a.txt#3']]),
     argvCase('a submitted add compares with no revision', diffFile, {
-      depotFile: '//d/a.txt', changelistStatus: 'submitted', action: 'add', revision: 1,
+      file: '//d/a.txt', changelistStatus: 'submitted', action: 'add', revision: 1,
     }, [['diff2', '-du', '//d/a.txt#none', '//d/a.txt#1']]),
     argvCase('a shelved edit compares its base with the shelf', diffFile, {
-      depotFile: '//d/a.txt', changelistStatus: 'shelved', shelvedChange: 7, action: 'edit', revision: 1,
+      file: '//d/a.txt', changelistStatus: 'shelved', shelvedChange: 7, action: 'edit', revision: 1,
     }, [['diff2', '-du', '//d/a.txt#1', '//d/a.txt@=7']]),
     argvCase('a skipped binary file runs nothing', diffFile, {
-      depotFile: '//d/a.uasset', allowBinary: false, type: 'binary+F',
+      file: '//d/a.uasset', allowBinary: false, type: 'binary+F',
     }, []),
     argvCase('the default changelist summary reads one opened -c default', getChangelistDiffSummary, {
       change: 'default', client: 'ws',
@@ -75,7 +75,7 @@ describe('diff operations: argv', () => {
 
 describe('diffFile', () => {
   it('reads a workspace diff from -Mj data rows', async () => {
-    const diff = await run(diffFile, { depotFile: TEXT }, replay('diff-opened-json'));
+    const diff = await run(diffFile, { file: TEXT }, replay('diff-opened-json'));
     expect(diff).toEqual({
       depotFile: TEXT,
       localFile: '<WORKSPACE>\\wire\\text.txt',
@@ -93,25 +93,25 @@ describe('diffFile', () => {
   });
 
   it('keeps a caller-supplied local path', async () => {
-    const diff = await run(diffFile, { depotFile: TEXT, localFile: 'C:\\ws\\text.txt' }, replay('diff-opened-json'));
+    const diff = await run(diffFile, { file: TEXT, localFile: 'C:\\ws\\text.txt' }, replay('diff-opened-json'));
     expect(diff.localFile).toBe('C:\\ws\\text.txt' as never);
   });
 
   it('returns an empty diff for a file that is not opened', async () => {
-    const diff = await run(diffFile, { depotFile: TEXT }, replay('diff-not-opened'));
+    const diff = await run(diffFile, { file: TEXT }, replay('diff-not-opened'));
     expect(diff).toMatchObject({ unifiedDiff: '', additions: 0, deletions: 0, localFile: null });
     expect(diff.messages.map((message) => message.reason)).toEqual(['not_opened']);
   });
 
   it('diffs two depot revisions with plain diff2', async () => {
-    const diff = await run(diffFile, { depotFile: TEXT, fromRevision: 1, toRevision: 2 }, replay('diff2-normal'));
+    const diff = await run(diffFile, { file: TEXT, fromRevision: 1, toRevision: 2 }, replay('diff2-normal'));
     expect(diff).toMatchObject({ source: 'depot', fromRevision: 1, toRevision: 2, additions: 1, deletions: 2 });
     expect(diff.unifiedDiff).toStartWith('==== //p4ts/main/wire/text.txt#1 (text)');
   });
 
   it('diffs a shelved file against its base revision', async () => {
     const diff = await run(diffFile, {
-      depotFile: TEXT, changelistStatus: 'shelved', shelvedChange: 7, action: 'edit', revision: 1,
+      file: TEXT, changelistStatus: 'shelved', shelvedChange: 7, action: 'edit', revision: 1,
     }, replay('diff2-shelved'));
     expect(diff).toMatchObject({ fromRevision: 1, toRevision: '@=7', additions: 1, deletions: 1 });
     expect(parseUnifiedDiff(diff.unifiedDiff)).toEqual([{
@@ -121,20 +121,20 @@ describe('diffFile', () => {
 
   it('fails on an invalid revision', async () => {
     const error = await failure(diffFile, {
-      depotFile: TEXT, fromRevision: 'invalid', toRevision: 1,
+      file: TEXT, fromRevision: 'invalid', toRevision: 1,
     }, replay('diff2-bad-revision-plain'));
     expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'invalid_revision' });
   });
 
   it('accepts exit 1 from an external diff tool only with hunks', async () => {
-    const options = { depotFile: '//d/a.txt', fromRevision: 1, toRevision: 2 } as const;
+    const options = { file: '//d/a.txt', fromRevision: 1, toRevision: 2 } as const;
     const differs = await run(diffFile, options, scriptedExecutor(() => ({ stdout: '@@ -1 +1 @@\n-a\n+b\n', exitCode: 1 })));
     expect(differs).toMatchObject({ additions: 1, deletions: 1 });
     expect(await failure(diffFile, options, scriptedExecutor(() => ({ exitCode: 1 })))).toMatchObject({ _tag: 'P4CommandError' });
   });
 
   it('returns an empty binary diff without running p4', async () => {
-    const diff = await run(diffFile, { depotFile: '//d/a.uasset', allowBinary: false, type: 'binary+F' }, scriptedExecutor(() => {
+    const diff = await run(diffFile, { file: '//d/a.uasset', allowBinary: false, type: 'binary+F' }, scriptedExecutor(() => {
       throw new Error('p4 must not run');
     }));
     expect(diff).toMatchObject({ isBinary: true, unifiedDiff: '', source: 'workspace', messages: [] });
@@ -142,14 +142,14 @@ describe('diffFile', () => {
 
   it('rejects incomplete or impossible revisions', async () => {
     const none = scriptedExecutor(() => ({}));
-    expect(await failure(diffFile, { depotFile: TEXT, fromRevision: 1 }, none))
+    expect(await failure(diffFile, { file: TEXT, fromRevision: 1 }, none))
       .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'toRevision' });
-    expect(await failure(diffFile, { depotFile: TEXT, changelistStatus: 'shelved' }, none))
+    expect(await failure(diffFile, { file: TEXT, changelistStatus: 'shelved' }, none))
       .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'shelvedChange' });
-    expect(await failure(diffFile, { depotFile: TEXT, changelistStatus: 'submitted', action: 'edit', revision: 1 }, none))
+    expect(await failure(diffFile, { file: TEXT, changelistStatus: 'submitted', action: 'edit', revision: 1 }, none))
       .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'revision' });
-    expect(await failure(diffFile, { depotFile: 'wire/text.txt' }, none))
-      .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'depotFile' });
+    expect(await failure(diffFile, { file: 'wire/text.txt' }, none))
+      .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'file' });
   });
 });
 
@@ -246,7 +246,7 @@ describe('diff text helpers', () => {
   });
 
   it('throws P4InvalidArgumentError for an unusable plan', () => {
-    expect(() => resolveDiffPlan({ depotFile: '//d/a', changelistStatus: 'shelved', shelvedChange: 1, action: 'archive' }))
+    expect(() => resolveDiffPlan({ file: '//d/a', changelistStatus: 'shelved', shelvedChange: 1, action: 'archive' }))
       .toThrow(P4InvalidArgumentError);
   });
 });

@@ -27,3 +27,4 @@ export * from '../commands/sync.js';
 export * from '../commands/users.js';
 export * from '../commands/workspaces.js';
 export type { P4ItemFailure, FileSpecs, Row } from '../commands/shared.js';
+export type { P4CommandSpec, P4CommandOutput, P4CommandEvent } from '../engine/command.js';

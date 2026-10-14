@@ -345,7 +345,7 @@ export const listFiles = operation<ListFilesOptions, P4DepotFile, P4FileList>('l
 /** Options for {@link listDepotFilesAtChange}. */
 export interface ListDepotFilesAtChangeOptions {
   /** Depot file or pattern without a revision, for example `//depot/main/...`. */
-  readonly depotPath: string;
+  readonly file: string;
   /** Submitted changelist whose state is listed. */
   readonly change: number;
   /** Most revisions to return. */
@@ -399,10 +399,10 @@ export const listDepotFilesAtChange = operation<
       return yield* invalid('limit', 'limit must be smaller than Number.MAX_SAFE_INTEGER.');
     }
     const changeNumber = yield* requirePositive(options.change, 'change');
-    if (!options.depotPath.startsWith('//') || /[#@]/.test(options.depotPath)) {
-      return yield* invalid('depotPath', 'depotPath must use depot syntax without a revision specifier.');
+    if (!options.file.startsWith('//') || /[#@]/.test(options.file)) {
+      return yield* invalid('file', 'file must use depot syntax without a revision specifier.');
     }
-    const args = ['files', '-e', '-m', String(limit + 1), `${options.depotPath}@${changeNumber}`];
+    const args = ['files', '-e', '-m', String(limit + 1), `${options.file}@${changeNumber}`];
     const output = yield* drainAll(
       sink,
       { args, format: 'json', decode: toDepotFileRevision },

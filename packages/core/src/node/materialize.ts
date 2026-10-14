@@ -23,7 +23,7 @@ export interface P4MaterializeSpec {
 /** Options for {@link materializeDepotFiles}. */
 export interface MaterializeDepotFilesOptions {
   /** Exact revisions, for example from a history or `files` listing. */
-  readonly files: readonly P4MaterializeSpec[];
+  readonly fileSpec: readonly P4MaterializeSpec[];
   /** Existing directory that receives the files, relative to the client's `cwd`. */
   readonly directory: string;
   /** Refuse to write more files than this. */
@@ -149,19 +149,19 @@ export const materializeDepotFiles = operation<
   Effect.gen(function* () {
     const maxFiles = yield* requirePositive(options.maxFiles, 'maxFiles');
     const concurrency = yield* requirePositive(options.concurrency ?? 4, 'concurrency');
-    if (options.files.length > maxFiles) {
+    if (options.fileSpec.length > maxFiles) {
       return yield* new P4MaterializationError({
-        message: `Refusing to materialize ${options.files.length} files; maxFiles is ${maxFiles}.`,
+        message: `Refusing to materialize ${options.fileSpec.length} files; maxFiles is ${maxFiles}.`,
         reason: 'limit_exceeded',
         path: null,
       });
     }
-    for (const file of options.files) yield* requirePositive(file.revision, 'revision');
+    for (const file of options.fileSpec) yield* requirePositive(file.revision, 'revision');
     const config = yield* P4Config.asEffect();
     const directory = resolve(config.cwd ?? process.cwd(), options.directory);
     const info = yield* Effect.tryPromise({ try: () => stat(directory), catch: () => destinationError(directory) });
     if (!info.isDirectory()) return yield* destinationError(directory);
-    const plans = yield* planPaths(directory, options.files);
+    const plans = yield* planPaths(directory, options.fileSpec);
 
     const keywordArgs = (options.keywords ?? 'raw') === 'raw' ? ['-k'] : [];
     const counter = progressCounter(sink, 'files', plans.length);

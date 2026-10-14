@@ -32,7 +32,11 @@ export interface ListChangelistsOptions {
   readonly fileSpec?: FileSpecs | undefined;
   /** Page size. Defaults to 50. */
   readonly limit?: number | undefined;
-  /** Start the page below this changelist; pass the previous page's `nextCursor`. */
+  /**
+   * Inclusive upper changelist bound (`p4 changes <spec>@N`). Pass the previous
+   * page's `nextCursor` unchanged: it already subtracts one from the last change.
+   * Cannot be combined with revision-bearing file specs.
+   */
   readonly cursor?: number | undefined;
   /**
    * For pending changelists, include the default changelist when files are
@@ -60,7 +64,7 @@ export interface P4ChangelistPage {
   readonly messages: P4Message[];
   /** Whether older changelists remain. */
   readonly hasMore: boolean;
-  /** `cursor` for the next page, or `null` on the last page. */
+  /** Inclusive bound for the next page (last numbered change minus one), or `null`. */
   readonly nextCursor: number | null;
 }
 
@@ -87,7 +91,7 @@ function toChangelist(status: P4ChangelistStatus) {
   };
 }
 
-/** Scope each spec below the cursor; a spec with its own revision cannot be scoped. */
+/** Scope each spec at or below the cursor; a spec with its own revision cannot be scoped. */
 function scopedSpecs(specs: string[], cursor: number | undefined) {
   if (cursor === undefined) return Effect.succeed(specs);
   const scopes = specs.length === 0 ? ['//...'] : specs;

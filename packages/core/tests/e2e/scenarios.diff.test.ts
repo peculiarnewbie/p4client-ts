@@ -53,7 +53,7 @@ describe("p4-ts e2e diff inspection", () => {
     expect(String(file.action)).toBe('delete');
     expect(file.revision).toBe(2);
     const diff = await harness.client.diffFile({
-      depotFile,
+      file: depotFile,
       changelistStatus: 'submitted',
       action: file.action,
       revision: file.revision
@@ -88,7 +88,7 @@ describe("p4-ts e2e diff inspection", () => {
     expect(localFile).toBeTruthy();
     const printResult = await harness.client.printFile({ file: editedFile.depotFile, revision: 'have' });
     const diffResult = await harness.client.diffFile({
-      depotFile: editedFile.depotFile,
+      file: editedFile.depotFile,
       localFile: localFile ?? undefined,
       type: editedFile.type
     });
@@ -153,7 +153,7 @@ describe("p4-ts e2e diff inspection", () => {
     }
 
     const diffResult = await harness.client.diffFile({
-      depotFile: editedFile.depotFile,
+      file: editedFile.depotFile,
       action: editedFile.action,
       revision: editedFile.revision,
       changelistStatus: "shelved",

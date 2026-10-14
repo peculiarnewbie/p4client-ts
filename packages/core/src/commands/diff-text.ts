@@ -200,7 +200,8 @@ export function shelvedDiffRevisions(file: {
 
 /** What a file diff compares; see {@link resolveDiffPlan}. */
 export interface P4DiffPlanOptions {
-  readonly depotFile: string;
+  /** Depot file to compare. */
+  readonly file: string;
   /** Compare these two depot revisions. Requires `toRevision`. */
   readonly fromRevision?: P4RevisionSpec | undefined;
   readonly toRevision?: P4RevisionSpec | undefined;
@@ -236,8 +237,8 @@ function depotPlan(options: P4DiffPlanOptions, revisions: P4DiffRevisions, flags
     command: 'diff2',
     args: [
       ...flags,
-      fileAtRevision(options.depotFile, revisions.fromRevision),
-      fileAtRevision(options.depotFile, revisions.toRevision),
+      fileAtRevision(options.file, revisions.fromRevision),
+      fileAtRevision(options.file, revisions.toRevision),
     ],
     fromRevision: revisions.fromRevision,
     toRevision: revisions.toRevision,
@@ -275,14 +276,14 @@ export function resolveDiffPlan(options: P4DiffPlanOptions): P4DiffPlan {
       });
     }
     return depotPlan(options, shelvedDiffRevisions({
-      depotFile: options.depotFile, action, revision, shelvedChange: options.shelvedChange,
+      depotFile: options.file, action, revision, shelvedChange: options.shelvedChange,
     }), flags);
   }
   if (options.changelistStatus === 'submitted') {
     const revisions = submittedDiffRevisions({ action, revision });
     if (revisions === null) {
       throw new P4InvalidArgumentError({
-        message: `Unable to infer revisions for submitted ${action} file ${options.depotFile}#${String(revision)}.`,
+        message: `Unable to infer revisions for submitted ${action} file ${options.file}#${String(revision)}.`,
         option: 'revision',
       });
     }
@@ -291,7 +292,7 @@ export function resolveDiffPlan(options: P4DiffPlanOptions): P4DiffPlan {
   return {
     source: 'workspace',
     command: 'diff',
-    args: [...flags, options.depotFile],
+    args: [...flags, options.file],
     fromRevision: null,
     toRevision: null,
   };

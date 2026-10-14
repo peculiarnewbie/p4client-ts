@@ -114,7 +114,7 @@ describe("p4-ts e2e catalog and history", () => {
 
   it("lists exact historical revisions and materializes one through real p4", async () => {
     const historical = await harness.client.listDepotFilesAtChange({
-      depotPath: "//p4ts/main/...",
+      file: "//p4ts/main/...",
       change: config.syncBaseChange,
       limit: 50
     });
@@ -131,7 +131,7 @@ describe("p4-ts e2e catalog and history", () => {
     try {
       const materialized = await harness.client.materializeDepotFiles({
         directory,
-        files: [configFile],
+        fileSpec: [configFile],
         maxFiles: 1
       });
       const content = await readFile(materialized.items[0]!.localPath, "utf8");

@@ -74,7 +74,7 @@ describe("p4-ts e2e baseline", () => {
   });
 
   it('allows stdin print batches and keeps valid bytes beside an item miss', async () => {
-    const printed = await harness.client.printBatch({ files: [
+    const printed = await harness.client.printBatch({ fileSpec: [
       `${config.stream}/src/app/config.json`,
       `${config.stream}/src/app/config.json#999999`,
     ] });

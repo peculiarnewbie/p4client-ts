@@ -13,15 +13,16 @@ import type { P4Ops } from '../ops.js';
 import type { TypedTaggedOptions } from '../P4.js';
 import type { P4TaggedResult, RunTaggedOptions } from '../commands/raw.js';
 import type { P4ClientOptions } from '../engine/config.js';
-import type { P4Context, P4Operation, P4OperationEvent, P4WatchOptions } from '../engine/operation.js';
+import type { P4Context, P4Operation, P4OperationEvent, P4Sink, P4WatchOptions } from '../engine/operation.js';
 import type { P4InvalidArgumentError } from '../errors.js';
 
 const nodeOps = { findWorkspaceForPath, materializeDepotFiles };
 const promiseOps = { ...ops, ...nodeOps };
-type PromiseOps = typeof promiseOps;
-type Options<K extends keyof PromiseOps> = PromiseOps[K] extends P4Operation<infer O, infer _I, infer _R> ? O : never;
-type Item<K extends keyof PromiseOps> = PromiseOps[K] extends P4Operation<infer _O, infer I, infer _R> ? I : never;
-type Result<K extends keyof PromiseOps> = PromiseOps[K] extends P4Operation<infer _O, infer _I, infer R> ? R : never;
+/** Neutral and Node operations exposed as Promise and watch methods. */
+export type P4PromiseOps = P4Ops & {
+  readonly findWorkspaceForPath: typeof findWorkspaceForPath;
+  readonly materializeDepotFiles: typeof materializeDepotFiles;
+};
 
 /** Cancellation options accepted by every Promise method. */
 export interface P4PromiseOptions {
@@ -57,14 +58,18 @@ export interface P4PromiseTaggedWatchMethod {
 
 /** Watch methods generated from the operation registry. */
 export type P4PromiseWatch = {
-  readonly [K in keyof PromiseOps]: K extends 'runTagged' ? P4PromiseTaggedWatchMethod :
-    (options: Options<K> & P4PromiseWatchOptions) => P4WatchHandle<Item<K>, Result<K>>;
+  readonly [K in keyof P4PromiseOps]: K extends 'runTagged' ? P4PromiseTaggedWatchMethod :
+    (options: Parameters<P4PromiseOps[K]['program']>[0] & P4PromiseWatchOptions) => P4WatchHandle<
+      Parameters<P4PromiseOps[K]['program']>[1] extends P4Sink<infer I> ? I : never,
+      Effect.Success<ReturnType<P4PromiseOps[K]['program']>>
+    >;
 };
 
 /** Immutable Promise facade. Each derived client owns its runtime and must be disposed. */
 export type P4PromiseClient = {
-  readonly [K in keyof PromiseOps]: K extends 'runTagged' ? P4PromiseTaggedMethod :
-    (options: Options<K> & P4PromiseOptions) => Promise<Result<K>>;
+  readonly [K in keyof P4PromiseOps]: K extends 'runTagged' ? P4PromiseTaggedMethod :
+    (options: Parameters<P4PromiseOps[K]['program']>[0] & P4PromiseOptions) =>
+      Promise<Effect.Success<ReturnType<P4PromiseOps[K]['program']>>>;
 } & {
   readonly watch: P4PromiseWatch;
   /** Resolve local connection settings using this client's cwd and executor. */
@@ -116,7 +121,7 @@ export function createP4ClientFromLayer(
   type Run = (options: unknown) => Effect.Effect<unknown, unknown>;
   type Watch = (options: unknown, settings?: P4WatchOptions) =>
     Stream.Stream<P4OperationEvent<unknown, unknown>, unknown>;
-  for (const name of Object.keys(promiseOps) as Array<keyof PromiseOps>) {
+  for (const name of Object.keys(promiseOps) as Array<keyof P4PromiseOps>) {
     const nodeOp = nodeOps[name as keyof typeof nodeOps] as P4Operation<unknown, unknown, unknown> | undefined;
     const run = (input: unknown): Effect.Effect<unknown, unknown, P4 | P4Context> => nodeOp === undefined
       ? Effect.flatMap(P4.asEffect(), (service) => (service[name as keyof P4Ops] as Run)(input))

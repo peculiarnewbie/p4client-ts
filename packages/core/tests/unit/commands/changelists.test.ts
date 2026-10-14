@@ -20,7 +20,7 @@ describe('changelist operations: argv', () => {
     argvCase('the default changelist can be left out', listChangelists, { status: 'pending', includeDefault: false }, [
       [...TAG, 'changes', '-s', 'pending', '-l', '-m', '51'],
     ]),
-    argvCase('a cursor scopes every spec below it', listChangelists, {
+    argvCase('a cursor scopes every spec at or below it', listChangelists, {
       status: 'submitted', limit: 4, cursor: 4, fileSpec: ['//p4ts/main/wire/...', '//p4ts/main/docs/...'],
     }, [[...TAG, 'changes', '-s', 'submitted', '-l', '-m', '5', '//p4ts/main/wire/...@4', '//p4ts/main/docs/...@4']]),
     argvCase('a cursor without specs scopes the whole depot', listChangelists, { status: 'shelved', cursor: 9 }, [

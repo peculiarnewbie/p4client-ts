@@ -59,7 +59,7 @@
     "test:e2e": "bun scripts/test-perforce-e2e.ts",
     "docs:api": "typedoc --options typedoc.json",
     "docs:api:check": "typedoc --options typedoc.json",
-    "pack:check": "npm pack --dry-run",
+    "pack:check": "bun scripts/pack-check.ts",
     "prepublishOnly": "bun run clean && bun run typecheck && bun run test && bun run build",
     "wire:reasons": "bun scripts/wire-reasons.ts"
   },

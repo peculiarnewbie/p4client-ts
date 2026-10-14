@@ -69,7 +69,7 @@ export interface P4PrintedFile extends P4PrintedFileInfo {
 /** Options for {@link printBatch}. */
 export interface PrintBatchOptions {
   /** Files to print, each in depot, client or local syntax, with an optional revision. */
-  readonly files: readonly string[];
+  readonly fileSpec: readonly string[];
   /** Keyword expansion. Defaults to `raw`. */
   readonly keywords?: P4KeywordMode | undefined;
   /**
@@ -255,11 +255,11 @@ export const printFile = operation<PrintFileOptions, never, P4PrintedFile>('prin
  */
 export const printBatch = operation<PrintBatchOptions, P4PrintedBatchItem, P4PrintBatchResult>('printBatch', (options, sink) =>
   Effect.gen(function* () {
-    if (options.files.length === 0) return yield* invalid('files', 'printBatch needs at least one file.');
-    if (options.files.some((file) => /[\r\n]/.test(file) || file.length === 0)) {
-      return yield* invalid('files', 'File specs must be non-empty and on one line.');
+    if (options.fileSpec.length === 0) return yield* invalid('fileSpec', 'printBatch needs at least one file.');
+    if (options.fileSpec.some((file) => /[\r\n]/.test(file) || file.length === 0)) {
+      return yield* invalid('fileSpec', 'File specs must be non-empty and on one line.');
     }
-    const total = options.files.length;
+    const total = options.fileSpec.length;
     const counter = progressCounter(sink, 'files', total);
     const keepContent = options.keepContent ?? true;
     const result: P4PrintBatchResult = { items: [], printed: [], messages: [], failures: [] };
@@ -270,7 +270,7 @@ export const printBatch = operation<PrintBatchOptions, P4PrintedBatchItem, P4Pri
     yield* printFiles({
       args: printArgs(options.keywords),
       globalArgs: ['-x', '-'],
-      input: `${options.files.join('\n')}\n`,
+      input: `${options.fileSpec.join('\n')}\n`,
       format: 'marshal',
       policy: BATCH_POLICY,
       decode: toPrintRecord,

@@ -133,7 +133,7 @@ function runDiff(
 /**
  * Diff one file as a unified diff.
  *
- * A workspace diff runs `p4 -Mj diff -du <depotFile>`; a file that is not
+ * A workspace diff runs `p4 -Mj diff -du <file>`; a file that is not
  * opened gives an empty diff with a `not_opened` message. A depot diff runs
  * plain `p4 diff2 -du <from> <to>`, because the structured forms of `diff2`
  * omit the hunks.
@@ -143,14 +143,14 @@ function runDiff(
  */
 export const diffFile = operation<DiffFileOptions, never, P4FileDiff>('diffFile', (options, sink) =>
   Effect.gen(function* () {
-    if (!isDepotPath(options.depotFile)) {
-      return yield* invalid('depotFile', `depotFile must be a depot path, received ${options.depotFile}.`);
+    if (!isDepotPath(options.file)) {
+      return yield* invalid('file', `file must be a depot path, received ${options.file}.`);
     }
     const localFile = options.localFile;
     if (localFile !== undefined && !isLocalPath(localFile)) {
       return yield* invalid('localFile', `localFile must be a local path, received ${localFile}.`);
     }
-    const result = yield* runDiff(options.depotFile, localFile ?? null, options);
+    const result = yield* runDiff(options.file, localFile ?? null, options);
     for (const message of result.messages) yield* sink.message(message);
     return result;
   }), 'files');
@@ -263,7 +263,7 @@ export const getChangelistDiffSummary = operation<
       let summary = summarize(file, byDepotFile.get(file.depotFile));
       if (options.includeLineCounts && !summary.isBinary) {
         const diff = yield* runDiff(file.depotFile, summary.localFile, {
-          depotFile: file.depotFile,
+          file: file.depotFile,
           changelistStatus: status,
           action: file.action,
           revision: file.revision,

@@ -65,13 +65,11 @@ export const ops = {
 /** The operation registry's type. */
 export type P4Ops = typeof ops;
 
-type Program<K extends keyof P4Ops> = P4Ops[K]['program'];
-
 /** Options of an operation in the registry. */
-export type OpOptions<K extends keyof P4Ops> = Parameters<Program<K>>[0];
+export type OpOptions<K extends keyof P4Ops> = Parameters<P4Ops[K]['program']>[0];
 
 /** Items an operation in the registry reports while it runs. */
-export type OpItem<K extends keyof P4Ops> = Parameters<Program<K>>[1] extends P4Sink<infer I> ? I : never;
+export type OpItem<K extends keyof P4Ops> = Parameters<P4Ops[K]['program']>[1] extends P4Sink<infer I> ? I : never;
 
 /** Result of an operation in the registry. */
-export type OpResult<K extends keyof P4Ops> = Effect.Success<ReturnType<Program<K>>>;
+export type OpResult<K extends keyof P4Ops> = Effect.Success<ReturnType<P4Ops[K]['program']>>;

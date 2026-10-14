@@ -41,7 +41,7 @@ describe('file operations: argv', () => {
     argvCase('files takes several specs', listFiles, {
       fileSpec: ['//depot/a.txt', '//depot/b/...'], existing: true, limit: 10,
     }, [[...TAG, 'files', '-e', '-m', '11', '//depot/a.txt', '//depot/b/...']]),
-    argvCase('files at a changelist', listDepotFilesAtChange, { depotPath: '//depot/main/...', change: 7, limit: 3 }, [
+    argvCase('files at a changelist', listDepotFilesAtChange, { file: '//depot/main/...', change: 7, limit: 3 }, [
       [...TAG, 'files', '-e', '-m', '4', '//depot/main/...@7'],
     ]),
     argvCase('fstat with sizes, a limit, fields and a changelist', statFiles, {
@@ -200,7 +200,7 @@ describe('listFiles', () => {
 
 describe('listDepotFilesAtChange', () => {
   it('lists exact existing revisions at a changelist', async () => {
-    const files = await run(listDepotFilesAtChange, { depotPath: '//p4ts/main/wire/*', change: 6, limit: 49 }, replay('files-existing'));
+    const files = await run(listDepotFilesAtChange, { file: '//p4ts/main/wire/*', change: 6, limit: 49 }, replay('files-existing'));
     expect(files.items).toHaveLength(7);
     expect(files.items[0]).toEqual({
       depotFile: '//p4ts/main/wire/clobber.txt' as never, revision: 1, change: 4, action: 'add' as never, type: 'text',
@@ -209,7 +209,7 @@ describe('listDepotFilesAtChange', () => {
   });
 
   it('reports more revisions beyond the limit, and only the limit as items', async () => {
-    const events = await watch(listDepotFilesAtChange, { depotPath: '//d/...', change: 9, limit: 1 }, scriptedExecutor(() => ({
+    const events = await watch(listDepotFilesAtChange, { file: '//d/...', change: 9, limit: 1 }, scriptedExecutor(() => ({
       stdout: fileRows(['//d/a', 'add'], ['//d/b', 'edit']),
     })));
     expect(events.filter((event) => event._tag === 'item')).toHaveLength(1);
@@ -221,15 +221,15 @@ describe('listDepotFilesAtChange', () => {
   });
 
   it('fails on a revision without a type', async () => {
-    const error = await failure(listDepotFilesAtChange, { depotPath: '//d/...', change: 9, limit: 1 }, scriptedExecutor(() => ({
+    const error = await failure(listDepotFilesAtChange, { file: '//d/...', change: 9, limit: 1 }, scriptedExecutor(() => ({
       stdout: '{"depotFile":"//d/a","rev":"1","change":"4","action":"add"}\n',
     })));
     expect(error).toMatchObject({ _tag: 'P4ParseError' });
   });
 
   it('rejects a path with a revision', async () => {
-    const error = await failure(listDepotFilesAtChange, { depotPath: '//d/...#3', change: 9, limit: 1 }, scriptedExecutor(() => ({})));
-    expect(error).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'depotPath' });
+    const error = await failure(listDepotFilesAtChange, { file: '//d/...#3', change: 9, limit: 1 }, scriptedExecutor(() => ({})));
+    expect(error).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'file' });
   });
 });
 
