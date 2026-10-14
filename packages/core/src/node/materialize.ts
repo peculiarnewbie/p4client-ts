@@ -184,4 +184,4 @@ export const materializeDepotFiles = operation<
     }), { concurrency });
 
     return { directory: toLocalPath(directory), items, messages };
-  }));
+  }), 'files');

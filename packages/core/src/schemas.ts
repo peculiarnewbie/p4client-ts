@@ -60,3 +60,55 @@ export type P4LocalPath = typeof P4LocalPathSchema.Type;
 
 /** A validated file action token, such as `edit` or `move/add`. */
 export type P4FileAction = typeof P4FileActionSchema.Type;
+
+/** Validated depot path constructor. @throws {Schema.SchemaError} For invalid depot syntax. */
+export const P4DepotPath = {
+  /**
+   * Validate and brand a string.
+   * @param value The unbranded value.
+   * @returns The validated branded value.
+   * @throws {Schema.SchemaError} When validation fails.
+   */
+  make(value: string): P4DepotPath {
+    return Schema.decodeUnknownSync(P4DepotPathSchema)(value);
+  },
+};
+
+/** Validated client path constructor. @throws {Schema.SchemaError} For invalid client syntax. */
+export const P4ClientPath = {
+  /**
+   * Validate and brand a string.
+   * @param value The unbranded value.
+   * @returns The validated branded value.
+   * @throws {Schema.SchemaError} When validation fails.
+   */
+  make(value: string): P4ClientPath {
+    return Schema.decodeUnknownSync(P4ClientPathSchema)(value);
+  },
+};
+
+/** Validated local path constructor. @throws {Schema.SchemaError} For empty paths or control characters. */
+export const P4LocalPath = {
+  /**
+   * Validate and brand a string.
+   * @param value The unbranded value.
+   * @returns The validated branded value.
+   * @throws {Schema.SchemaError} When validation fails.
+   */
+  make(value: string): P4LocalPath {
+    return Schema.decodeUnknownSync(P4LocalPathSchema)(value);
+  },
+};
+
+/** Validated action constructor. @throws {Schema.SchemaError} For invalid action tokens. */
+export const P4FileAction = {
+  /**
+   * Validate and brand a string.
+   * @param value The unbranded value.
+   * @returns The validated branded value.
+   * @throws {Schema.SchemaError} When validation fails.
+   */
+  make(value: string): P4FileAction {
+    return Schema.decodeUnknownSync(P4FileActionSchema)(value);
+  },
+};

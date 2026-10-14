@@ -1,4 +1,6 @@
 import { Clock, Effect, Queue, Stream } from 'effect';
+import { itemFailure } from './failure.js';
+import type { P4ItemFailure } from './failure.js';
 import type { P4Error } from '../errors.js';
 import type { P4Executor } from '../exec/executor.js';
 import type { P4Message } from '../wire/message.js';
@@ -35,7 +37,7 @@ export type P4OperationEvent<I, R> =
   /** An informational message, or one saying the request matched nothing. */
   | { readonly _tag: 'message'; readonly message: P4Message }
   /** A per-item failure that does not fail the operation. */
-  | { readonly _tag: 'failure'; readonly message: P4Message }
+  | { readonly _tag: 'failure'; readonly failure: P4ItemFailure }
   | { readonly _tag: 'progress'; readonly progress: P4Progress }
   /** The operation's result; always the last event. */
   | { readonly _tag: 'done'; readonly result: R };
@@ -44,7 +46,7 @@ export type P4OperationEvent<I, R> =
 export interface P4Sink<I> {
   readonly item: (item: I) => Effect.Effect<void>;
   readonly message: (message: P4Message) => Effect.Effect<void>;
-  readonly failure: (message: P4Message) => Effect.Effect<void>;
+  readonly failure: (failure: P4ItemFailure) => Effect.Effect<void>;
   readonly progress: (progress: P4ProgressUpdate) => Effect.Effect<void>;
 }
 
@@ -58,6 +60,8 @@ export interface P4Sink<I> {
 export interface P4Operation<O, I, R> {
   /** Operation name, used for the client method. */
   readonly name: string;
+  /** Unit used by heartbeats before the program reports its first counter. */
+  readonly progressUnit: P4ProgressUnit;
   readonly program: (options: O, sink: P4Sink<I>) => Effect.Effect<R, P4Error, P4Context>;
 }
 
@@ -66,13 +70,15 @@ export interface P4Operation<O, I, R> {
  *
  * @param name Operation name.
  * @param program The program; report through the sink, return the result.
+ * @param progressUnit Unit used before the first program progress update. Defaults to records.
  * @returns The operation.
  */
 export function operation<O, I, R>(
   name: string,
   program: (options: O, sink: P4Sink<I>) => Effect.Effect<R, P4Error, P4Context>,
+  progressUnit: P4ProgressUnit = 'records',
 ): P4Operation<O, I, R> {
-  return { name, program };
+  return { name, program, progressUnit };
 }
 
 const SILENT: P4Sink<unknown> = {
@@ -119,7 +125,7 @@ export function watchOperation<O, I, R>(
   return Stream.callback<P4OperationEvent<I, R>, P4Error, P4Context>((queue) => Effect.gen(function* () {
     const started = yield* Clock.currentTimeMillis;
     let latest: P4ProgressUpdate = {
-      completed: 0, total: null, unit: 'records', bytesCompleted: null, bytesTotal: null,
+      completed: 0, total: null, unit: op.progressUnit, bytesCompleted: null, bytesTotal: null,
     };
     let reportedAt = started;
     const emit = (event: P4OperationEvent<I, R>) => Queue.offer(queue, event).pipe(Effect.asVoid);
@@ -131,7 +137,7 @@ export function watchOperation<O, I, R>(
     const sink: P4Sink<I> = {
       item: (item) => emit({ _tag: 'item', item }),
       message: (message) => emit({ _tag: 'message', message }),
-      failure: (message) => emit({ _tag: 'failure', message }),
+      failure: (failure) => emit({ _tag: 'failure', failure }),
       progress: report,
     };
     const interval = watch.progressIntervalMs;
@@ -226,7 +232,7 @@ export function drain<A, I>(
         }
         if (event._tag === 'failure') {
           output.failures.push(event.message);
-          return sink.failure(event.message);
+          return sink.failure(itemFailure(event.message));
         }
         output.items.push(event.value);
         options.inspect?.(event.value);

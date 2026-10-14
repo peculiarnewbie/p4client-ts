@@ -150,4 +150,4 @@ export const listChangelists = operation<ListChangelistsOptions, P4Changelist, P
       hasMore,
       nextCursor: hasMore && oldest !== null ? oldest - 1 : null,
     };
-  }));
+  }), 'changes');

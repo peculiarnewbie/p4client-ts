@@ -153,7 +153,7 @@ export const diffFile = operation<DiffFileOptions, never, P4FileDiff>('diffFile'
     const result = yield* runDiff(options.depotFile, localFile ?? null, options);
     for (const message of result.messages) yield* sink.message(message);
     return result;
-  }));
+  }), 'files');
 
 /** Options for {@link getChangelistDiffSummary}. */
 export interface GetChangelistDiffSummaryOptions {
@@ -279,4 +279,4 @@ export const getChangelistDiffSummary = operation<
     }), { concurrency: options.includeLineCounts ? concurrency : 1 });
 
     return { changelist, files, messages };
-  }));
+  }), 'files');

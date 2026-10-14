@@ -194,8 +194,8 @@ describe('sync: buffered and watched parity', () => {
       const done = events.at(-1);
       expect(done).toEqual({ _tag: 'done', result });
       expect(events.flatMap((event) => (event._tag === 'item' ? [event.item] : []))).toEqual(result.items);
-      expect(events.flatMap((event) => (event._tag === 'failure' ? [event.message] : [])))
-        .toEqual(result.failures.map((entry) => entry.message));
+      expect(events.flatMap((event) => (event._tag === 'failure' ? [event.failure] : [])))
+        .toEqual(result.failures);
       expect(events.flatMap((event) => (event._tag === 'message' ? [event.message] : []))).toEqual(result.messages);
     });
   }

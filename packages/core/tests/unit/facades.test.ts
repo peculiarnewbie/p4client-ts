@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { Effect, Fiber, Layer, Schema, Stream } from 'effect';
 import { fileURLToPath } from 'node:url';
 import { P4 } from '../../src/P4.js';
-import { configLayer } from '../../src/engine/config.js';
+import { configLayer, mergeOptions, resolveOptions } from '../../src/engine/config.js';
 import { P4Executor } from '../../src/exec/executor.js';
 import { P4CommandError, P4ParseError, P4ReadOnlyError } from '../../src/errors.js';
 import { ops } from '../../src/ops.js';
@@ -46,24 +46,24 @@ describe('Phase 5 facades', () => {
   it('derives both service and Promise method keys from ops', async () => {
     assert<Equal<Exclude<keyof P4Service, 'watch'>, keyof typeof ops>>();
     assert<Equal<keyof P4Service['watch'], keyof typeof ops>>();
-    assert<Equal<Exclude<keyof P4PromiseClient, 'watch' | 'with' | 'dispose'>, keyof typeof ops>>();
-    assert<Equal<keyof P4PromiseWatch, keyof typeof ops>>();
+    assert<Equal<Exclude<keyof P4PromiseClient, 'watch' | 'with' | 'dispose' | 'resolveConnection' | 'workspaceRootExists' | 'findWorkspaceForPath' | 'materializeDepotFiles'>, keyof typeof ops>>();
+    assert<Equal<Exclude<keyof P4PromiseWatch, 'findWorkspaceForPath' | 'materializeDepotFiles'>, keyof typeof ops>>();
     const service = await Effect.runPromise(P4.asEffect().pipe(
       Effect.provide(serviceLayer(scriptedExecutor(() => ({ stdout: row })))),
     ));
     const client = clientFor(scriptedExecutor(() => ({ stdout: row })));
     try {
       expect(Object.keys(service).filter((key) => key !== 'watch').sort()).toEqual(Object.keys(ops).sort());
-      expect(Object.keys(client.watch).sort()).toEqual(Object.keys(ops).sort());
+      expect(Object.keys(client.watch).sort()).toEqual([...Object.keys(ops), 'findWorkspaceForPath', 'materializeDepotFiles'].sort());
       expect((await Effect.runPromise(service.runTagged({ args: ['info'] }))).items).toHaveLength(1);
     } finally { await client.dispose(); }
   });
 
   it('keeps real tagged errors in the service error channel', async () => {
     const error = await Effect.runPromise(Effect.flatMap(P4.asEffect(), (p4) =>
-      p4.runTagged({ args: ['info'] })).pipe(
+      p4.getEnvironment({})).pipe(
       Effect.catch((cause) => Effect.succeed(cause)),
-      Effect.provide(serviceLayer(replayExecutor([fixtures.get('server-unreachable')!]))),
+      Effect.provide(serviceLayer(replayExecutor([fixtures.get('server-unreachable-summary')!]))),
     ));
     expect(error).toBeInstanceOf(P4CommandError);
   });
@@ -266,6 +266,10 @@ describe('Phase 5 facades', () => {
   it('constructs the Node Promise entry without starting p4', async () => {
     const client = createP4Client({ connection: { isolated: true } });
     expect(Object.isFrozen(client)).toBe(true);
+    expect(await client.resolveConnection({ sources: [] })).toMatchObject({ connection: {}, sources: {} });
+    expect(await client.workspaceRootExists({ root: process.cwd() })).toBe(true);
+    expect(typeof client.materializeDepotFiles).toBe('function');
+    expect(typeof client.findWorkspaceForPath).toBe('function');
     await client.dispose();
   });
 
@@ -302,6 +306,131 @@ describe('Phase 5 facades', () => {
       expect((await iterator.next()).value?._tag).toBe('item');
       await expect(iterator.next()).rejects.toThrow('maxBuffered=1');
     } finally { await client.dispose(); }
+  });
+
+
+  it('clears inherited configuration explicitly and leaves omitted fields intact', async () => {
+    const base = resolveOptions({ cwd: 'parent', timeoutMs: 100, executable: 'custom-p4' });
+    expect(mergeOptions(base, {})).toEqual(base);
+    expect(mergeOptions(base, { cwd: undefined, timeoutMs: undefined, executable: undefined }))
+      .toMatchObject({ cwd: undefined, timeoutMs: undefined, executable: 'p4' });
+    const calls: P4Invocation[] = [];
+    const executor = scriptedExecutor((invocation) => {
+      calls.push(invocation);
+      return { stdout: row };
+    });
+    const parent = clientFor(executor, base);
+    const child = parent.with({ cwd: undefined, timeoutMs: undefined, executable: undefined });
+    try {
+      await child.runTagged({ args: ['info'] });
+      await parent.runTagged({ args: ['info'] });
+      expect(calls.map((call) => [call.cwd, call.executable])).toEqual([
+        [undefined, 'p4'], ['parent', 'custom-p4'],
+      ]);
+    } finally { await child.dispose(); await parent.dispose(); }
+    await Effect.runPromise(Effect.flatMap(P4.asEffect(), (p4) =>
+      p4.runTagged({ args: ['info'] }).pipe(P4.with({ cwd: undefined, timeoutMs: undefined, executable: undefined })))
+      .pipe(Effect.provide(serviceLayer(executor, base))));
+    expect(calls.at(-1)).toMatchObject({ executable: 'p4' });
+    expect(calls.at(-1)?.cwd).toBeUndefined();
+  });
+
+  it('reports environment messages separately before the done result', async () => {
+    const client = clientFor(scriptedExecutor(() => ({
+      stdout: '{"userName":"u"}\n{"data":"FYI","severity":1,"generic":0}\n',
+    })));
+    try {
+      const handle = client.watch.getEnvironment({});
+      const events: Array<import('../../src/engine/operation.js').P4OperationEvent<never, import('../../src/commands/environment.js').P4Environment>> = [];
+      for await (const event of handle.events) events.push(event);
+      const result = await handle.result;
+      expect(events.filter((event) => event._tag === 'message').map((event) => event.message))
+        .toEqual(result.messages);
+      expect(result.messages).toHaveLength(1);
+      expect(events.at(-1)).toEqual({ _tag: 'done', result });
+    } finally { await client.dispose(); }
+  });
+
+  it.each([
+    ['previewSync', 'files', {}],
+    ['printFile', 'files', { file: '//d/a' }],
+    ['getFileHistory', 'revisions', { file: '//d/a' }],
+    ['listChangelists', 'changes', { status: 'submitted' }],
+  ] as const)('starts %s heartbeats in %s before any output', async (name, unit, options) => {
+    const pending = pendingExecutor();
+    const client = clientFor(pending.executor);
+    try {
+      type Watch = (options: object) => { events: AsyncIterable<{ _tag: string; progress?: { unit: string; completed: number } }>; result: Promise<unknown> };
+      const handle = (client.watch[name] as Watch)({ ...options, progressIntervalMs: 5 });
+      await pending.ready;
+      const iterator = handle.events[Symbol.asyncIterator]();
+      const first = await iterator.next();
+      expect(first.value).toMatchObject({ _tag: 'progress', progress: { unit, completed: 0 } });
+      await iterator.return!();
+      await expect(handle.result).rejects.toThrow('iteration ended early');
+      await pending.closed;
+    } finally { await client.dispose(); }
+  });
+
+  it('runs Node helpers with the client executor and derived configuration', async () => {
+    const calls: P4Invocation[] = [];
+    const executor = scriptedExecutor((invocation) => {
+      calls.push(invocation);
+      return invocation.args.includes('set')
+        ? { stdout: 'P4PORT=local:1666\nP4USER=u\nP4CLIENT=c\n' }
+        : {};
+    });
+    const parent = clientFor(executor, { cwd: 'parent' });
+    const child = parent.with({ cwd: 'child' });
+    try {
+      expect(await child.resolveConnection({ sources: ['p4'] })).toMatchObject({
+        connection: { port: 'local:1666', user: 'u', client: 'c' },
+      });
+      expect(calls[0]?.cwd).toBe('child');
+      expect(await child.findWorkspaceForPath({ path: process.cwd() })).toMatchObject({ match: null });
+      const handle = child.watch.findWorkspaceForPath({ path: process.cwd() });
+      expect(await handle.result).toMatchObject({ match: null });
+      expect(await child.workspaceRootExists({ root: process.cwd() })).toBe(true);
+      await expect(child.materializeDepotFiles({ files: [], directory: '.', maxFiles: 0 }))
+        .rejects.toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'maxFiles' });
+      const written = await child.materializeDepotFiles({ files: [], directory: process.cwd(), maxFiles: 1 });
+      expect(written).toMatchObject({ items: [], messages: [] });
+      const materialize = child.watch.materializeDepotFiles({ files: [], directory: '.', maxFiles: 0 });
+      await expect(materialize.result).rejects.toMatchObject({ _tag: 'P4InvalidArgumentError' });
+      const aborted = new AbortController();
+      const reason = new Error('cancel root check');
+      aborted.abort(reason);
+      await expect(child.workspaceRootExists({ root: '.', signal: aborted.signal })).rejects.toBe(reason);
+    } finally { await child.dispose(); await parent.dispose(); }
+    await expect(child.resolveConnection({ sources: [] })).rejects.toThrow('client disposed');
+    await expect(child.workspaceRootExists({ root: '.' })).rejects.toThrow('client disposed');
+  });
+
+  it('does not execute an already cancelled call after runtime initialization', async () => {
+    const calls: P4Invocation[] = [];
+    const client = clientFor(scriptedExecutor((invocation) => {
+      calls.push(invocation);
+      return { stdout: row };
+    }));
+    try {
+      await client.runTagged({ args: ['info'] });
+      const controller = new AbortController();
+      const reason = new Error('cancel before invocation');
+      controller.abort(reason);
+      await expect(client.runTagged({ args: ['info'], signal: controller.signal })).rejects.toBe(reason);
+      expect(calls).toHaveLength(1);
+    } finally { await client.dispose(); }
+  });
+
+  it('cancels active Node helpers and joins their cleanup on disposal', async () => {
+    const pending = pendingExecutor();
+    const client = clientFor(pending.executor);
+    const result = client.resolveConnection({ sources: ['p4'] });
+    void result.catch(() => {});
+    await pending.ready;
+    await client.dispose();
+    await pending.closed;
+    await expect(result).rejects.toThrow('client disposed');
   });
 
   it('keeps the root entry free of child_process imports in a browser bundle', async () => {

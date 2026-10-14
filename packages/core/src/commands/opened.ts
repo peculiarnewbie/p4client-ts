@@ -110,4 +110,4 @@ export const listOpenedFiles = operation<ListOpenedFilesOptions, P4OpenedFile, P
       counter: progressCounter(sink, 'files'),
     }),
     (output) => ({ items: output.items, messages: output.messages }),
-  ));
+  ), 'files');

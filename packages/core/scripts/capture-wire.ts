@@ -732,6 +732,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       catch: (error) => new WireScriptError(String(error), error),
     });
     yield* capture('server-unreachable', ['info']);
+    yield* capture('server-unreachable-summary', ['info', '-s']);
     yield* capture('command-timeout', ['info'], 'json', {}, 1);
     console.log(
       `Recorded ${count} disposable command captures in tests/fixtures/wire.`,

@@ -113,4 +113,4 @@ export const describeChangelist = operation<DescribeChangelistOptions, never, P4
     counter.expect(result.files.length);
     yield* counter.advance(result.files.length);
     return result;
-  }));
+  }), 'files');

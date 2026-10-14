@@ -389,3 +389,60 @@ The requirement is that every operation can report progress, not just sync.
     `server-unreachable` fixture records `info`, whereas `getEnvironment`
     runs `info -s`. The facade error-channel test uses `runTagged({ args:
     ['info'] })` to replay it strictly instead of relaxing fixture matching.
+
+### Phase 5 consumer-feedback fixes (2026-10-14)
+
+Feedback **4–11** is resolved with the requested shapes:
+
+- **4:** Omitted config fields inherit. Explicit `undefined` clears `cwd` and
+  `timeoutMs`, and resets `executable` to `p4`. This applies to Promise
+  `client.with`, `P4.with` and `withOptions` through the shared merge function.
+- **5:** `getEnvironment` drains the command stream through its sink, so each
+  result message also appears as a `message` event before `done`.
+- **6:** Operation failure events are `{ _tag: 'failure', failure }`, where
+  `failure` is the same `{ spec, reason, message }` shape as result failures.
+  Sinks accept `P4ItemFailure`; conversion is shared in `engine/failure.ts`.
+  Command-level events still use their own message representation.
+- **7:** `P4Operation.progressUnit` initializes heartbeats in the real unit,
+  even before the first command output or progress counter. The third argument
+  to `operation(name, program, progressUnit)` defaults to `records`; operations
+  counting files, changes or revisions declare that unit explicitly.
+- **8:** Promise clients expose `resolveConnection`, `findWorkspaceForPath`,
+  `workspaceRootExists` and `materializeDepotFiles`. All accept an options
+  object with `signal` and share the client's runtime, cancellation and disposal.
+  `watch.findWorkspaceForPath` and `watch.materializeDepotFiles` use the same
+  watch adapter as neutral operations. The neutral `ops`/Effect service stay
+  platform-independent. Existing Node exports remain available.
+- **9:** Isolated command environments override both `P4CONFIG` and `P4ENVIRO`
+  with sentinel filenames, including when client env options set those variables.
+- **10:** `P4DepotPath.make`, `P4ClientPath.make`, `P4LocalPath.make` and
+  `P4FileAction.make` validate strings using their exported Effect schemas.
+  `printedText` and cloneable print envelopes are unchanged.
+- **11:** The facade error-channel test exercises `getEnvironment` directly
+  against `server-unreachable-summary`, a real `info -s` capture from a stopped
+  disposable server. The capture script records this variant too. The original
+  `info` fixture remains for raw-command tests; strict replay matching is retained.
+
+New API feedback encountered:
+
+- **Fixed:** Once a ManagedRuntime was initialized, an already aborted signal
+  could allow a synchronous Effect to succeed. The shared Promise executor now
+  rejects pre-aborted calls with `signal.reason` before starting them. Regression
+  tests cover both synchronous Node helpers and a neutral command after runtime
+  initialization.
+- **Custom-layer limitation:** Node helper methods require the supplied layer
+  to expose `P4Config` and `P4Executor`, as `layerNode` does. A `P4`-only mock
+  layer still serves neutral methods but cannot run helpers requiring those
+  services. Use `Layer.provideMerge` for executor-backed custom/replay layers.
+  This requirement is documented on `createP4ClientFromLayer`.
+
+No cutover/deletions, consumer repository upgrades, release, commit or push.
+Full e2e, documentation, build and pack checks were not run for this follow-up;
+only the targeted disposable-server capture was refreshed.
+
+Verification: `bun run typecheck` passes with the existing advisory Schema/JSON
+diagnostics in scripts. `bun run test` passes **791 tests** across 42 files.
+`git diff --check` passes. Regression coverage includes config clearing through
+both facades, environment message events, failure/result parity, pre-output
+heartbeat units, Node helper execution/cancellation/disposal, brand validation
+and public type inference.

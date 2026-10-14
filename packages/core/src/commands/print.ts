@@ -238,7 +238,7 @@ export const printFile = operation<PrintFileOptions, never, P4PrintedFile>('prin
       isBinary: isBinaryP4Type(printed.file.type),
       messages,
     };
-  }));
+  }), 'files');
 
 /**
  * Print several file revisions as bytes with one `p4 -G -x - print`, the
@@ -285,13 +285,13 @@ export const printBatch = operation<PrintBatchOptions, P4PrintedBatchItem, P4Pri
       ),
       message: (message) => Effect.andThen(Effect.sync(() => result.messages.push(message)), sink.message(message)),
       failure: (message) => Effect.sync(() => result.failures.push(itemFailure(message))).pipe(
-        Effect.andThen(sink.failure(message)),
+        Effect.andThen(sink.failure(itemFailure(message))),
         Effect.andThen(step()),
         Effect.andThen(counter.advance(1)),
       ),
     });
     return result;
-  }));
+  }), 'files');
 
 /**
  * Decode printed content as text.

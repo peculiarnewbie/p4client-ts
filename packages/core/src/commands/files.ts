@@ -300,7 +300,7 @@ export const listDepotFiles = operation<ListDepotFilesOptions, P4DepotFile, P4De
       messages: output.messages,
       hasMore: limit !== undefined && files.length > limit,
     };
-  }));
+  }), 'files');
 
 /** Options for {@link listFiles}. */
 export interface ListFilesOptions {
@@ -340,7 +340,7 @@ export const listFiles = operation<ListFilesOptions, P4DepotFile, P4FileList>('l
       failures: output.failures.map(itemFailure),
       hasMore: limit !== undefined && output.items.length > limit,
     };
-  }));
+  }), 'files');
 
 /** Options for {@link listDepotFilesAtChange}. */
 export interface ListDepotFilesAtChangeOptions {
@@ -414,7 +414,7 @@ export const listDepotFilesAtChange = operation<
       messages: output.messages,
       hasMore: output.items.length > limit,
     };
-  }));
+  }), 'files');
 
 /** Options for {@link statFiles}. */
 export interface StatFilesOptions {
@@ -538,7 +538,7 @@ export const statFiles = operation<StatFilesOptions, P4FileStat, P4FileStatList>
       progressCounter(sink, 'files', limit ?? null),
     );
     return { items: output.items, messages: output.messages, failures: output.failures.map(itemFailure) };
-  }));
+  }), 'files');
 
 /** Options for {@link whereFiles}. */
 export interface WhereFilesOptions {
@@ -598,7 +598,7 @@ export const whereFiles = operation<WhereFilesOptions, P4WhereMapping, P4WhereMa
       progressCounter(sink, 'files'),
     );
     return { items: output.items, messages: output.messages, failures: output.failures.map(itemFailure) };
-  }));
+  }), 'files');
 
 /** Options for {@link listHaveFiles}. */
 export interface ListHaveFilesOptions {
@@ -651,4 +651,4 @@ export const listHaveFiles = operation<ListHaveFilesOptions, P4HaveFile, P4HaveF
       progressCounter(sink, 'files'),
     );
     return { items: output.items, messages: output.messages, failures: output.failures.map(itemFailure) };
-  }));
+  }), 'files');

@@ -157,7 +157,7 @@ function runSync(options: SyncOptions, preview: boolean, sink: P4Sink<P4SyncItem
  * @returns The files a sync would update, and those it could not.
  */
 export const previewSync = operation<SyncOptions, P4SyncItem, P4SyncResult>('previewSync', (options, sink) =>
-  runSync(options, true, sink));
+  runSync(options, true, sink), 'files');
 
 /**
  * Sync workspace files with `p4 sync`.
@@ -172,4 +172,4 @@ export const previewSync = operation<SyncOptions, P4SyncItem, P4SyncResult>('pre
  * @throws {P4ReadOnlyError} When the client does not allow mutation.
  */
 export const sync = operation<SyncOptions, P4SyncItem, P4SyncResult>('sync', (options, sink) =>
-  runSync(options, false, sink));
+  runSync(options, false, sink), 'files');

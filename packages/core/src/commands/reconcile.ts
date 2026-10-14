@@ -130,4 +130,5 @@ export const previewReconcile = operation<PreviewReconcileOptions, P4ReconcileCa
     };
     return result;
   }),
+  'files',
 );

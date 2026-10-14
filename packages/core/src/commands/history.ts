@@ -212,7 +212,7 @@ export const getFileHistory = operation<GetFileHistoryOptions, P4FileRevision, P
       messages: output.messages,
       hasMore: limit !== undefined && merged.length > limit,
     };
-  }));
+  }), 'revisions');
 
 /** A file's history across its renames. */
 export interface P4FileLineage {

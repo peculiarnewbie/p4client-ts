@@ -1,7 +1,7 @@
 import { Effect } from 'effect';
-import { runCommand } from '../engine/command.js';
+import { streamCommand } from '../engine/command.js';
 import { P4Config } from '../engine/config.js';
-import { operation } from '../engine/operation.js';
+import { drain, operation } from '../engine/operation.js';
 import { malformed, text } from './shared.js';
 import type { P4Message } from '../wire/message.js';
 import type { Row } from './shared.js';
@@ -53,10 +53,10 @@ function toEnvironment(row: Row, port: string | null, messages: P4Message[]): P4
  *
  * @returns User, workspace, server identity and modes.
  */
-export const getEnvironment = operation<GetEnvironmentOptions, never, P4Environment>('getEnvironment', (_options, _sink) =>
+export const getEnvironment = operation<GetEnvironmentOptions, never, P4Environment>('getEnvironment', (_options, sink) =>
   Effect.gen(function* () {
     const config = yield* P4Config.asEffect();
-    const output = yield* runCommand({ args: ['info', '-s'], format: 'json', decode: (row) => row });
+    const output = yield* drain(sink, streamCommand({ args: ['info', '-s'], format: 'json', decode: (row) => row }));
     const row = output.items[0];
     if (row === undefined) return yield* malformed('p4 info printed no server information.', output.messages);
     return toEnvironment(row, config.connection.port ?? null, output.messages);

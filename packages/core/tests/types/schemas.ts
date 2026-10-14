@@ -1,8 +1,8 @@
 import { Schema } from 'effect';
 import { Effect, Stream } from 'effect';
-import { P4, P4ClientPathSchema, P4DepotPathSchema, P4LocalPathSchema } from '../../src/index.js';
+import { P4, P4ClientPath, P4DepotPath, P4LocalPath, P4FileAction } from '../../src/index.js';
 import { createP4Client } from '../../src/promise/index.js';
-import type { P4ClientPath, P4DepotPath, P4LocalPath, P4TaggedResult } from '../../src/index.js';
+import type { P4TaggedResult } from '../../src/index.js';
 import type { P4Error } from '../../src/errors.js';
 
 // This file is compiled by typecheck, not executed by the unit test runner.
@@ -46,9 +46,9 @@ const revisionNumber = async () => {
   }
 };
 
-const depot: P4DepotPath = Schema.decodeUnknownSync(P4DepotPathSchema)('//depot/file');
-const workspace: P4ClientPath = Schema.decodeUnknownSync(P4ClientPathSchema)('//workspace/file');
-const local: P4LocalPath = Schema.decodeUnknownSync(P4LocalPathSchema)('file.txt');
+const depot: P4DepotPath = P4DepotPath.make('//depot/file');
+const workspace: P4ClientPath = P4ClientPath.make('//workspace/file');
+const local: P4LocalPath = P4LocalPath.make('file.txt');
 // @ts-expect-error Strings require runtime validation before becoming branded paths.
 const unvalidated: P4DepotPath = '//depot/file';
 // @ts-expect-error Client and depot paths have different semantic identities.
@@ -58,3 +58,19 @@ const localAsClient: P4ClientPath = local;
 
 void [unsafeRaw, encoded, commandRows, rawCommand, depot, unvalidated, mixed, localAsClient,
   watchedResult, serviceResult, serviceWatch, revisionNumber];
+
+const action: P4FileAction = P4FileAction.make('edit');
+// @ts-expect-error Constructors take unbranded strings, not numbers.
+P4DepotPath.make(123);
+const rootExists: Promise<boolean> = client.workspaceRootExists({ root: '.' });
+const materialize = client.watch.materializeDepotFiles({ files: [], directory: '.', maxFiles: 1 });
+const failures = async () => {
+  for await (const event of client.watch.previewSync({}).events) {
+    if (event._tag === 'failure') {
+      const spec: string | null = event.failure.spec;
+      const failure: import('../../src/index.js').P4ItemFailure = event.failure;
+      void [spec, failure];
+    }
+  }
+};
+void [action, rootExists, materialize, failures];

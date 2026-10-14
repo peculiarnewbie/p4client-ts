@@ -2,14 +2,26 @@ import { Effect, Layer, ManagedRuntime, Stream } from 'effect';
 import { P4 } from '../P4.js';
 import { resolveOptions, mergeOptions } from '../engine/config.js';
 import { createAsyncEventQueue } from '../internal/async-queue.js';
-import { layerNode } from '../node/index.js';
+import {
+  layerNode, resolveConnection, findWorkspaceForPath, workspaceRootExists, materializeDepotFiles,
+} from '../node/index.js';
+import { runOperation, watchOperation } from '../engine/operation.js';
 import { ops } from '../ops.js';
-import type { P4Service, TypedTaggedOptions } from '../P4.js';
+import type { ResolveConnectionOptions, P4ResolvedConnection } from '../node/connection.js';
+import type { P4Workspace } from '../commands/workspaces.js';
+import type { P4Ops } from '../ops.js';
+import type { TypedTaggedOptions } from '../P4.js';
 import type { P4TaggedResult, RunTaggedOptions } from '../commands/raw.js';
 import type { P4ClientOptions } from '../engine/config.js';
-import type { P4OperationEvent, P4WatchOptions } from '../engine/operation.js';
+import type { P4Context, P4Operation, P4OperationEvent, P4WatchOptions } from '../engine/operation.js';
 import type { P4InvalidArgumentError } from '../errors.js';
-import type { OpItem, OpOptions, OpResult, P4Ops } from '../ops.js';
+
+const nodeOps = { findWorkspaceForPath, materializeDepotFiles };
+const promiseOps = { ...ops, ...nodeOps };
+type PromiseOps = typeof promiseOps;
+type Options<K extends keyof PromiseOps> = PromiseOps[K] extends P4Operation<infer O, infer _I, infer _R> ? O : never;
+type Item<K extends keyof PromiseOps> = PromiseOps[K] extends P4Operation<infer _O, infer I, infer _R> ? I : never;
+type Result<K extends keyof PromiseOps> = PromiseOps[K] extends P4Operation<infer _O, infer _I, infer R> ? R : never;
 
 /** Cancellation options accepted by every Promise method. */
 export interface P4PromiseOptions {
@@ -45,16 +57,20 @@ export interface P4PromiseTaggedWatchMethod {
 
 /** Watch methods generated from the operation registry. */
 export type P4PromiseWatch = {
-  readonly [K in keyof P4Ops]: K extends 'runTagged' ? P4PromiseTaggedWatchMethod :
-    (options: OpOptions<K> & P4PromiseWatchOptions) => P4WatchHandle<OpItem<K>, OpResult<K>>;
+  readonly [K in keyof PromiseOps]: K extends 'runTagged' ? P4PromiseTaggedWatchMethod :
+    (options: Options<K> & P4PromiseWatchOptions) => P4WatchHandle<Item<K>, Result<K>>;
 };
 
 /** Immutable Promise facade. Each derived client owns its runtime and must be disposed. */
 export type P4PromiseClient = {
-  readonly [K in keyof P4Ops]: K extends 'runTagged' ? P4PromiseTaggedMethod :
-    (options: OpOptions<K> & P4PromiseOptions) => Promise<OpResult<K>>;
+  readonly [K in keyof PromiseOps]: K extends 'runTagged' ? P4PromiseTaggedMethod :
+    (options: Options<K> & P4PromiseOptions) => Promise<Result<K>>;
 } & {
   readonly watch: P4PromiseWatch;
+  /** Resolve local connection settings using this client's cwd and executor. */
+  readonly resolveConnection: (options: ResolveConnectionOptions & P4PromiseOptions) => Promise<P4ResolvedConnection>;
+  /** Check whether a workspace root exists on this machine. */
+  readonly workspaceRootExists: (options: Pick<P4Workspace, 'root'> & P4PromiseOptions) => Promise<boolean>;
   /** Create an independent client with merged connection and environment options. */
   readonly with: (patch: P4ClientOptions) => P4PromiseClient;
   /** Cancel active operations and release this client's runtime. Idempotent. */
@@ -63,14 +79,14 @@ export type P4PromiseClient = {
 
 /**
  * Create a Promise facade over a supplied P4 layer, for replay or application-specific executors.
- * @param layer A layer supplying the P4 service.
+ * @param layer A layer supplying P4; expose P4Config and P4Executor to use Node helper methods.
  * @param derive Build a layer for a derived configuration.
  * @param options Base configuration for with().
  * @returns An immutable client owning a ManagedRuntime.
  */
 export function createP4ClientFromLayer(
-  layer: Layer.Layer<P4, P4InvalidArgumentError>,
-  derive: (options: P4ClientOptions) => Layer.Layer<P4, P4InvalidArgumentError>,
+  layer: Layer.Layer<P4 | P4Context, P4InvalidArgumentError>,
+  derive: (options: P4ClientOptions) => Layer.Layer<P4 | P4Context, P4InvalidArgumentError>,
   options: P4ClientOptions = {},
 ): P4PromiseClient {
   const config = resolveOptions(options);
@@ -79,12 +95,12 @@ export function createP4ClientFromLayer(
   let disposed = false;
   let disposal: Promise<void> | undefined;
 
-  function execute<A, E>(effect: Effect.Effect<A, E, P4>, signal?: AbortSignal,
+  function execute<A, E>(effect: Effect.Effect<A, E, P4 | P4Context>, signal?: AbortSignal,
     controller = new AbortController()): Promise<A> {
     if (disposed) return Promise.reject(new Error('P4 client disposed.'));
+    if (signal?.aborted) return Promise.reject(signal.reason);
     const abort = () => controller.abort(signal?.reason);
-    if (signal?.aborted) abort();
-    else signal?.addEventListener('abort', abort, { once: true });
+    signal?.addEventListener('abort', abort, { once: true });
     const result = runtime.runPromise(effect, { signal: controller.signal }).catch((error: unknown) => {
       throw controller.signal.aborted ? controller.signal.reason : error;
     }).finally(() => {
@@ -100,23 +116,32 @@ export function createP4ClientFromLayer(
   type Run = (options: unknown) => Effect.Effect<unknown, unknown>;
   type Watch = (options: unknown, settings?: P4WatchOptions) =>
     Stream.Stream<P4OperationEvent<unknown, unknown>, unknown>;
-  for (const name of Object.keys(ops) as Array<keyof P4Ops>) {
-    methods[name] = (input: P4PromiseOptions) => execute(Effect.flatMap(P4.asEffect(), (service) =>
-      (service[name] as Run)(input)), input.signal);
+  for (const name of Object.keys(promiseOps) as Array<keyof PromiseOps>) {
+    const nodeOp = nodeOps[name as keyof typeof nodeOps] as P4Operation<unknown, unknown, unknown> | undefined;
+    const run = (input: unknown): Effect.Effect<unknown, unknown, P4 | P4Context> => nodeOp === undefined
+      ? Effect.flatMap(P4.asEffect(), (service) => (service[name as keyof P4Ops] as Run)(input))
+      : runOperation(nodeOp, input);
+    const watch = (input: P4PromiseWatchOptions):
+      Stream.Stream<P4OperationEvent<unknown, unknown>, unknown, P4 | P4Context> => nodeOp === undefined
+      ? Stream.unwrap(Effect.map(P4.asEffect(), (service) =>
+        (service.watch[name as keyof P4Ops] as Watch)(input, input)))
+      : watchOperation(nodeOp, input, input);
+    methods[name] = (input: P4PromiseOptions) => execute(run(input), input.signal);
     watched[name] = (input: P4PromiseWatchOptions): P4WatchHandle<unknown, unknown> => {
       const queue = createAsyncEventQueue<P4OperationEvent<unknown, unknown>>(
         input.maxBuffered === undefined ? {} : { maxBuffered: input.maxBuffered },
       );
       const controller = new AbortController();
       let final: { result: unknown } | undefined;
-      const result = execute(Effect.flatMap(P4.asEffect(), (service: P4Service) =>
-        (service.watch[name] as Watch)(input, input).pipe(Stream.runForEach((event) => Effect.sync(() => {
+      const result = execute(watch(input).pipe(
+        Stream.runForEach((event) => Effect.sync(() => {
           queue.push(event);
           if (event._tag === 'done') final = { result: event.result };
-        })), Effect.flatMap(() => final === undefined
+        })),
+        Effect.flatMap(() => final === undefined
           ? Effect.die(new Error(`P4 watch ${name} ended without a done event.`))
           : Effect.succeed(final.result)),
-        )), input.signal, controller).then((value) => {
+      ), input.signal, controller).then((value) => {
         queue.finish();
         return value;
       }, (error: unknown) => {
@@ -145,6 +170,10 @@ export function createP4ClientFromLayer(
   }
   return Object.freeze({
     ...methods,
+    resolveConnection: (input: ResolveConnectionOptions & P4PromiseOptions) =>
+      execute(resolveConnection(input), input.signal),
+    workspaceRootExists: (input: Pick<P4Workspace, 'root'> & P4PromiseOptions) =>
+      execute(Effect.sync(() => workspaceRootExists(input)), input.signal),
     watch: Object.freeze(watched),
     with: (patch: P4ClientOptions) => {
       if (disposed) throw new Error('P4 client disposed.');

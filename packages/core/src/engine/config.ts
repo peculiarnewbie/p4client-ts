@@ -56,7 +56,8 @@ export function requireTimeout(timeoutMs: number | undefined): number | undefine
 }
 
 /**
- * Apply options on top of resolved ones. Connection fields merge individually.
+ * Apply options on top of resolved ones. Omitted fields inherit; explicit `undefined`
+ * clears cwd and timeoutMs, and resets executable to `p4`. Connection fields merge individually.
  *
  * @param base Options in effect.
  * @param patch Options to change.
@@ -65,11 +66,11 @@ export function requireTimeout(timeoutMs: number | undefined): number | undefine
  */
 export function mergeOptions(base: P4ResolvedOptions, patch: P4ClientOptions): P4ResolvedOptions {
   return {
-    executable: patch.executable ?? base.executable,
+    executable: Object.hasOwn(patch, 'executable') ? patch.executable ?? 'p4' : base.executable,
     connection: { ...base.connection, ...patch.connection },
-    cwd: patch.cwd ?? base.cwd,
+    cwd: Object.hasOwn(patch, 'cwd') ? patch.cwd : base.cwd,
     env: { ...base.env, ...patch.env },
-    timeoutMs: requireTimeout(patch.timeoutMs ?? base.timeoutMs),
+    timeoutMs: requireTimeout(Object.hasOwn(patch, 'timeoutMs') ? patch.timeoutMs : base.timeoutMs),
     allowMutation: patch.allowMutation ?? base.allowMutation,
   };
 }

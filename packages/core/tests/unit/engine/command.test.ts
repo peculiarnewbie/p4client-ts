@@ -176,13 +176,13 @@ describe('structured commands', () => {
 });
 
 describe('command invocation', () => {
-  it('passes the connection as global options and isolates P4CONFIG', async () => {
+  it('passes the connection as global options and isolates P4CONFIG and P4ENVIRO', async () => {
     const recorder = recordingExecutor(scriptedExecutor(() => ({ stdout: '' })));
     await run(runCommand(fields(['info'])), recorder.layer, {
       executable: 'C:/p4/p4.exe',
       connection: { port: 'ssl:p4:1666', user: 'arif', client: 'ws', charset: 'utf8', isolated: true },
       cwd: 'C:/ws',
-      env: { P4CLIENT: undefined },
+      env: { P4CLIENT: undefined, P4CONFIG: '.p4config', P4ENVIRO: 'inherited.enviro' },
     });
     const [invocation] = recorder.invocations;
     expect(invocation?.executable).toBe('C:/p4/p4.exe');
@@ -191,7 +191,7 @@ describe('command invocation', () => {
       '-zprog=p4client-ts', '-zversion=0.13.0', '-Mj', '-z', 'tag', 'info',
     ]);
     expect(invocation?.cwd).toBe('C:/ws');
-    expect(invocation?.env).toEqual({ P4CLIENT: undefined, P4CONFIG: 'p4client-ts.isolated-no-config' });
+    expect(invocation?.env).toEqual({ P4CLIENT: undefined, P4CONFIG: 'p4client-ts.isolated-no-config', P4ENVIRO: 'p4client-ts.isolated-no-enviro' });
   });
 
   it('refuses a mutating command without running it unless mutation is allowed', async () => {

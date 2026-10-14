@@ -19,11 +19,14 @@ export interface P4Connection {
   /** Host name reported to the server (`P4HOST`). */
   readonly host?: string | undefined;
   /**
-   * Ignore P4CONFIG files, so a `.p4config` in a parent directory cannot
+   * Ignore P4CONFIG and P4ENVIRO files, so inherited settings cannot
    * redirect commands. Use with explicit `port`, `user` and `client`.
    */
   readonly isolated?: boolean | undefined;
 }
+
+/** Nonexistent enviro path used by isolated connections. */
+export const ISOLATED_P4ENVIRO = 'p4client-ts.isolated-no-enviro';
 
 /** P4CONFIG names a file searched for in each parent directory; this one never exists. */
 export const ISOLATED_P4CONFIG = 'p4client-ts.isolated-no-config';
@@ -49,10 +52,10 @@ export function globalArgs(connection: P4Connection): string[] {
  * Environment changes a connection requires.
  *
  * @param connection Explicit connection values.
- * @returns Variables to set; isolation points `P4CONFIG` at a file that never exists.
+ * @returns Variables to set; isolation points `P4CONFIG` and `P4ENVIRO` at files that never exist.
  */
 export function connectionEnv(connection: P4Connection): Record<string, string | undefined> {
-  return connection.isolated ? { P4CONFIG: ISOLATED_P4CONFIG } : {};
+  return connection.isolated ? { P4CONFIG: ISOLATED_P4CONFIG, P4ENVIRO: ISOLATED_P4ENVIRO } : {};
 }
 
 /**

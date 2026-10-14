@@ -128,6 +128,10 @@ describe('printBatch', () => {
       : event._tag)).toEqual([
       '//p4ts/main/wire/text.txt', '//p4ts/main/wire/full.uasset', 'failure', '//p4ts/main/wire/wide.txt', 'done',
     ]);
+    const done = events.at(-1);
+    if (done?._tag !== 'done') throw new Error('Expected done.');
+    expect(events.flatMap((event) => event._tag === 'failure' ? [event.failure] : []))
+      .toEqual(done.result.failures);
     const progress = events.flatMap((event) => event._tag === 'progress' ? [event.progress] : []);
     expect(progress.map((update) => [update.completed, update.total, update.bytesCompleted])).toEqual([
       [1, 4, 8], [2, 4, 24], [3, 4, 24], [4, 4, 34],
