@@ -125,7 +125,7 @@ function defaultChangelist(options: ListChangelistsOptions) {
  *
  * @returns One page, with the cursor for the next.
  */
-export const listChangelists = operation('listChangelists', (options: ListChangelistsOptions, sink) =>
+export const listChangelists = operation<ListChangelistsOptions, P4Changelist, P4ChangelistPage>('listChangelists', (options, sink) =>
   Effect.gen(function* () {
     const limit = yield* requirePositive(options.limit ?? DEFAULT_LIMIT, 'limit');
     const cursor = options.cursor === undefined ? undefined : yield* requireNonNegative(options.cursor, 'cursor');
@@ -162,5 +162,5 @@ export const listChangelists = operation('listChangelists', (options: ListChange
       messages,
       hasMore,
       nextCursor: hasMore && oldest !== null ? oldest - 1 : null,
-    } satisfies P4ChangelistPage;
+    };
   }));

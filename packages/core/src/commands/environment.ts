@@ -53,7 +53,7 @@ function toEnvironment(row: Row, port: string | null, messages: P4Message[]): P4
  *
  * @returns User, workspace, server identity and modes.
  */
-export const getEnvironment = operation('getEnvironment', (_: GetEnvironmentOptions, _sink) =>
+export const getEnvironment = operation<GetEnvironmentOptions, never, P4Environment>('getEnvironment', (_options, _sink) =>
   Effect.gen(function* () {
     const config = yield* P4Config.asEffect();
     const output = yield* runCommand({ args: ['info', '-s'], format: 'json', decode: (row) => row });

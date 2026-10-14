@@ -171,7 +171,7 @@ export interface P4ProgressCounter {
  * @returns The counter.
  */
 export function progressCounter(
-  sink: P4Sink<unknown>,
+  sink: Pick<P4Sink<never>, 'progress'>,
   unit: P4ProgressUnit,
   total: number | null = null,
 ): P4ProgressCounter {

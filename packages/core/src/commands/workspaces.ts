@@ -64,7 +64,7 @@ function toWorkspace(row: Row): P4Workspace {
  *
  * @returns Matching workspaces.
  */
-export const listWorkspaces = operation('listWorkspaces', (options: ListWorkspacesOptions, sink) =>
+export const listWorkspaces = operation<ListWorkspacesOptions, P4Workspace, P4WorkspaceList>('listWorkspaces', (options, sink) =>
   Effect.gen(function* () {
     const args = ['clients'];
     if (options.user !== undefined) args.push('-u', options.user);
@@ -78,5 +78,5 @@ export const listWorkspaces = operation('listWorkspaces', (options: ListWorkspac
     const items = output.items
       .filter(usable)
       .sort((left, right) => left.root.localeCompare(right.root) || left.client.localeCompare(right.client));
-    return { items, messages: output.messages } satisfies P4WorkspaceList;
+    return { items, messages: output.messages };
   }));

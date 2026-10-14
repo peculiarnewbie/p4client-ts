@@ -151,8 +151,8 @@ testing/      replayExecutor(fixtures) with strict normalized-argv matching (nea
 
 ## Progress and handoff (2026-10-14)
 
-Branch `rearch/0.13`, PR #8. Phases 0–3 are done and pushed; Phase 4 has not started.
-`bun run typecheck` and `bun run test` (487 tests) pass at `5a65d9d`.
+Branch `rearch/0.13`, PR #8. Phases 0–4 are done; Phase 5 (facades) is next.
+`bun run typecheck` and `bun run test` (756 tests) pass at the Phase 4 commit.
 
 | Phase | Commit | State |
 |---|---|---|
@@ -160,7 +160,7 @@ Branch `rearch/0.13`, PR #8. Phases 0–3 are done and pushed; Phase 4 has not s
 | 1 Wire | `84cb3ec` | Done. `src/wire/*`, `src/errors.ts`, `src/testing/fixture.ts`, golden `tests/fixtures/wire/_reasons.json`. |
 | 2 Exec | `b90ab0c` | Done. `src/exec/{executor,guard}.ts`, `src/node/executor.ts`, `src/connection/argv.ts`, `src/version.ts` (0.13.0). |
 | 3 Engine | `5a65d9d` | Done. `src/engine/{command,config}.ts`, `src/connection/settings.ts`, `src/node/connection.ts`, `src/testing/executor.ts`. |
-| 4 Commands | — | Next. See below. |
+| 4 Commands | Phase 4 commits | Done. `src/engine/operation.ts`, `src/commands/*`, `src/ops.ts`, `src/node/{workspace,materialize}.ts`, `src/schemas.ts`, `MIGRATION.md`. See "Phase 4 result" below. |
 
 The old code in `src/public` and `src/internal`, and its tests in `tests/*.test.ts`, are untouched and still pass. They are deleted at cutover (Phase 6).
 
@@ -229,30 +229,34 @@ The requirement is that every operation can report progress, not just sync.
     - diff summary: the file list
     - paged changelists: the limit
   - **Indeterminate** (running count, `total: null`): reconcile, describe, fstat, filelog and the other lists.
-- **`progressIntervalMs` (heartbeat):** emits a progress snapshot with `elapsedMs` while `p4` prints nothing, so UIs never sit silent. Implement it as a ticker merged with `haltStrategy: 'left'`.
+- **`progressIntervalMs` (heartbeat):** emits a progress snapshot with `elapsedMs` while `p4` prints nothing, so UIs never sit silent. Implemented as a ticker forked into the `Stream.callback` scope, so it stops when the watch ends.
 - **`Stream.callback` gotcha:** a *failing* effect inside `Stream.callback` hangs the stream instead of failing it (verified in beta.37). The watch runner must catch the program's cause and call `Queue.failCauseUnsafe(queue, cause)`, and call `Queue.endUnsafe` after `done`.
 - **Promise facade:** `client.sync(opts)` resolves to the result; `client.watch.sync(opts)` (or `watchSync`) returns `{ events: AsyncIterable, result: Promise }`. Both are generated from the op registry.
 
-### Phase 4 checklist
+### Phase 4 result
 
-1. **Runner:** `src/engine/operation.ts` with the program/sink, `watch`/`run`, the heartbeat, and a forwarding helper that takes `streamCommand` events into the sink.
-2. **Commands:** `src/commands/*.ts`, one family at a time, each with its policy from the plan's per-command overrides:
-   - environment (`info -s`)
-   - workspaces
-   - changelists (pending with `-l`, plus default synthesis sharing one `opened -c default`; submitted/shelved paging)
-   - opened
-   - describe
-   - files (depots/dirs/files/fstat/where, with `not_in_view → item`)
-   - history (`hasMore` via `-m N+1`, integrations from `how{n},{m}`/`file{n},{m}`)
-   - print (`printFile -G`, `printBatch -G -x -`, materialize `-o`)
-   - diff (`-Mj diff`, plain `diff2`)
-   - annotate, users (ids: `unknown_user → item`), streams
-   - sync/previewSync (clobber, filesystem, fault, client_fault and not_in_view → item; `failures` always present)
-   - reconcile
-   - raw `runTagged(args, { schema, policy })`
-3. **Branded constructors:** reuse `src/public/schemas.ts` (move it to `src/schemas.ts`) and row schemas from `src/internal/rows.ts`; mappers port from `client.ts` `to*` methods.
-4. **Tests:** turn the `client.test.ts` argv pins into a table `{ op, options, argv, fixture }` replayed strictly. Shrink the fixture-coverage allowlist as fixtures get used. Record deliberate behaviour changes in `MIGRATION.md`.
-5. **Workspace for a directory:** `findWorkspaceForPath` in `src/node/workspace.ts`, built on the workspaces op (win32 case-insensitive and realpath; AltRoots via `client -o`).
+- **Runner** (`src/engine/operation.ts`): `operation<O, I, R>(name, (options, sink) => Effect)`, `runOperation`, `watchOperation(op, options, { progressIntervalMs })`, `progressCounter`, and `drain(sink, streamCommand(spec), { item, counter, inspect })`. Declare all three type parameters: TypeScript cannot infer the item type from sink calls.
+- **Commands** (`src/commands/*`, pure): environment, workspaces, changelists, opened, describe, files (depots, dirs, files, listFiles, at-change, fstat, where, have), history (+ `followMoves`), annotate, users, streams (+ `getStream`), print (`printFile`, `printBatch`, `printedText`), diff (+ pure `diff-text.ts`), sync/previewSync, previewReconcile, `runTagged`. Row decoders live in `shared.ts`; they throw `P4ParseError` inside a spec's `decode`, where the engine adds the command.
+- **Registry** (`src/ops.ts`): every platform-neutral op, plus `OpOptions`/`OpItem`/`OpResult`. `tests/unit/ops.test.ts` asserts names and inferred types.
+- **Node** (`src/node/`): `findWorkspaceForPath` (deepest root wins; realpath; case-insensitive on Windows; AltRoots via `client -o` only for unmatched workspaces), `workspaceRootExists`, `materializeDepotFiles`.
+- **Per-item failures:** every batch result has `failures: P4ItemFailure[]` (`{ spec, reason, message }`, `spec` from message args). Sink `failure` events carry the `P4Message`.
+- **Tests:** `tests/unit/commands/*.test.ts` hold an argv table per family (`argvCase`/`argvTable` in `support.ts`) plus strict replays; sync, preview sync and reconcile have run/watch parity tests. The fixture-coverage allowlist went from about 70 to 17.
+- **Replay fix:** `commandArgs` now strips connection options only before the subcommand. Before, `opened -u arif` replayed as `opened`, and listings of fixture args hid `clients -u`, `opened -c default`, `annotate -c`.
+
+### Phase 4 follow-ups (decide or fix before or during Phase 5)
+
+- **Re-capture fixtures whose args the new ops never produce:**
+  - `changes-pending`, `changes-empty`, `changes-pending-empty` and `changes-shelved-empty` lack `-l`.
+  - `filelog-move` is `-i -l` and `filelog-wildcard-limit` is `-m 1`; their tests serve them through a non-strict helper.
+  - The `-G print` fixtures lack `-K`; their replays pass `keywords: 'expand'`.
+  - The `-I reconcile` fixtures are replayed with `-I` stripped.
+- **`-K` needs a 2022.1+ server.** The default `keywords: 'raw'` passes `-K` (`-k` is the older alias, accepted by both). Decide whether to send `-k` for older servers; `print-materialize` was captured with `-K`.
+- **Annotate now attributes lines to `lower`** (the change that introduced the line), where the old code used `upper`. No fixture has a multi-revision file; add one to confirm.
+- **`P4Message` has no `disposition`** although the shape conventions list one. Either add it in the engine's `classify` or drop it from the plan.
+- **Default changelist synthesis is duplicated** in `describe.ts`, `changelists.ts` and `diff.ts`; factor it out.
+- **`printBatch` keeps every file's content in its result**, even when watched. Consider a watch-only mode for large batches.
+- **`runTagged` is untyped** (`Schema.Decoder<unknown>`): the facade should add a generic overload.
+- **Remaining allowlist entries:** the `-ztag`/`-G` mode-comparison captures, `client-version`, `info-unknown-user`, `info-zprog`, `client-spec` and `client-unknown`.
 
 ### Working notes
 

@@ -103,11 +103,11 @@ export function openedCommand(options: ListOpenedFilesOptions): P4CommandSpec<P4
  *
  * @returns Opened files, in the order Perforce lists them.
  */
-export const listOpenedFiles = operation('listOpenedFiles', (options: ListOpenedFilesOptions, sink) =>
+export const listOpenedFiles = operation<ListOpenedFilesOptions, P4OpenedFile, P4OpenedFileList>('listOpenedFiles', (options, sink) =>
   Effect.map(
     drain(sink, streamCommand(openedCommand(options)), {
       item: (file) => file,
       counter: progressCounter(sink, 'files'),
     }),
-    (output): P4OpenedFileList => ({ items: output.items, messages: output.messages }),
+    (output) => ({ items: output.items, messages: output.messages }),
   ));

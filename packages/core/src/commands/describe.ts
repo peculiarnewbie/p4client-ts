@@ -123,7 +123,7 @@ function describeNumbered(number: number, shelved: boolean) {
  *
  * @returns The changelist and its files.
  */
-export const describeChangelist = operation('describeChangelist', (options: DescribeChangelistOptions, sink) =>
+export const describeChangelist = operation<DescribeChangelistOptions, never, P4ChangelistDescription>('describeChangelist', (options, sink) =>
   Effect.gen(function* () {
     const counter = progressCounter(sink, 'files');
     const result = options.change === 'default'
