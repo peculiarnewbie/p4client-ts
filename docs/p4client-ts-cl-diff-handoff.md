@@ -1,3 +1,9 @@
+> Current 0.13 feedback handoff (2026-10-14): see
+> [rearchitecture-0.13.md](rearchitecture-0.13.md#phase-7-consumer-feedback-handoff-2026-10-14).
+> Stable Effect, trial fixes, stdin, process/scoped-client helpers and preserved
+> result types are implemented there. The 0.5 contract below is historical;
+> use [MIGRATION.md](../packages/core/MIGRATION.md) for current signatures.
+
 # Handoff: p4client-ts — changelist diff support for Electroswag
 
 **Created:** 2026-06-12  

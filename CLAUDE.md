@@ -119,9 +119,9 @@ packages/
 <!-- effect-solutions:start -->
 ## Effect Best Practices
 
-This repository pins Effect 4.0.0-beta.37. Use `ServiceMap.Service`, not
-`Context.Service`; effect-solutions examples target a different beta and must
-be checked against installed types. `Stream.runCollect` returns an array.
+This repository pins Effect 4.0.4 (stable), with peer range `^4.0.0`. Use
+`Context.Service` and `Schema.TaggedError`; yield service classes directly.
+Check effect-solutions examples against installed stable types. `Stream.runCollect` returns an array.
 Execute Effects only at application boundaries. Every operation accepts one
 options object and returns an enumerable envelope. Dispose Promise clients,
 including clients derived with `with`. The platform-neutral root must not

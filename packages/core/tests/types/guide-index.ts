@@ -1,4 +1,4 @@
-// Typechecked examples from packages/www/src/content/docs/index.mdx.
+// Published guide examples; typechecked by the repository.
 import { createP4Client } from '../../src/promise/index.js';
 
 const client = createP4Client({

@@ -388,3 +388,22 @@ describe('listHaveFiles', () => {
     expect(reasons(have.messages)).toEqual(['not_on_client']);
   });
 });
+
+describe('code-less studio missing-file diagnostics', () => {
+  it('keeps valid files and stats beside a missing spec', async () => {
+    const file = '//depot/valid.txt';
+    const missing = '//depot/__missing__.txt';
+    const diagnostic = JSON.stringify({ data: `${missing} - no such file(s).\n`, generic: 17, severity: 2 });
+    const listed = await run(listFiles, { fileSpec: [file, missing] }, scriptedExecutor(() => ({
+      stdout: fileRows([file, 'add']) + '\n' + diagnostic + '\n',
+    })));
+    const stats = await run(statFiles, { fileSpec: [file, missing] }, scriptedExecutor(() => ({
+      stdout: JSON.stringify({ depotFile: file, headRev: '1', headAction: 'add', headType: 'text' }) + '\n' + diagnostic + '\n',
+    })));
+    for (const result of [listed, stats]) {
+      expect(result.items).toHaveLength(1);
+      expect(result.failures[0]).toMatchObject({ spec: missing, reason: 'no_such_file' });
+      expect(result.messages).toEqual([]);
+    }
+  });
+});

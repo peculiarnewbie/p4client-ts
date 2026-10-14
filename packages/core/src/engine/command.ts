@@ -283,8 +283,8 @@ function processStream<A>(
   onExit: (reader: OutputReader, code: number | null) => Effect.Effect<Array<P4CommandEvent<A>>, P4Error>,
 ): Stream.Stream<P4CommandEvent<A>, P4Error, Context> {
   return Stream.unwrap(Effect.gen(function* () {
-    const options = yield* P4Config.asEffect();
-    const executor = yield* P4Executor.asEffect();
+    const options = yield* P4Config;
+    const executor = yield* P4Executor;
     const run = invocation(options, format, spec);
     if (checkCommand(run.args, run.input).mutates && !options.allowMutation) {
       const args = redactArgs(run.args);

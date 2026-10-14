@@ -29,7 +29,7 @@ export type FileSpecs = string | readonly string[];
  */
 export function decodeField<A>(schema: Schema.Decoder<A>, value: unknown, row: unknown = value): A {
   try {
-    return Schema.decodeUnknownSync(schema)(value, { onExcessProperty: 'preserve' });
+    return Schema.decodeUnknownSync(schema)(value, { onExcessProperty: 'ignore' });
   } catch (cause) {
     throw new P4ParseError({
       message: 'Invalid Perforce command output.',

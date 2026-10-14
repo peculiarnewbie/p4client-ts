@@ -7,7 +7,7 @@ import { P4Executor } from '../../src/exec/executor.js';
 import { P4CommandError, P4ParseError, P4ReadOnlyError } from '../../src/errors.js';
 import { ops } from '../../src/ops.js';
 import { runNodeProcess } from '../../src/node/index.js';
-import { createP4Client, createP4ClientFromLayer } from '../../src/promise/index.js';
+import { createP4Client, createP4ClientFromLayer, withP4Client } from '../../src/promise/index.js';
 import { layerTest, readWireFixtures, replayExecutor, scriptedExecutor } from '../../src/testing/index.js';
 import type { P4ClientOptions } from '../../src/engine/config.js';
 import type { P4Invocation, P4ProcessEvent } from '../../src/exec/executor.js';
@@ -48,7 +48,7 @@ describe('Phase 5 facades', () => {
     assert<Equal<keyof P4Service['watch'], keyof typeof ops>>();
     assert<Equal<Exclude<keyof P4PromiseClient, 'watch' | 'with' | 'dispose' | 'resolveConnection' | 'workspaceRootExists' | 'findWorkspaceForPath' | 'materializeDepotFiles'>, keyof typeof ops>>();
     assert<Equal<Exclude<keyof P4PromiseWatch, 'findWorkspaceForPath' | 'materializeDepotFiles'>, keyof typeof ops>>();
-    const service = await Effect.runPromise(P4.asEffect().pipe(
+    const service = await Effect.runPromise(P4.pipe(
       Effect.provide(serviceLayer(scriptedExecutor(() => ({ stdout: row })))),
     ));
     const client = clientFor(scriptedExecutor(() => ({ stdout: row })));
@@ -60,7 +60,7 @@ describe('Phase 5 facades', () => {
   });
 
   it('keeps real tagged errors in the service error channel', async () => {
-    const error = await Effect.runPromise(Effect.flatMap(P4.asEffect(), (p4) =>
+    const error = await Effect.runPromise(Effect.flatMap(P4, (p4) =>
       p4.getEnvironment({})).pipe(
       Effect.catch((cause) => Effect.succeed(cause)),
       Effect.provide(serviceLayer(replayExecutor([fixtures.get('server-unreachable-summary')!]))),
@@ -74,7 +74,7 @@ describe('Phase 5 facades', () => {
       calls.push(invocation);
       return { stdout: row };
     });
-    const command = Effect.flatMap(P4.asEffect(), (p4) => p4.runTagged({ args: ['info'] }));
+    const command = Effect.flatMap(P4, (p4) => p4.runTagged({ args: ['info'] }));
     await Effect.runPromise(Effect.gen(function* () {
       const p4 = yield* P4;
       yield* command;
@@ -90,14 +90,14 @@ describe('Phase 5 facades', () => {
 
   it('supports partial service mocks and fails loudly for unmocked calls', async () => {
     const layer = layerTest({ listDepots: () => Effect.succeed(empty) });
-    const result = await Effect.runPromise(Effect.flatMap(P4.asEffect(), (p4) => p4.listDepots({})).pipe(
+    const result = await Effect.runPromise(Effect.flatMap(P4, (p4) => p4.listDepots({})).pipe(
       Effect.provide(layer),
     ));
     expect(result).toEqual(empty);
-    const events = await Effect.runPromise(Stream.unwrap(Effect.map(P4.asEffect(), (p4) =>
+    const events = await Effect.runPromise(Stream.unwrap(Effect.map(P4, (p4) =>
       p4.watch.listDepots({}))).pipe(Stream.runCollect, Effect.provide(layer)));
     expect(events).toEqual([{ _tag: 'done', result: empty }]);
-    await expect(Effect.runPromise(Effect.flatMap(P4.asEffect(), (p4) => p4.listUsers({})).pipe(
+    await expect(Effect.runPromise(Effect.flatMap(P4, (p4) => p4.listUsers({})).pipe(
       Effect.provide(layer),
     ))).rejects.toThrow('Unmocked P4 operation: listUsers');
   });
@@ -123,7 +123,7 @@ describe('Phase 5 facades', () => {
     const fixture = fixtures.get('sync-force-preview')!;
     expect(fixture).toBeDefined();
     const replay = replayExecutor([fixture]);
-    const counted = Layer.effect(P4Executor, Effect.map(P4Executor.asEffect(), (executor) => ({
+    const counted = Layer.effect(P4Executor, Effect.map(P4Executor, (executor) => ({
       run: (invocation: P4Invocation) => { calls++; return executor.run(invocation); },
     }))).pipe(Layer.provide(replay));
     const client = clientFor(counted);
@@ -328,7 +328,7 @@ describe('Phase 5 facades', () => {
         [undefined, 'p4'], ['parent', 'custom-p4'],
       ]);
     } finally { await child.dispose(); await parent.dispose(); }
-    await Effect.runPromise(Effect.flatMap(P4.asEffect(), (p4) =>
+    await Effect.runPromise(Effect.flatMap(P4, (p4) =>
       p4.runTagged({ args: ['info'] }).pipe(P4.with({ cwd: undefined, timeoutMs: undefined, executable: undefined })))
       .pipe(Effect.provide(serviceLayer(executor, base))));
     expect(calls.at(-1)).toMatchObject({ executable: 'p4' });
@@ -443,5 +443,19 @@ describe('Phase 5 facades', () => {
     const bundle = await build.outputs[0]!.text();
     expect(bundle).not.toContain('node:child_process');
     expect(bundle).not.toContain('NodeP4Executor');
+  });
+});
+
+describe('scoped Promise client', () => {
+  it('returns the callback value and disposes its runtime', async () => {
+    let captured: P4PromiseClient | undefined;
+    expect(await withP4Client({}, async (client) => { captured = client; return 42; })).toBe(42);
+    await expect(captured!.getEnvironment({})).rejects.toThrow('disposed');
+  });
+  it('preserves callback rejection and still disposes', async () => {
+    let captured: P4PromiseClient | undefined;
+    const error = new Error('consumer failed');
+    await expect(withP4Client({}, async (client) => { captured = client; throw error; })).rejects.toBe(error);
+    await expect(captured!.getEnvironment({})).rejects.toThrow('disposed');
   });
 });

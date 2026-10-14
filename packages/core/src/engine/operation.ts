@@ -1,4 +1,10 @@
 import { Clock, Effect, Queue, Stream } from 'effect';
+import type {
+  P4MaterializeOperation, P4MaterializeSpec, MaterializeDepotFilesOptions, P4MaterializedFile, P4MaterializeResult,
+} from '../node/materialize.js';
+import type {
+  P4ChangelistOperation, P4ChangelistStatus, ListChangelistsOptions, P4Changelist, P4ChangelistPage,
+} from '../commands/changelists.js';
 import { itemFailure } from './failure.js';
 import type { P4ItemFailure } from './failure.js';
 import type { P4Error } from '../errors.js';
@@ -95,6 +101,18 @@ const SILENT: P4Sink<unknown> = {
  * @param options Its options.
  * @returns The result.
  */
+export function runOperation<F extends P4MaterializeSpec>(
+  op: P4MaterializeOperation,
+  options: MaterializeDepotFilesOptions<F>,
+): Effect.Effect<P4MaterializeResult<F>, P4Error, P4Context>;
+export function runOperation<S extends P4ChangelistStatus>(
+  op: P4ChangelistOperation,
+  options: ListChangelistsOptions & { readonly status: S },
+): Effect.Effect<P4ChangelistPage<S>, P4Error, P4Context>;
+export function runOperation<O, I, R>(
+  op: P4Operation<O, I, R>,
+  options: O,
+): Effect.Effect<R, P4Error, P4Context>;
 export function runOperation<O, I, R>(op: P4Operation<O, I, R>, options: O): Effect.Effect<R, P4Error, P4Context> {
   return op.program(options, SILENT);
 }
@@ -117,6 +135,21 @@ export interface P4WatchOptions {
  * @param watch Heartbeat options.
  * @returns Items, messages, failures and progress in the order they happen, then `done`.
  */
+export function watchOperation<F extends P4MaterializeSpec>(
+  op: P4MaterializeOperation,
+  options: MaterializeDepotFilesOptions<F>,
+  watch?: P4WatchOptions,
+): Stream.Stream<P4OperationEvent<P4MaterializedFile<F>, P4MaterializeResult<F>>, P4Error, P4Context>;
+export function watchOperation<S extends P4ChangelistStatus>(
+  op: P4ChangelistOperation,
+  options: ListChangelistsOptions & { readonly status: S },
+  watch?: P4WatchOptions,
+): Stream.Stream<P4OperationEvent<P4Changelist<S>, P4ChangelistPage<S>>, P4Error, P4Context>;
+export function watchOperation<O, I, R>(
+  op: P4Operation<O, I, R>,
+  options: O,
+  watch?: P4WatchOptions,
+): Stream.Stream<P4OperationEvent<I, R>, P4Error, P4Context>;
 export function watchOperation<O, I, R>(
   op: P4Operation<O, I, R>,
   options: O,

@@ -55,7 +55,7 @@ function toEnvironment(row: Row, port: string | null, messages: P4Message[]): P4
  */
 export const getEnvironment = operation<GetEnvironmentOptions, never, P4Environment>('getEnvironment', (_options, sink) =>
   Effect.gen(function* () {
-    const config = yield* P4Config.asEffect();
+    const config = yield* P4Config;
     const output = yield* drain(sink, streamCommand({ args: ['info', '-s'], format: 'json', decode: (row) => row }));
     const row = output.items[0];
     if (row === undefined) return yield* malformed('p4 info printed no server information.', output.messages);

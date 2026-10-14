@@ -140,8 +140,8 @@
     "fault (generic)"
   ],
   "synthetic-stderr": [
-    "empty (generic)",
-    "empty (generic)"
+    "up_to_date (text)",
+    "no_such_file (text)"
   ],
   "unicode-charset-required": [
     "charset (code)"

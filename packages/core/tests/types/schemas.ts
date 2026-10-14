@@ -27,8 +27,8 @@ const controller = new AbortController();
 client.watch.runTagged({ args: ['files'], schema: Row, signal: controller.signal, progressIntervalMs: 100 });
 
 const serviceResult: Effect.Effect<P4TaggedResult<{ readonly revision: number }>, P4Error, P4> =
-  Effect.flatMap(P4.asEffect(), (p4) => p4.runTagged({ args: ['files'], schema: Row }));
-const serviceWatch = Stream.unwrap(Effect.map(P4.asEffect(), (p4) => {
+  Effect.flatMap(P4, (p4) => p4.runTagged({ args: ['files'], schema: Row }));
+const serviceWatch = Stream.unwrap(Effect.map(P4, (p4) => {
   // @ts-expect-error A typed service command requires a runtime schema.
   const invalid = p4.runTagged<{ revision: number }>({ args: ['files'] });
   void invalid;
@@ -74,3 +74,46 @@ const failures = async () => {
   }
 };
 void [action, rootExists, materialize, failures];
+
+const narrowResults = async () => {
+  const submitted = await client.listChangelists({ status: 'submitted' });
+  const change: number | undefined = submitted.items[0]?.change;
+  const pending = await client.listChangelists({ status: 'pending' });
+  // @ts-expect-error Pending results can include the default changelist.
+  const pendingNumber: number | undefined = pending.items[0]?.change;
+  const result = await client.materializeDepotFiles({
+    fileSpec: [{ depotFile: '//depot/a', revision: 1, change: 12, action: 'edit' }],
+    directory: '.', maxFiles: 1,
+  });
+  const metadata: number | undefined = result.items[0]?.file.change;
+  for await (const event of client.watch.materializeDepotFiles({
+    fileSpec: [{ depotFile: '//depot/a', revision: 1, action: 'edit' }], directory: '.', maxFiles: 1,
+  }).events) {
+    if (event._tag === 'item') { const action: string = event.item.file.action; void action; }
+  }
+  void [change, pendingNumber, metadata];
+};
+const nativeNarrow = Effect.flatMap(P4, (p4) => Effect.map(
+  p4.listChangelists({ status: 'submitted' }), (page) => { const n: number | undefined = page.items[0]?.change; return n; },
+));
+void [narrowResults, nativeNarrow];
+
+const nativeOperationTypes = async () => {
+  const { runOperation, watchOperation, listChangelists } = await import('../../src/index.js');
+  const { materializeDepotFiles } = await import('../../src/node/index.js');
+  const submitted = runOperation(listChangelists, { status: 'submitted' });
+  const numeric = Effect.map(submitted, (page) => { const value: number | undefined = page.items[0]?.change; return value; });
+  const files = runOperation(materializeDepotFiles, {
+    fileSpec: [{ depotFile: '//depot/a', revision: 1, change: 42 }], directory: '.', maxFiles: 1,
+  });
+  const metadata = Effect.map(files, (result) => { const value: number | undefined = result.items[0]?.file.change; return value; });
+  const watchedFiles = watchOperation(materializeDepotFiles, {
+    fileSpec: [{ depotFile: '//depot/a', revision: 1, action: 'edit' }], directory: '.', maxFiles: 1,
+  });
+  const watchedMetadata = Stream.map(watchedFiles, (event) => {
+    if (event._tag === 'item') { const value: string = event.item.file.action; return value; }
+    return null;
+  });
+  void [numeric, metadata, watchedMetadata];
+};
+void nativeOperationTypes;

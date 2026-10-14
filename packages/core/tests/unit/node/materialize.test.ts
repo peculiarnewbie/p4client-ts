@@ -1,5 +1,8 @@
 import { afterAll, describe, expect, it } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { Effect, Layer, Stream } from 'effect';
+import { P4Executor } from '../../../src/exec/executor.js';
+import { commandArgs } from '../../../src/testing/executor.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { materializeDepotFiles, materializedFilePath } from '../../../src/node/materialize.js';
@@ -16,10 +19,17 @@ const textPath = join(scratch, 'p4ts', 'main', 'wire', 'text.txt');
 /** The captured `print -q -K -o` invocation, retargeted at this test's output path. */
 function printMaterialize() {
   const fixture = fixtures('print-materialize')[0]!;
-  return replayExecutor([{
-    ...fixture,
-    args: fixture.args.map((arg) => (arg === '<WORKSPACE>\\printed.txt' ? textPath : arg)),
-  }]);
+  return Layer.succeed(P4Executor, {
+    run: (invocation) => {
+      const args = commandArgs(invocation.args);
+      const outputPath = args[args.indexOf('-o') + 1]!;
+      writeFileSync(outputPath, 'fixture contents');
+      return Stream.unwrap(Effect.map(P4Executor.pipe(Effect.provide(replayExecutor([{
+        ...fixture,
+        args: fixture.args.map((arg) => arg === '<WORKSPACE>\\printed.txt' ? outputPath : arg),
+      }]))), (executor) => executor.run(invocation)));
+    },
+  });
 }
 
 describe('materializeDepotFiles', () => {
@@ -46,10 +56,13 @@ describe('materializeDepotFiles', () => {
       maxFiles: 2,
       keywords: 'expand',
       concurrency: 1,
+    }, (args) => {
+      writeFileSync(args[args.indexOf('-o') + 1]!, '');
+      return {};
     });
-    expect(calls).toEqual([
-      ['print', '-q', '-o', textPath, '//p4ts/main/wire/text.txt#1'],
-      ['print', '-q', '-o', join(scratch, 'p4ts', 'main', 'wire', 'other.txt'), '//p4ts/main/wire/other.txt#2'],
+    expect(calls.map((args) => args.filter((_, index) => index !== args.indexOf('-o') + 1))).toEqual([
+      ['print', '-q', '-o', '//p4ts/main/wire/text.txt#1'],
+      ['print', '-q', '-o', '//p4ts/main/wire/other.txt#2'],
     ]);
   });
 
@@ -58,6 +71,23 @@ describe('materializeDepotFiles', () => {
       stderr: '//p4ts/main/wire/text.txt#1 - no such file(s).\r\n',
     })));
     expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'no_such_file' });
+  });
+
+  it('fails when print exits zero without output, preserving an existing destination', async () => {
+    writeFileSync(textPath, 'previous revision');
+    const error = await failure(materializeDepotFiles, {
+      fileSpec: [{ ...TEXT, revision: 2 }], directory: scratch, maxFiles: 1,
+    }, scriptedExecutor(() => ({})));
+    expect(error).toMatchObject({ _tag: 'P4MaterializationError', reason: 'missing_output' });
+    expect(readFileSync(textPath, 'utf8')).toBe('previous revision');
+    expect(readdirSync(join(scratch, 'p4ts', 'main', 'wire')).some((name) => name.startsWith('.p4-materialize-'))).toBe(false);
+  });
+
+  it('retains snapshot metadata on the returned file', async () => {
+    const file = { ...TEXT, action: 'edit', change: 42, type: 'binary' };
+    const result = await run(materializeDepotFiles, { fileSpec: [file], directory: scratch, maxFiles: 1 }, printMaterialize());
+    expect(result.items[0]?.file).toEqual(file);
+    expect(existsSync(textPath)).toBe(true);
   });
 
   it('refuses more files than maxFiles before running p4', async () => {

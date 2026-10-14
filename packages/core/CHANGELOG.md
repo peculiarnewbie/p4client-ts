@@ -22,11 +22,19 @@ This project follows semantic versioning.
 
 ### Added
 
+- Stable Effect 4.0.4 development runtime with `^4.0.0` peer contract.
+- Stdin for tagged commands, a plain `runNodeProcessPromise` bridge, and scoped `withP4Client` ownership.
+- Generic materialization metadata and status-specific changelist result types in both APIs.
+
 - Typed raw commands, connection source resolution and isolated settings,
   workspace root/AltRoots matching, batch printing, history pagination and integrations.
 - Strict replay, recording and mock layers. Live e2e scenarios now exercise the new API.
 
 ### Fixed
+
+- Refine code-less EV_EMPTY diagnostics using specific text, preserving missing-file specs in item failures.
+- Stage and verify materialized output so deleted revisions cannot report nonexistent files or overwrite prior output.
+- Expand migration type/field maps and typechecked discovery, mapping, watch and Promise replay recipes.
 
 - Decode `opened` revision/have-revision `none` as `null` for newly added files.
 

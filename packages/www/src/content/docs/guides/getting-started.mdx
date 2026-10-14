@@ -3,7 +3,7 @@ title: Getting Started
 description: Use the immutable Promise client, envelopes, binary printing and watches.
 ---
 
-Install `p4client-ts` with `effect@4.0.0-beta.37`. Node 18 or newer and a local
+Install `p4client-ts` with `effect@4.0.4`. Node 18 or newer and a local
 `p4` executable are required for live commands.
 
 ```ts
@@ -52,6 +52,7 @@ Mutation is disabled by default. Preview first, then opt in for a separate clien
 const writable = client.with({ allowMutation: true });
 try {
   const preview = await client.previewSync({ fileSpec: '//depot/main/...' });
+  if (preview.failures.length > 0) throw new Error('Incomplete sync preview.');
   if (preview.items.length > 0) {
     const synced = await writable.sync({ fileSpec: '//depot/main/...' });
     console.log(synced.items, synced.failures);
@@ -114,3 +115,136 @@ console.log(rows.items.map((row) => row.depotFile));
 The schema determines the decoded row type. Raw commands use the same
 classification and mutation guard. For IPC, clone result envelopes directly
 and use `encodeP4Error` / `decodeP4Error` for tagged errors.
+
+
+### Project-scoped discovery
+
+Discovery reads local settings in project cwd. It does not apply them. The `p4`
+source includes registry settings on Windows and can reject if the CLI is missing;
+P4V sources silently contribute nothing when their files cannot be read. Applications
+choose their offline fallback. `getEnvironment` is a separate server call.
+
+```ts
+const projectCwd = '/work/project';
+const probe = createP4Client({ cwd: projectCwd });
+try {
+  const resolved = await probe.resolveConnection({ sources: ['p4'] });
+  console.log(resolved.sources); // { port: 'p4', user: 'p4', ... }
+  const connected = probe.with({ connection: resolved.connection });
+  try {
+    const info = await connected.getEnvironment({});
+    const user = resolved.connection.user ?? info.user;
+    if (user === null || user === undefined) throw new Error('Choose a Perforce user.');
+    const owned = await connected.listWorkspaces({ user });
+    const match = await connected.findWorkspaceForPath({ path: projectCwd, user, altRoots: true });
+    if (match.match === null) throw new Error('No workspace contains this project.');
+    if (resolved.connection.port === undefined) throw new Error('Choose a Perforce server.');
+    const project = connected.with({ connection: {
+      ...resolved.connection, user, client: match.match.workspace.client, isolated: true,
+    } });
+    try {
+      console.log(owned.items, await project.listOpenedFiles({}));
+    } finally { await project.dispose(); }
+  } finally { await connected.dispose(); }
+} finally { await probe.dispose(); }
+```
+
+Isolation requires explicit server, user and client; if discovery did not return
+a port, ask the app's user to supply one before creating the isolated client.
+Default workspace listing includes every user; pass `user` for project binding.
+`with` is immutable; persistent active-client switching remains an app action.
+
+### Map opened files safely
+
+Opened `clientFile` can be client syntax. A filesystem consumer must join mappings,
+reject partial failures and handle view exclusions and overlapping mappings.
+
+```ts
+const openedForMapping = await client.listOpenedFiles({});
+if (openedForMapping.items.length > 0) {
+  const mapped = await client.whereFiles({
+    fileSpec: openedForMapping.items.map((file) => {
+      const spec = file.clientFile ?? file.depotFile;
+      if (spec === null) throw new Error('Opened file has no mapping spec.');
+      return spec;
+    }),
+  });
+  if (mapped.failures.length > 0) throw new Error('Incomplete workspace mappings.');
+  const localFiles = openedForMapping.items.map((file) => {
+    const rows = mapped.items.filter((row) => row.depotFile === file.depotFile);
+    const usable = rows.filter((row) => !row.isExcluded && row.localFile !== null);
+    if (rows.some((row) => row.isExcluded) || usable.length !== 1) {
+      throw new Error(`Missing or ambiguous mapping for ${file.depotFile}`);
+    }
+    return { file, localFile: usable[0]!.localFile! };
+  });
+  console.log(localFiles);
+}
+```
+
+### Watch sync with ownership and cancellation
+
+The path arrives in `item`; `progress` carries a nested counter, without an item.
+Item failures can coexist with successful items and must be shown or rejected.
+This example creates and disposes its writable runtime; UI cancellation can call
+`syncAbort.abort(new Error('Cancelled by user'))`.
+
+```ts
+const syncAbort = new AbortController();
+const syncClient = createP4Client({
+  connection: { port: 'ssl:perforce:1666', user: 'alice', client: 'alice_ws', isolated: true },
+  allowMutation: true,
+});
+const syncWatch = syncClient.watch.sync({ fileSpec: '//depot/main/...', signal: syncAbort.signal });
+let latestPath: string | null = null;
+try {
+  for await (const event of syncWatch.events) {
+    if (event._tag === 'item') latestPath = event.item.depotFile;
+    if (event._tag === 'progress') {
+      console.log(latestPath, event.progress.completed, event.progress.total);
+    }
+    if (event._tag === 'failure') console.error(event.failure.spec, event.failure.reason);
+    if (event._tag === 'message') console.log(event.message.text);
+  }
+  const synced = await syncWatch.result;
+  if (synced.failures.length > 0) throw new Error('Sync completed with item failures.');
+} catch (error) {
+  console.error(syncAbort.signal.aborted ? syncAbort.signal.reason : error);
+} finally {
+  syncAbort.abort(new Error('Closing sync view'));
+  await syncWatch.result.catch(() => undefined);
+  await syncClient.dispose();
+}
+```
+
+### Stdin and plain process integration
+
+`runTagged` and its watch accept `input`, useful for large read batches on Windows.
+The guard inspects `-x -` input and rejects option lines on read-only clients.
+Always inspect raw item failures when supplying an item policy. Struct schemas
+return their declared fields; untyped calls retain all raw fields.
+
+```ts
+const specs = ['//depot/main/a', '//depot/main/b'];
+const batchRows = await client.runTagged({
+  args: ['-x', '-', 'diff', '-se'], input: specs.join('\n') + '\n',
+  policy: { no_such_file: 'item', not_in_view: 'item' },
+});
+if (batchRows.failures.length > 0) throw new Error('Incomplete diff evidence.');
+```
+
+Existing process adapters can collect plain stdout without exchanging Effect values:
+
+```ts
+import { runNodeProcessPromise } from 'p4client-ts/node';
+
+const processOutput = await runNodeProcessPromise({
+  executable: 'p4', args: ['-p', 'ssl:perforce:1666', 'info', '-s'],
+  cwd: '/work/project', env: {}, input: undefined,
+}, { signal: new AbortController().signal });
+console.log(processOutput.stdout, processOutput.stderr, processOutput.exitCode);
+```
+
+The process bridge is a low-level executor with no mutation guard or connection
+resolution. Nonzero exits are returned; cancellation/spawn errors reject. It buffers
+UTF-8 stdout/stderr. For binary data, use the library print operations.

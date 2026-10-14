@@ -9,11 +9,19 @@ import { runOperation, watchOperation } from '../engine/operation.js';
 import { ops } from '../ops.js';
 import type { ResolveConnectionOptions, P4ResolvedConnection } from '../node/connection.js';
 import type { P4Workspace } from '../commands/workspaces.js';
+import type {
+  MaterializeDepotFilesOptions, P4MaterializeSpec, P4MaterializeResult, P4MaterializedFile,
+} from '../node/materialize.js';
+import type {
+  ListChangelistsOptions, P4ChangelistStatus, P4ChangelistPage, P4Changelist,
+} from '../commands/changelists.js';
 import type { P4Ops } from '../ops.js';
 import type { TypedTaggedOptions } from '../P4.js';
 import type { P4TaggedResult, RunTaggedOptions } from '../commands/raw.js';
 import type { P4ClientOptions } from '../engine/config.js';
-import type { P4Context, P4Operation, P4OperationEvent, P4Sink, P4WatchOptions } from '../engine/operation.js';
+import type {
+  P4Context, P4Operation, P4OperationEvent, P4Sink, P4WatchOptions,
+} from '../engine/operation.js';
 import type { P4InvalidArgumentError } from '../errors.js';
 
 const nodeOps = { findWorkspaceForPath, materializeDepotFiles };
@@ -59,6 +67,12 @@ export interface P4PromiseTaggedWatchMethod {
 /** Watch methods generated from the operation registry. */
 export type P4PromiseWatch = {
   readonly [K in keyof P4PromiseOps]: K extends 'runTagged' ? P4PromiseTaggedWatchMethod :
+    K extends 'materializeDepotFiles' ? <F extends P4MaterializeSpec>(
+      options: MaterializeDepotFilesOptions<F> & P4PromiseWatchOptions,
+    ) => P4WatchHandle<P4MaterializedFile<F>, P4MaterializeResult<F>> :
+    K extends 'listChangelists' ? <S extends P4ChangelistStatus>(
+      options: ListChangelistsOptions & { readonly status: S } & P4PromiseWatchOptions,
+    ) => P4WatchHandle<P4Changelist<S>, P4ChangelistPage<S>> :
     (options: Parameters<P4PromiseOps[K]['program']>[0] & P4PromiseWatchOptions) => P4WatchHandle<
       Parameters<P4PromiseOps[K]['program']>[1] extends P4Sink<infer I> ? I : never,
       Effect.Success<ReturnType<P4PromiseOps[K]['program']>>
@@ -68,6 +82,12 @@ export type P4PromiseWatch = {
 /** Immutable Promise facade. Each derived client owns its runtime and must be disposed. */
 export type P4PromiseClient = {
   readonly [K in keyof P4PromiseOps]: K extends 'runTagged' ? P4PromiseTaggedMethod :
+    K extends 'materializeDepotFiles' ? <F extends P4MaterializeSpec>(
+      options: MaterializeDepotFilesOptions<F> & P4PromiseOptions,
+    ) => Promise<P4MaterializeResult<F>> :
+    K extends 'listChangelists' ? <S extends P4ChangelistStatus>(
+      options: ListChangelistsOptions & { readonly status: S } & P4PromiseOptions,
+    ) => Promise<P4ChangelistPage<S>> :
     (options: Parameters<P4PromiseOps[K]['program']>[0] & P4PromiseOptions) =>
       Promise<Effect.Success<ReturnType<P4PromiseOps[K]['program']>>>;
 } & {
@@ -124,11 +144,11 @@ export function createP4ClientFromLayer(
   for (const name of Object.keys(promiseOps) as Array<keyof P4PromiseOps>) {
     const nodeOp = nodeOps[name as keyof typeof nodeOps] as P4Operation<unknown, unknown, unknown> | undefined;
     const run = (input: unknown): Effect.Effect<unknown, unknown, P4 | P4Context> => nodeOp === undefined
-      ? Effect.flatMap(P4.asEffect(), (service) => (service[name as keyof P4Ops] as Run)(input))
+      ? Effect.flatMap(P4, (service) => (service[name as keyof P4Ops] as Run)(input))
       : runOperation(nodeOp, input);
     const watch = (input: P4PromiseWatchOptions):
       Stream.Stream<P4OperationEvent<unknown, unknown>, unknown, P4 | P4Context> => nodeOp === undefined
-      ? Stream.unwrap(Effect.map(P4.asEffect(), (service) =>
+      ? Stream.unwrap(Effect.map(P4, (service) =>
         (service.watch[name as keyof P4Ops] as Watch)(input, input)))
       : watchOperation(nodeOp, input, input);
     methods[name] = (input: P4PromiseOptions) => execute(run(input), input.signal);
@@ -204,4 +224,22 @@ export function createP4ClientFromLayer(
 export function createP4Client(options: P4ClientOptions = {}): P4PromiseClient {
   const config = resolveOptions(options);
   return createP4ClientFromLayer(layerNode(config), layerNode, config);
+}
+
+/**
+ * Run a request with a client that is disposed when the callback resolves or rejects.
+ * Clients derived inside the callback retain independent ownership.
+ * @param options Connection and execution configuration.
+ * @param use Request callback; await all client work before returning.
+ * @returns The callback result after releasing the client runtime.
+ */
+export function withP4Client<A>(
+  options: P4ClientOptions,
+  use: (client: P4PromiseClient) => Promise<A>,
+): Promise<A> {
+  return Effect.runPromise(Effect.acquireUseRelease(
+    Effect.sync(() => createP4Client(options)),
+    (client) => Effect.promise(() => use(client)),
+    (client) => Effect.promise(() => client.dispose()),
+  ));
 }

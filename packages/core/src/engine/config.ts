@@ -1,4 +1,4 @@
-import { Effect, Layer, ServiceMap } from 'effect';
+import { Effect, Layer, Context } from 'effect';
 import { P4InvalidArgumentError } from '../errors.js';
 import type { P4Connection } from '../connection/argv.js';
 
@@ -35,7 +35,7 @@ export interface P4ResolvedOptions {
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
 /** The options commands run with. Change them for part of a program with {@link withOptions}. */
-export class P4Config extends ServiceMap.Service<P4Config, P4ResolvedOptions>()('p4client-ts/P4Config') {}
+export class P4Config extends Context.Service<P4Config, P4ResolvedOptions>()('p4client-ts/P4Config') {}
 
 /**
  * Validate a timeout.
@@ -116,7 +116,7 @@ export function configLayer(options: P4ClientOptions = {}): Layer.Layer<P4Config
  */
 export function withOptions(patch: P4ClientOptions) {
   return <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | P4InvalidArgumentError, R | P4Config> =>
-    Effect.flatMap(P4Config.asEffect(), (base) =>
+    Effect.flatMap(P4Config, (base) =>
       Effect.try({
         try: () => mergeOptions(base, patch),
         catch: (error) => error as P4InvalidArgumentError,

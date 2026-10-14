@@ -39,14 +39,14 @@ wire/        pure protocol and message classification, no I/O
   policy.ts     fail | item | empty | notice dispositions
   reasons.ts    reason/category definitions
 exec/
-  executor.ts   ServiceMap.Service P4Executor; run(invocation) streams stdout/stderr bytes and exit
+  executor.ts   Context.Service P4Executor; run(invocation) streams stdout/stderr bytes and exit
   guard.ts      read-only allowlist, including inspection of -x - stdin
 connection/  platform-neutral flags and pure settings parsers
   argv.ts       -p -u -c [-C], program/version flags, redaction
                 isolated mode overrides both P4CONFIG and P4ENVIRO with sentinels
   settings.ts   p4 set and P4V XML parsers and settings merge helpers
 engine/
-  config.ts     ServiceMap.Service P4Config; immutable options, mergeOptions, withOptions
+  config.ts     Context.Service P4Config; immutable options, mergeOptions, withOptions
   command.ts    P4CommandSpec<A> { args, format: json | marshal, decode, input?, globalArgs?, policy? }
                 streamCommand emits data/message/failure; runCommand collects that stream
                 runPlainCommand returns bytes, with an optional exit acceptance rule
@@ -60,8 +60,8 @@ commands/    typed operation families; multi-command operations compose Effects
   describe.ts, files.ts, history.ts, print.ts, diff.ts, diff-text.ts, annotate.ts,
   users.ts, streams.ts, sync.ts, reconcile.ts, raw.ts, shared.ts
 ops.ts        neutral operation registry; P4 service and neutral Promise methods derive from it
-P4.ts         ServiceMap.Service P4; P4.layer, P4.with(patch), P4.layerTest
-errors.ts     Schema.TaggedErrorClass domain errors and P4ErrorSchema;
+P4.ts         Context.Service P4; P4.layer, P4.with(patch), P4.layerTest
+errors.ts     Schema.TaggedError domain errors and P4ErrorSchema;
               encodeP4Error/decodeP4Error for IPC
 schemas.ts    brand schemas and P4DepotPath/P4ClientPath/P4LocalPath/P4FileAction.make constructors
 node/
@@ -95,7 +95,7 @@ match multiple files via wildcards.
 ### Package exports (`packages/core/package.json`)
 - `.` is platform-neutral. It must not import `node:child_process`, so Electron renderers can import types, schemas and the error codec.
 - `./node`, `./promise`, `./testing`.
-- `effect` becomes a `peerDependency` (`^4.0.0-beta.37`), plus an exact devDependency.
+- `effect` becomes a `peerDependency` (`^4.0.0`), plus an exact devDependency.
 
 ### Shape conventions
 - Every op takes one options object. No positional `change`/`depotFile` args.
@@ -638,4 +638,154 @@ Verification:
   284 pages built. The existing missing-404 content notice remains nonfatal.
 - `bun run clean` followed by `bun run build`: passes.
 - `bun run pack:core`: passes; **209 files**, all eight runtime/declaration entry files included.
+- `git diff --check`: passes.
+
+
+### Phase 7 consumer-feedback handoff (2026-10-14)
+
+Read both consumer trial reports in electroswag and ue-shed. Changes are confined
+to this library repository; no app files were modified and nothing was committed,
+pushed, published or deployed.
+
+Implemented:
+
+- Effect development dependency is stable **4.0.4**, peer **^4.0.0**, with lockfile,
+  CLAUDE.md, installation recipes and native examples updated. Services use
+  `Context.Service`, direct service yielding and `Schema.TaggedError`.
+- Code-less EV_EMPTY (generic 17) messages are refined using specific diagnostic
+  text. File subjects are recovered without fmt0, retaining missing-file specs
+  through JSON files/fstat and marshal batch print. Unique catalog codes retain
+  precedence. The golden reason changes are limited to two synthetic-stderr rows.
+- Materialization stages each print, verifies its output is a regular file and
+  then replaces the destination. Deleted revisions that print nothing fail with
+  `P4MaterializationError` / `missing_output`; existing destinations survive that
+  failure. Staging directories are scoped for cleanup. Metadata is preserved
+  generically through Promise, native operation and watched types.
+- Tagged operations, including watches, accept stdin. The existing read-only
+  guard inspects `-x -` input, including option injection and mutating subcommands.
+- `/node` adds `runNodeProcessPromise`, collecting UTF-8 stdout/stderr and nullable
+  exitCode with abort/process cleanup. It is an unguarded low-level executor;
+  apps supply connection flags and apply their integration policy.
+- Submitted/shelved changelist calls preserve numeric changes in Promise and
+  native service/runner/watch types. Pending and union-status calls retain default.
+- `/promise` adds `withP4Client(options, use)` for disposal on callback success or
+  rejection; independently derived clients still need their own disposal.
+- MIGRATION.md now covers 0.11/0.12 symbols, types/fields, source provenance,
+  explicit project binding, error construction/categories, defaults, lifecycle,
+  partial results and mixed-Effect boundaries. Guides include typechecked project
+  discovery, opened mapping, complete sync-watch cancellation/ownership, stdin,
+  plain process and Promise replay recipes. Stable Schema inherited TypeDoc links
+  resolve through explicit upstream mappings; warnings remain errors.
+
+New API feedback encountered:
+
+1. Stable Schema no longer accepts `onExcessProperty: 'preserve'`. A supplied
+   Struct schema returns declared fields; untyped runTagged retains raw records.
+   This is documented. Consumers needing extra fields must declare them or use
+   a record/rest schema rather than relying on beta decoder behavior.
+2. Opened `clientFile` and `depotFile` can both be null. The mapping recipe checks
+   for a usable spec before calling whereFiles and rejects absent/ambiguous or
+   excluded mappings. It does not claim every opened row has a local path.
+3. Category recovery must inspect reason too: `unknown_client`/`unknown_user`
+   classify as `not_found`, while server configuration/charset diagnostics use
+   `configuration`. The migration table describes the actual categories rather
+   than treating all old client/user failures identically.
+4. Materialization remains a nontransactional batch. Earlier files can be written
+   when another revision fails. Staging prevents false success and preserves the
+   failing file's prior destination; it does not roll back other successful files.
+5. Generic result guarantees needed specialization at service, Promise and native
+   runner boundaries: extracting only Parameters/ReturnType from the registry loses
+   input/result correlation. Compile-time tests now cover those boundaries.
+
+Not done: persistent p4 set switching, app repo edits or app trial reinstallation,
+consumer beta upgrades, downloader hash-pin changes, release, commit or push.
+The library does not bundle a private Effect runtime; beta consumers must upgrade
+or isolate a supported stable installation behind plain Promise values. Repeat
+consumer validation against a fresh stable tarball before release.
+
+Verification:
+
+- `bun run typecheck`: passes, including native/Promise generic type assertions
+  and all published guide snippets. Seven existing advisory JSON diagnostics remain.
+- `bun run test`: **496 pass**, 31 files. Includes exact code-less JSON and
+  chunked marshal reproductions, stdin guard checks, process bridge and scoped disposal.
+- `bun run test:e2e`: **26 pass**, 10 files on the isolated localhost fixture;
+  missing paths and deleted revisions tested live; server/workspace cleanup succeeds.
+- `bun run docs:check`: passes, zero TypeDoc warnings and zero Astro
+  errors/warnings/hints; 289 pages. Existing missing-404 content notice is nonfatal.
+- `bun run build`: passes.
+- `bun run pack:core`: passes, 209 files, all eight declared runtime/declaration
+  entry files included.
+- `git diff --check`: passes.
+
+
+### Phase 7 consumer-feedback handoff (2026-10-14)
+
+Read both trial reports in electroswag and ue-shed. Changes are confined to this
+library repository; app files were not modified. Nothing was committed, pushed,
+published or deployed.
+
+Implemented:
+
+- Stable Effect **4.0.4**, peer **^4.0.0**, lockfile and CLAUDE.md updated.
+  Services use `Context.Service`, direct yielding and `Schema.TaggedError`.
+- Code-less EV_EMPTY (17) diagnostics are refined by specific text; path subjects
+  survive absent fmt0. JSON files/fstat and marshal print failures retain specs.
+  Unique catalog codes keep precedence. Golden changes affect two synthetic rows.
+- Materialization stages print output, verifies a regular file, then replaces the
+  destination. Deleted revisions fail with `P4MaterializationError` / `missing_output`;
+  prior destinations survive that failure. Scoped staging cleanup and generic
+  metadata retention apply to Promise, native operation and watched results.
+- Tagged commands and watches accept stdin; the existing guard inspects `-x -`
+  arguments, rejecting option injection and mutating commands on read-only clients.
+- `/node` adds `runNodeProcessPromise`: UTF-8 stdout/stderr, nullable exitCode,
+  stdin, abort and child cleanup. This low-level executor has no P4 guard or
+  connection resolution; apps own flags and policy at that boundary.
+- Submitted/shelved list calls preserve numeric change types in Promise,
+  native service/runner and watched results. Pending/union calls admit default.
+- `/promise` adds `withP4Client(options, use)` to dispose on callback resolution
+  or rejection. Derived clients retain independent ownership.
+- MIGRATION.md now covers 0.11/0.12 exports/types/fields, settings provenance,
+  project binding, errors/categories, defaults, lifecycle, partial failures and
+  mixed-Effect limits. Guides contain typechecked discovery, mapping, sync-watch
+  cancellation/disposal, stdin, process and complete Promise replay recipes.
+- Stable Schema inherited TypeDoc links use explicit upstream mappings;
+  warnings remain errors in both documentation configurations.
+
+New API feedback encountered:
+
+1. Stable Schema removes `onExcessProperty: 'preserve'`. Struct decoders return
+   declared fields; untyped runTagged retains raw records. Consumers needing
+   extras must declare them or use a record/rest schema. This is documented.
+2. Opened clientFile and depotFile can both be null. Mapping recipes must check
+   for a usable spec, then reject absent, ambiguous or excluded local mappings.
+3. Recovery must inspect reason as well as category: unknown_client/unknown_user
+   use not_found; server_config/charset use configuration. The migration map
+   describes actual behavior rather than collapsing all missing names into config.
+4. Materialization remains nontransactional: earlier files can be written when
+   another fails. Staging preserves the failing file's old destination, but does
+   not roll back other successes. No item/progress reports absent output.
+5. Registry Parameters/ReturnType extraction loses generic input/result
+   correlation. Service, Promise and native runner types now specialize these
+   guarantees, with compile-time assertions at each boundary.
+
+Not done: persistent p4 set switching, app edits or trial reinstallation,
+consumer beta upgrades, downloader pin changes, release, commit or push.
+No private Effect runtime is bundled. Beta consumers must upgrade or isolate
+stable Effect behind plain Promise values and avoid crossing incompatible schemas
+or layers. Repeat consumer validation using a fresh stable tarball before release.
+
+Verification:
+
+- `bun run typecheck`: passes, including generic assertions and published guide
+  snippets; seven existing advisory JSON diagnostics remain.
+- `bun run test`: **496 pass**, 31 files; exact code-less JSON/chunked marshal
+  reproductions, stdin guard, plain process bridge and scoped disposal covered.
+- `bun run test:e2e`: **26 pass**, 10 files, disposable localhost server;
+  mixed missing paths and deleted revisions tested live; cleanup succeeds.
+- `bun run docs:check`: passes, zero TypeDoc warnings and zero Astro
+  errors/warnings/hints; **289 pages**. Existing missing-404 notice remains nonfatal.
+- `bun run build`: passes.
+- `bun run pack:core`: passes, **209 files**, all eight runtime/declaration entries.
+- Built root, /node, /promise and /testing load under Node; scoped callback works.
 - `git diff --check`: passes.

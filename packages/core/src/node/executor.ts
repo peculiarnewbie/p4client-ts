@@ -103,3 +103,43 @@ export function runNodeProcess(invocation: P4Invocation): Stream.Stream<P4Proces
 
 /** Runs `p4` with Node's `child_process`. */
 export const NodeP4Executor: Layer.Layer<P4Executor> = Layer.succeed(P4Executor, { run: runNodeProcess });
+
+/** Plain UTF-8 output from the Promise process bridge. */
+export interface P4ProcessResult {
+  readonly stdout: string;
+  readonly stderr: string;
+  /** Null when the process terminates by signal. */
+  readonly exitCode: number | null;
+}
+
+/**
+ * Collect a process without tagged parsing or a client runtime. This low-level
+ * executor does not apply the P4 mutation guard or connection configuration.
+ * @param invocation Complete executable, arguments, environment, cwd and stdin.
+ * @param options Abort signal; cancellation kills and joins the child before rejecting.
+ * @returns UTF-8 stdout/stderr and exitCode, including nonzero exits.
+ * @throws {P4SpawnError} When launching or reading the process fails.
+ */
+export function runNodeProcessPromise(
+  invocation: P4Invocation,
+  options: { readonly signal?: AbortSignal | undefined } = {},
+): Promise<P4ProcessResult> {
+  const output = Effect.gen(function* () {
+    const stdout: Uint8Array[] = [];
+    const stderr: Uint8Array[] = [];
+    let exitCode: number | null = null;
+    yield* runNodeProcess(invocation).pipe(Stream.runForEach((event) => Effect.sync(() => {
+      if (event._tag === 'stdout') stdout.push(event.bytes);
+      else if (event._tag === 'stderr') stderr.push(event.bytes);
+      else exitCode = event.code;
+    })));
+    return {
+      stdout: Buffer.concat(stdout).toString('utf8'),
+      stderr: Buffer.concat(stderr).toString('utf8'),
+      exitCode,
+    };
+  });
+  return Effect.runPromise(output, options).catch((error: unknown) => {
+    throw options.signal?.aborted ? options.signal.reason : error;
+  });
+}

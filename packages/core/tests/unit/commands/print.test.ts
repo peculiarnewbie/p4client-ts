@@ -175,3 +175,28 @@ describe('print output formats', () => {
     expect([output.messages.map((message) => message.reason), output.failures]).toEqual([['no_such_file'], []]);
   });
 });
+
+it('associates code-less marshal missing-file warnings with the requested spec', async () => {
+  const file = '//p4ts/main/wire/text.txt';
+  const missing = '//p4ts/main/__missing__.txt#3';
+  const marshalString = (value: string): Buffer => {
+    const bytes = Buffer.from(value, 'utf8');
+    const prefix = Buffer.alloc(5);
+    prefix[0] = 's'.charCodeAt(0);
+    prefix.writeInt32LE(bytes.length, 1);
+    return Buffer.concat([prefix, bytes]);
+  };
+  const message = Buffer.concat([
+    Buffer.from('{'),
+    ...Object.entries({ code: 'error', data: `${missing} - no such file(s).\n`, generic: '17', severity: '2' })
+      .flatMap(([key, value]) => [marshalString(key), marshalString(value)]),
+    Buffer.from('0'),
+  ]);
+  const valid = Buffer.from(fixtures('print-marshal-text')[0]!.stdoutBase64!, 'base64');
+  const result = await run(printBatch, { fileSpec: [file, missing] }, scriptedExecutor(() => ({
+    stdout: Buffer.concat([valid, message]),
+  }), { chunkSize: 3 }));
+  expect(result.items).toHaveLength(1);
+  expect(result.failures[0]).toMatchObject({ spec: missing, reason: 'no_such_file' });
+  expect(result.messages).toEqual([]);
+});

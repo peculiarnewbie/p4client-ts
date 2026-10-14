@@ -43,6 +43,14 @@ export default defineConfig({
           typeDoc: {
             hideGenerator: true,
             treatWarningsAsErrors: true,
+            externalSymbolLinkMappings: {
+              effect: {
+                "BottomWithoutNew.make": "https://effect.website/docs/v4/api/effect/Schema",
+                "BottomWithoutNew.makeOption": "https://effect.website/docs/v4/api/effect/Schema",
+                "BottomWithoutNew.makeEffect": "https://effect.website/docs/v4/api/effect/Schema",
+                withConstructorDefault: "https://effect.website/docs/v4/api/effect/Schema"
+              }
+            },
             readme: "none",
             sort: ["source-order"]
           }

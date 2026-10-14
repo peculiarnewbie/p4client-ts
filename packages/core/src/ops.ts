@@ -22,6 +22,7 @@ import { getStream, listStreams } from './commands/streams.js';
 import { previewSync, sync } from './commands/sync.js';
 import { listUsers } from './commands/users.js';
 import { listWorkspaces } from './commands/workspaces.js';
+import type { ListChangelistsOptions } from './commands/changelists.js';
 import type { Effect } from 'effect';
 import type { P4Sink } from './engine/operation.js';
 
@@ -66,7 +67,7 @@ export const ops = {
 export type P4Ops = typeof ops;
 
 /** Options of an operation in the registry. */
-export type OpOptions<K extends keyof P4Ops> = Parameters<P4Ops[K]['program']>[0];
+export type OpOptions<K extends keyof P4Ops> = K extends 'listChangelists' ? ListChangelistsOptions : Parameters<P4Ops[K]['program']>[0];
 
 /** Items an operation in the registry reports while it runs. */
 export type OpItem<K extends keyof P4Ops> = Parameters<P4Ops[K]['program']>[1] extends P4Sink<infer I> ? I : never;

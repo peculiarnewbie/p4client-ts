@@ -1,4 +1,4 @@
-import { ServiceMap } from 'effect';
+import { Context } from 'effect';
 import type { Stream } from 'effect';
 import type { P4SpawnError } from '../errors.js';
 
@@ -35,6 +35,6 @@ export type P4ProcessEvent =
  * The Node implementation is `NodeP4Executor` in `p4client-ts/node`; tests can
  * provide a replay from `p4client-ts/testing`.
  */
-export class P4Executor extends ServiceMap.Service<P4Executor, {
+export class P4Executor extends Context.Service<P4Executor, {
   readonly run: (invocation: P4Invocation) => Stream.Stream<P4ProcessEvent, P4SpawnError>;
 }>()('p4client-ts/P4Executor') {}

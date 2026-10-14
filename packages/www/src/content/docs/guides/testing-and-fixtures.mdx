@@ -14,7 +14,7 @@ import { P4 } from 'p4client-ts';
 import { layerTest } from 'p4client-ts/testing';
 
 const program = Effect.gen(function* () {
-  const p4 = yield* P4.asEffect();
+  const p4 = yield* P4;
   return yield* p4.listOpenedFiles({});
 });
 const result = await Effect.runPromise(program.pipe(Effect.provide(layerTest({
@@ -77,3 +77,41 @@ To refresh wire captures, run `bun run wire:capture`, then
 `bun run --cwd packages/core wire:reasons`. Review the golden reason diff.
 Every capture must be referenced by a test; the evidence-only allowlist may
 only shrink. Chunk-split tests cover both JSON and Python marshal input.
+
+
+### Complete Promise replay client
+
+Build `derive` from the same library-compatible Effect installation; it must expose
+config and executor for Node helpers. A frozen facade has no prototype to patch.
+A consumer that uses an incompatible Effect version can test its own client-factory
+boundary, or keep this replay inside an isolated stable-Effect adapter.
+
+```ts
+import { createP4ClientFromLayer } from 'p4client-ts/promise';
+import type { P4ClientOptions } from 'p4client-ts';
+
+const derive = (options: P4ClientOptions) => P4.layer.pipe(Layer.provideMerge(Layer.merge(
+  configLayer(options), replayExecutor([fixture]),
+)));
+const promiseClient = createP4ClientFromLayer(derive({}), derive);
+try {
+  const replayedOpened = await promiseClient.listOpenedFiles({});
+  console.log(replayedOpened.items, replayedOpened.messages);
+} finally { await promiseClient.dispose(); }
+```
+
+Each derived client owns a runtime too. For request scope, `withP4Client` disposes
+on both success and rejection:
+
+```ts
+import { withP4Client } from 'p4client-ts/promise';
+
+const scopedOpened = await withP4Client({
+  connection: { port: 'ssl:perforce:1666', user: 'alice', client: 'alice_ws' },
+}, (scoped) => scoped.listOpenedFiles({}));
+```
+
+The callback owns clients it derives with `with`; dispose those separately. An app
+Effect adapter can use acquire/release around the Promise client and forward its
+interruption through AbortSignal. Do not pass incompatible app schemas or layers
+through this boundary; validate untyped `runTagged` rows on the app side instead.

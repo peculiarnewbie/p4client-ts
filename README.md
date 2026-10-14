@@ -5,7 +5,7 @@ Promise facade. Requires Node >=18, a local `p4` executable for live commands,
 and the Effect peer dependency.
 
 ```sh
-bun add p4client-ts effect@4.0.0-beta.37
+bun add p4client-ts effect@4.0.4
 ```
 
 ```ts

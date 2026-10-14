@@ -15,6 +15,8 @@ export interface RunTaggedOptions {
    * `-Mj -z tag` and the connection's global options are added.
    */
   readonly args: readonly string[];
+  /** Stdin text; `-x -` file arguments are inspected by the mutation guard. */
+  readonly input?: string | undefined;
   /**
    * Schema each data record must satisfy. Without one, records are returned
    * as received. A record that does not satisfy it fails with `P4ParseError`.
@@ -40,6 +42,8 @@ export interface TaggedCommandOptions {
    * `-Mj -z tag` and the connection's global options are added.
    */
   readonly args: readonly string[];
+  /** Stdin text; `-x -` file arguments are inspected by the mutation guard. */
+  readonly input?: string | undefined;
   /** What to do with each message, by reason, beyond the default policy. */
   readonly policy?: P4MessagePolicy | undefined;
 }
@@ -53,6 +57,7 @@ function taggedProgram<A>(
       if (options.args.length === 0) return yield* invalid('args', 'args must name a command.');
       const output = yield* drain(sink, streamCommand<A>({
         args: options.args,
+        input: options.input,
         format: 'json',
         policy: options.policy,
         decode,

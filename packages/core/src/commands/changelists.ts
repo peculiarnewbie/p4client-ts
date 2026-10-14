@@ -12,6 +12,8 @@ import {
   specList,
   text,
 } from './shared.js';
+import type { P4Operation, P4Context, P4Sink } from '../engine/operation.js';
+import type { P4Error } from '../errors.js';
 import type { P4Message } from '../wire/message.js';
 import type { FileSpecs, Row } from './shared.js';
 
@@ -46,9 +48,9 @@ export interface ListChangelistsOptions {
 }
 
 /** A changelist as `p4 changes -l` lists it. */
-export interface P4Changelist {
-  readonly change: number | 'default';
-  readonly status: P4ChangelistStatus;
+export interface P4Changelist<S extends P4ChangelistStatus = P4ChangelistStatus> {
+  readonly change: S extends 'pending' ? number | 'default' : number;
+  readonly status: S;
   readonly user: string | null;
   readonly client: string | null;
   /** The full description. */
@@ -59,13 +61,21 @@ export interface P4Changelist {
 }
 
 /** One page of changelists, newest first. */
-export interface P4ChangelistPage {
-  readonly items: P4Changelist[];
+export interface P4ChangelistPage<S extends P4ChangelistStatus = P4ChangelistStatus> {
+  readonly items: P4Changelist<S>[];
   readonly messages: P4Message[];
   /** Whether older changelists remain. */
   readonly hasMore: boolean;
   /** Inclusive bound for the next page (last numbered change minus one), or `null`. */
   readonly nextCursor: number | null;
+}
+
+/** Changelist operation preserving the requested status in native programs. */
+export interface P4ChangelistOperation extends Omit<P4Operation<ListChangelistsOptions, P4Changelist, P4ChangelistPage>, 'name' | 'program'> {
+  readonly name: 'listChangelists';
+  readonly program: <S extends P4ChangelistStatus>(
+    options: ListChangelistsOptions & { readonly status: S }, sink: P4Sink<P4Changelist<S>>,
+  ) => Effect.Effect<P4ChangelistPage<S>, P4Error, P4Context>;
 }
 
 const DEFAULT_LIMIT = 50;
@@ -154,4 +164,4 @@ export const listChangelists = operation<ListChangelistsOptions, P4Changelist, P
       hasMore,
       nextCursor: hasMore && oldest !== null ? oldest - 1 : null,
     };
-  }), 'changes');
+  }), 'changes') as P4ChangelistOperation;

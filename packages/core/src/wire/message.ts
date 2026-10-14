@@ -1,6 +1,6 @@
 import { Schema } from 'effect';
 import { GENERIC_REASONS, catalogReason, decodeMessageCode } from './catalog.js';
-import { textReason, textSeverity } from './fallback.js';
+import { textReason, textSeverity, textSubject } from './fallback.js';
 import {
   P4CategorySchema,
   P4ReasonSchema,
@@ -99,6 +99,10 @@ function resolveReason(
   const cataloged = code === null ? null : catalogReason(code, args);
   if (cataloged !== null) return { reason: cataloged, reasonSource: 'code' };
   const fromGeneric = generic === null ? undefined : GENERIC_REASONS.get(generic);
+  if (code === null && fromGeneric === 'empty') {
+    const specific = textReason(text);
+    if (specific !== 'unknown') return { reason: specific, reasonSource: 'text' };
+  }
   if (fromGeneric !== undefined) return { reason: fromGeneric, reasonSource: 'generic' };
   return { reason: textReason(text), reasonSource: 'text' };
 }
@@ -128,7 +132,7 @@ export function toMessage(fields: Readonly<Record<string, unknown>>): P4Message 
   const code = code0 === null ? null : decodeMessageCode(code0);
   const text = String(fields.data ?? '').trimEnd();
   const template = typeof fields.fmt0 === 'string' ? fields.fmt0 : null;
-  const args = template === null ? {} : matchPrimaryPart(template, text);
+  const args = template === null ? textSubject(text) : matchPrimaryPart(template, text);
   const generic = numberField(fields.generic) ?? code?.generic ?? null;
   const { reason, reasonSource } = resolveReason(code, generic, args, text);
   const severity = severityName(numericSeverity(fields, code));
@@ -167,7 +171,7 @@ export function textMessage(text: string, exitCode: number): P4Message {
     category: categoryOf(reason),
     code: null,
     template: null,
-    args: {},
+    args: textSubject(trimmed),
     reasonSource: 'text',
     disposition: dispose({ reason, severity, code: null }),
     raw: { data: trimmed },

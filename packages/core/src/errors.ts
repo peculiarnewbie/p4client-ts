@@ -9,7 +9,7 @@ import { P4CategorySchema, P4ReasonSchema } from './wire/reasons.js';
  * `reason` and `category` describe the first failing message. `messages` holds
  * every message the command produced, in order.
  */
-export class P4CommandError extends Schema.TaggedErrorClass<P4CommandError>()('P4CommandError', {
+export class P4CommandError extends Schema.TaggedError<P4CommandError>()('P4CommandError', {
   message: Schema.String,
   reason: P4ReasonSchema,
   category: P4CategorySchema,
@@ -24,7 +24,7 @@ export class P4CommandError extends Schema.TaggedErrorClass<P4CommandError>()('P
 }) {}
 
 /** A `p4` process exceeded its timeout and was killed. */
-export class P4TimeoutError extends Schema.TaggedErrorClass<P4TimeoutError>()('P4TimeoutError', {
+export class P4TimeoutError extends Schema.TaggedError<P4TimeoutError>()('P4TimeoutError', {
   message: Schema.String,
   command: Schema.String,
   args: Schema.Array(Schema.String),
@@ -35,7 +35,7 @@ export class P4TimeoutError extends Schema.TaggedErrorClass<P4TimeoutError>()('P
 }) {}
 
 /** Perforce output did not have the expected shape. */
-export class P4ParseError extends Schema.TaggedErrorClass<P4ParseError>()('P4ParseError', {
+export class P4ParseError extends Schema.TaggedError<P4ParseError>()('P4ParseError', {
   message: Schema.String,
   /** The offending output, as text, truncated to 4 KiB. */
   line: Schema.String,
@@ -46,7 +46,7 @@ export class P4ParseError extends Schema.TaggedErrorClass<P4ParseError>()('P4Par
 }) {}
 
 /** The `p4` executable could not be started, or its pipes failed. */
-export class P4SpawnError extends Schema.TaggedErrorClass<P4SpawnError>()('P4SpawnError', {
+export class P4SpawnError extends Schema.TaggedError<P4SpawnError>()('P4SpawnError', {
   message: Schema.String,
   command: Schema.String,
   args: Schema.Array(Schema.String),
@@ -55,14 +55,14 @@ export class P4SpawnError extends Schema.TaggedErrorClass<P4SpawnError>()('P4Spa
 }) {}
 
 /** A command that changes the workspace or server was refused because mutation is not allowed. */
-export class P4ReadOnlyError extends Schema.TaggedErrorClass<P4ReadOnlyError>()('P4ReadOnlyError', {
+export class P4ReadOnlyError extends Schema.TaggedError<P4ReadOnlyError>()('P4ReadOnlyError', {
   message: Schema.String,
   command: Schema.String,
   args: Schema.Array(Schema.String),
 }) {}
 
 /** An option passed by the caller is invalid; no command was run. */
-export class P4InvalidArgumentError extends Schema.TaggedErrorClass<P4InvalidArgumentError>()(
+export class P4InvalidArgumentError extends Schema.TaggedError<P4InvalidArgumentError>()(
   'P4InvalidArgumentError',
   {
     message: Schema.String,
@@ -72,11 +72,11 @@ export class P4InvalidArgumentError extends Schema.TaggedErrorClass<P4InvalidArg
 ) {}
 
 /** Depot files could not be written safely to the requested destination. */
-export class P4MaterializationError extends Schema.TaggedErrorClass<P4MaterializationError>()(
+export class P4MaterializationError extends Schema.TaggedError<P4MaterializationError>()(
   'P4MaterializationError',
   {
     message: Schema.String,
-    reason: Schema.Literals(['limit_exceeded', 'invalid_depot_path', 'invalid_destination']),
+    reason: Schema.Literals(['limit_exceeded', 'invalid_depot_path', 'invalid_destination', 'missing_output']),
     /** The depot or local path concerned, when there is one. */
     path: Schema.NullOr(Schema.String),
   },

@@ -80,3 +80,13 @@ const NOTICE_REASONS = new Set<P4Reason>([
 export function textSeverity(reason: P4Reason, exitCode: number): number {
   return NOTICE_REASONS.has(reason) || exitCode === 0 ? 2 : 3;
 }
+
+/**
+ * Recover a path subject from a diagnostic without a format template.
+ * @param text Formatted diagnostic text.
+ * @returns The path as `file`, or an empty record when absent.
+ */
+export function textSubject(text: string): Readonly<Record<string, string>> {
+  const match = /^(?<file>(?:\/\/|[A-Za-z]:[\\/]|\/)[^\r\n]*?) - /.exec(text);
+  return match?.groups?.file === undefined ? {} : { file: match.groups.file };
+}

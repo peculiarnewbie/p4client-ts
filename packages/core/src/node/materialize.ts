@@ -1,12 +1,14 @@
 import { Effect, Schema } from 'effect';
-import { mkdir, stat } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { mkdir, mkdtemp, rename, rm, stat } from 'node:fs/promises';
+import { dirname, isAbsolute, relative, resolve, sep, join } from 'node:path';
 import { runPlainCommand } from '../engine/command.js';
 import { P4Config } from '../engine/config.js';
 import { operation, progressCounter } from '../engine/operation.js';
 import { P4MaterializationError } from '../errors.js';
 import { P4LocalPathSchema } from '../schemas.js';
 import { requirePositive } from '../commands/shared.js';
+import type { P4Operation, P4Sink, P4Context } from '../engine/operation.js';
+import type { P4Error } from '../errors.js';
 import type { P4KeywordMode } from '../commands/print.js';
 import type { P4LocalPath } from '../schemas.js';
 import type { P4Message } from '../wire/message.js';
@@ -21,9 +23,9 @@ export interface P4MaterializeSpec {
 }
 
 /** Options for {@link materializeDepotFiles}. */
-export interface MaterializeDepotFilesOptions {
+export interface MaterializeDepotFilesOptions<F extends P4MaterializeSpec = P4MaterializeSpec> {
   /** Exact revisions, for example from a history or `files` listing. */
-  readonly fileSpec: readonly P4MaterializeSpec[];
+  readonly fileSpec: readonly F[];
   /** Existing directory that receives the files, relative to the client's `cwd`. */
   readonly directory: string;
   /** Refuse to write more files than this. */
@@ -35,20 +37,28 @@ export interface MaterializeDepotFilesOptions {
 }
 
 /** One revision written to disk. */
-export interface P4MaterializedFile {
+export interface P4MaterializedFile<F extends P4MaterializeSpec = P4MaterializeSpec> {
   /** The requested revision, as given. */
-  readonly file: P4MaterializeSpec;
+  readonly file: F;
   /** Where it was written, beneath the directory. */
   readonly localPath: P4LocalPath;
 }
 
 /** Every revision written by {@link materializeDepotFiles}. */
-export interface P4MaterializeResult {
+export interface P4MaterializeResult<F extends P4MaterializeSpec = P4MaterializeSpec> {
   /** The resolved destination directory. */
   readonly directory: P4LocalPath;
   /** Written files, in the order requested. */
-  readonly items: P4MaterializedFile[];
+  readonly items: P4MaterializedFile<F>[];
   readonly messages: P4Message[];
+}
+
+/** Materialization operation preserving caller metadata in native programs. */
+export interface P4MaterializeOperation extends Omit<P4Operation<MaterializeDepotFilesOptions, P4MaterializedFile, P4MaterializeResult>, 'name' | 'program'> {
+  readonly name: 'materializeDepotFiles';
+  readonly program: <F extends P4MaterializeSpec>(
+    options: MaterializeDepotFilesOptions<F>, sink: P4Sink<P4MaterializedFile<F>>,
+  ) => Effect.Effect<P4MaterializeResult<F>, P4Error, P4Context>;
 }
 
 /** Any problem with a revision fails the whole call, as it did before. */
@@ -132,13 +142,15 @@ function destinationError(path: string): P4MaterializationError {
  *
  * Files land at `<directory>/<depot>/<path…>`. Nothing is synced and the
  * workspace is untouched. A revision that does not exist fails the call
- * with `P4CommandError`; a deleted revision prints nothing and is not detected.
+ * with `P4CommandError`; a deleted revision fails with `P4MaterializationError`
+ * (`missing_output`). Existing destination files are replaced only after a
+ * successful print to a temporary file and verification of its output.
  *
  * Progress counts files written against the number requested.
  *
  * @returns The destination directory and each file's local path.
  * @throws {P4MaterializationError} When the file count exceeds `maxFiles`, a
- * depot path is invalid or two resolve to one output path, or the directory is unusable.
+ * depot path is invalid or two resolve to one output path, the directory is unusable, or print produces no file.
  * @throws {P4InvalidArgumentError} When `maxFiles`, `concurrency` or a revision is not a positive integer.
  */
 export const materializeDepotFiles = operation<
@@ -157,7 +169,7 @@ export const materializeDepotFiles = operation<
       });
     }
     for (const file of options.fileSpec) yield* requirePositive(file.revision, 'revision');
-    const config = yield* P4Config.asEffect();
+    const config = yield* P4Config;
     const directory = resolve(config.cwd ?? process.cwd(), options.directory);
     const info = yield* Effect.tryPromise({ try: () => stat(directory), catch: () => destinationError(directory) });
     if (!info.isDirectory()) return yield* destinationError(directory);
@@ -166,14 +178,33 @@ export const materializeDepotFiles = operation<
     const keywordArgs = (options.keywords ?? 'raw') === 'raw' ? ['-k'] : [];
     const counter = progressCounter(sink, 'files', plans.length);
     const messages: P4Message[] = [];
-    const items = yield* Effect.forEach(plans, (plan) => Effect.gen(function* () {
+    const items = yield* Effect.scoped(Effect.forEach(plans, (plan) => Effect.gen(function* () {
       yield* Effect.tryPromise({
         try: () => mkdir(dirname(plan.outputPath), { recursive: true }),
         catch: () => destinationError(dirname(plan.outputPath)),
       });
+      const temporary = yield* Effect.acquireRelease(
+        Effect.tryPromise({
+          try: () => mkdtemp(join(dirname(plan.outputPath), '.p4-materialize-')),
+          catch: () => destinationError(dirname(plan.outputPath)),
+        }),
+        (path) => Effect.promise(() => rm(path, { recursive: true, force: true })),
+      );
+      const stagingPath = join(temporary, 'content');
       const output = yield* runPlainCommand({
-        args: ['print', '-q', ...keywordArgs, '-o', plan.outputPath, `${plan.file.depotFile}#${plan.file.revision}`],
+        args: ['print', '-q', ...keywordArgs, '-o', stagingPath, `${plan.file.depotFile}#${plan.file.revision}`],
         policy: POLICY,
+      });
+      const missingOutput = () => new P4MaterializationError({
+        message: `Print produced no file for ${plan.file.depotFile}#${plan.file.revision}.`,
+        reason: 'missing_output',
+        path: `${plan.file.depotFile}#${plan.file.revision}`,
+      });
+      const written = yield* Effect.tryPromise({ try: () => stat(stagingPath), catch: missingOutput });
+      if (!written.isFile()) return yield* missingOutput();
+      yield* Effect.tryPromise({
+        try: () => rename(stagingPath, plan.outputPath),
+        catch: () => destinationError(plan.outputPath),
       });
       messages.push(...output.messages);
       for (const message of output.messages) yield* sink.message(message);
@@ -181,7 +212,7 @@ export const materializeDepotFiles = operation<
       yield* sink.item(item);
       yield* counter.advance(1);
       return item;
-    }), { concurrency });
+    }), { concurrency }));
 
     return { directory: toLocalPath(directory), items, messages };
-  }), 'files');
+  }), 'files') as P4MaterializeOperation;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Effect, Exit, Stream } from 'effect';
 import { P4SpawnError } from '../../../src/errors.js';
-import { runNodeProcess } from '../../../src/node/executor.js';
+import { runNodeProcess, runNodeProcessPromise } from '../../../src/node/executor.js';
 import type { P4Invocation, P4ProcessEvent } from '../../../src/exec/executor.js';
 
 const node = (script: string, extra: Partial<P4Invocation> = {}): P4Invocation => ({
@@ -111,5 +111,25 @@ describe('NodeP4Executor', () => {
     expect(Exit.isFailure(exit)).toBe(true);
     expect(pid).toBeGreaterThan(0);
     expect(isAlive(pid)).toBe(false);
+  });
+});
+
+describe('Promise process bridge', () => {
+  it('collects stdin, both output pipes and nonzero exit without Effect values', async () => {
+    const result = await runNodeProcessPromise(node(
+      "process.stdin.on('data', (d) => process.stdout.write(d)); process.stdin.on('end', () => { process.stderr.write('diagnostic'); process.exitCode = 7; });",
+      { input: 'héllo\n' },
+    ));
+    expect(result).toEqual({ stdout: 'héllo\n', stderr: 'diagnostic', exitCode: 7 });
+  });
+  it('rejects with the original abort reason after joining the process', async () => {
+    const controller = new AbortController();
+    const reason = new Error('cancel bridge');
+    const result = runNodeProcessPromise(node('setInterval(() => {}, 1000)'), { signal: controller.signal });
+    controller.abort(reason);
+    await expect(result).rejects.toBe(reason);
+  });
+  it('rejects spawn failures as tagged errors', async () => {
+    await expect(runNodeProcessPromise({ ...node(''), executable: 'p4-nonexistent' })).rejects.toBeInstanceOf(P4SpawnError);
   });
 });

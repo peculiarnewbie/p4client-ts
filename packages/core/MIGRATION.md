@@ -1,7 +1,7 @@
-# Migrating 0.12 → 0.13
+# Migrating 0.11 / 0.12 → 0.13
 
 0.13 replaces the cached `P4Client` with a stateless Effect core and an immutable
-Promise facade. Install `effect@4.0.0-beta.37` alongside `p4client-ts`.
+Promise facade. Install `effect@4.0.4` alongside `p4client-ts`.
 
 ```ts
 import { createP4Client } from 'p4client-ts/promise';
@@ -31,7 +31,7 @@ try {
 | per-call connection/timeout overrides | Derive a Promise client with `with`, or scope an Effect with `P4.with` |
 | raw cancellation handles | `signal` on Promise options; Effect interruption on streams |
 
-Dispose the original client and each derived client. A derived client owns an independent
+Use `withP4Client(options, use)` for a scoped request, or dispose the original client and each derived client. A derived client owns an independent
 runtime. Omitted patch fields inherit; explicit `undefined` clears cwd/timeout or individual
 connection/environment entries, and resets executable to `p4`.
 
@@ -70,7 +70,7 @@ Node helper methods are exported separately from `/node`.
 | `watchSync(opts)`, `watchPreviewReconcile(opts)` | `client.watch.sync(opts)`, `client.watch.previewReconcile(opts)`; every neutral op can be watched |
 | `materializeDepotFiles({ files, ...opts })` | `materializeDepotFiles({ fileSpec: files, ...opts })`; `.items.length` replaces total count; Effect export is an operation run with `runOperation` / `watchOperation` |
 | `runTaggedJson(args, opts)` | `runTagged({ ...opts, args, schema, policy })`; schema determines item type |
-| `run(args)`, raw `watch(args)` | No plain raw facade; use guarded `runTagged` / `watch.runTagged`; custom process code can use `/node` executor |
+| `run(args)`, raw `watch(args)` | No plain raw facade; use guarded `runTagged` / `watch.runTagged`; plain integrations can use `runNodeProcessPromise` from `/node` |
 | `resolveP4Settings*` | Promise `resolveConnection({ sources })`, or Node Effect `resolveConnection`; cwd comes from configuration; returns `{ connection, sources }` |
 
 New methods include `listFiles`, `listHaveFiles`, `getStream`, `printBatch`,
@@ -103,7 +103,9 @@ such as diff's `localFile` are unchanged. No aliases for the renamed inputs rema
 Messages are enumerable plain data, survive `structuredClone`, and carry `severity`
 (`empty`, `info`, `warning`, `failed`, `fatal`), `reason`, `category`, decoded `code`, `template`,
 named `args`, `text`, `reasonSource` and `disposition`. Classification prefers protocol
-codes, then generic codes, then a text fallback. Reasons are more specific: an empty
+codes, then generic codes, then a text fallback. Without a unique code, broad
+EV_EMPTY (17) is refined by specific diagnostic text; path subjects are recovered
+even when the server omits `fmt0`. Reasons are more specific: an empty
 reconcile is `nothing_to_reconcile`, an up-to-date sync is `up_to_date`, and denied
 access is `permission_denied`.
 
@@ -176,5 +178,204 @@ validation with casts when consuming untrusted CLI or IPC data.
 and declaration entry, including all four subpaths. It fails if the current build is
 incomplete or an entry is excluded from packing. It does not build: run
 `bun run clean` and `bun run build` before retrying after missing output. This catches
-a retained incremental cache with missing dist files. Phase 7 still needs an actual
-tarball pack and consumer trial installation.
+a retained incremental cache with missing dist files. Consumer trials exposed the compatibility and behavioral fixes described below.
+Repeat app validation with a fresh stable-Effect tarball before release.
+
+
+## Exported types and field migration
+
+These replacements also apply to 0.11 consumers. Import domain types from the root;
+import the Promise client from `/promise` and materialization types from `/node`.
+
+| Old exported symbol | 0.13 replacement |
+| --- | --- |
+| `P4Client` (instance type) | `P4PromiseClient` from `/promise`; construct with `createP4Client` |
+| `P4WorkspaceSummary` | `P4Workspace` |
+| `P4EnvironmentSummary` | `P4Environment` |
+| `P4ChangelistListSummary` | `P4Changelist`; use `P4Changelist<'submitted'>` for numeric changes |
+| `ListSubmittedChangelistsOptions`, pending/shelved list options | `ListChangelistsOptions` with explicit `status` |
+| `ListSubmittedChangelistsResult`, pending/shelved list results | `P4ChangelistPage`; `P4ChangelistPage<'submitted'>` narrows numeric changes |
+| `P4FileDiffResult` | `P4FileDiff` |
+| `ListDepotDirsResult` | `P4DepotDirList` |
+| `ListDepotFilesResult` | `P4DepotFileList` |
+| `P4DepotFileListing` | `P4DepotFile` |
+| `ListDepotFilesAtChangeResult` | `P4DepotFileRevisionList` |
+| `P4SyncPreviewResult` | `P4SyncResult` |
+| `P4ReconcilePreviewResult` | `P4ReconcilePreview` |
+| `isP4ConnectionError` | Inspect `_tag`, then `category` / `reason` on `P4CommandError` |
+| `P4OpenedFileSummary`, `GetOpenedFilesOptions` | `P4OpenedFile`, `ListOpenedFilesOptions` |
+| `P4PendingChangelistSummary`, `P4SubmittedChangelistSummary`, `P4ShelvedChangelistSummary` | `P4Changelist<'pending'>`, `P4Changelist<'submitted'>`, `P4Changelist<'shelved'>` |
+| `P4ChangelistListStatus`, `ListChangelistsResult` | `P4ChangelistStatus`, `P4ChangelistPage` |
+| `P4PrintResult` | `P4PrintedFile`; `printedText` supplies UTF-8 text |
+| `P4AnnotationResult` | `P4Annotation` |
+| `P4SyncResultWithErrors`, `P4SyncErrorItem`, `P4SyncPreviewItem` | `P4SyncResult`, `P4SyncFailure` / `P4ItemFailure`, `P4SyncItem` |
+| `PreviewSyncOptions` | `SyncOptions` |
+| `P4OperationHandle`, `P4OperationOptions`, `WatchP4CommandOptions` | `P4WatchHandle`, `P4PromiseOptions`, `P4PromiseWatchOptions` from `/promise` |
+| `P4ProgressSnapshot`, `P4SyncProgressEvent`, `P4ReconcileProgressEvent` | `P4Progress`, `P4OperationEvent<Item, Result>` |
+| `P4CommandExecutor`, `P4StreamingCommandExecutor`, `P4CommandStreamEvent`, `P4CommandStreamSource` | `P4Executor`, `P4ProcessEvent`; stream source is its `_tag` |
+| `P4CommandResult` | Plain process output: `P4ProcessResult` from `/node`; domain methods return envelopes |
+| `P4CommandOptions` | Configure `P4ClientOptions`; raw reads use `RunTaggedOptions` plus Promise cancellation options |
+| `RunTaggedJsonOptions` | `RunTaggedOptions`; `TypedTaggedOptions<A>` requires a schema |
+| `GetEnvironmentOptions` | `OpOptions<'getEnvironment'>` (empty options); no local mode |
+| `P4CliSettings`, `P4SettingKey`, `P4ResolvedSettings`, `ResolveP4SettingsOptions` | `P4Settings`, `P4SettingField`, `P4ResolvedConnection`, `ResolveConnectionOptions` (last two from `/node`) |
+| `P4SettingsContribution` | `P4ResolvedConnection.sources`, a field-to-source record |
+| `P4SettingsSource` | Same name, from `/node`; changed source literals |
+| `P4ListWorkspaceResult`, `LocalWorkspaceCandidate` | `P4WorkspaceForPath`, `P4WorkspaceMatch` from `/node`; inspect `.match` and `.candidates` |
+| `P4MessageReason`, `P4FailureReason`, `P4ErrorCategory`, `P4ServiceError` | `P4Reason`, `P4Reason`, `P4Category`, `P4Error` |
+| `P4ClientOperationError` | Narrow `P4Error` tags: command, spawn, timeout, parse, read-only, invalid argument, materialization |
+| `P4ResultArray`, `P4MessageCarrier` | Ordinary enumerable result envelopes; use the operation's result type |
+| `P4JsonValue`, `P4JsonWorkspace`, `P4JsonWorkspaceSchema` | `unknown` / `Row` for raw rows; `P4Workspace` for decoded workspaces; validate custom raw shapes with Schema |
+| `P4MessageRowSchema` | `P4MessageSchema` validates classified messages, not raw CLI rows |
+| `ResolvedDiffPlan` | `P4DiffPlan` |
+| `SetClientOptions`, `SetClientResult` | Removed; persistent switching stays app-owned |
+
+Other domain row/option names keep their names, including branded path/action types,
+`P4ClientOptions`, `P4Service`, `P4Message`, error classes, diff/changelist summaries,
+file stat/mapping/history rows, users, streams and reconcile candidates. Their field
+and execution changes still apply; materialization types move to `/node`.
+
+| Old helper / service export | Replacement |
+| --- | --- |
+| `getP4Environment`, `listP4Workspaces`, `getOpenedFiles`, `getChangelistFiles` | `getEnvironment`, `listWorkspaces`, `listOpenedFiles`, `listOpenedFiles({ change })` |
+| `streamSync`, `streamPreviewReconcile` | Service `.watch.sync` / `.watch.previewReconcile`, or `watchOperation` |
+| `mergeIncompleteSettings` | `fillMissing`; returns both merged settings and contributed fields |
+| `parseP4SetOutput`, `parseP4vConnectionString`, `parseP4vApplicationSettingsXml`, `parseP4vConnectionMapXml` | Same names; return connection-field settings |
+| `parseRegQueryOutput` | Removed; `p4` discovery delegates registry resolution to the CLI |
+| `classifyP4Error`, `classifyP4Failure` | Shared `toMessage` / `textMessage` classification and tagged operation errors |
+| `redactCommandArgs`, `formatCommandArgs` | `redactArgs`; applications own display formatting |
+| `buildDepotDiffFilespec`, `resolveDepotDiffRevisions`, `resolveShelvedDiffRevisions` | `fileAtRevision`, `submittedDiffRevisions`, `shelvedDiffRevisions`; check the new object inputs |
+| `resolveDiffPlan`, `isBinaryP4Type`, `parseUnifiedDiff`, `summarizeUnifiedDiff` | Same names; diff input uses `file` and plan type is `P4DiffPlan` |
+| `parseP4JsonLines`, `parseTaggedJsonLine`, `parseP4PrintHeader`, `parseP4ProgressLine`, `parseP4KeyValueOutput` | Removed public parsing helpers; use operation results, watches and settings parsers |
+| `normalizeNullableString`, `normalizeNullableNumber`, `normalizeP4Change`, `unixSecondsToIsoString` | Removed; typed operations decode these fields; custom rows need an app Schema |
+| `requirePositiveInteger`, `requireNonNegativeInteger`, `requirePositiveTimeoutMs` | Removed; operations validate arguments; public integer schemas validate custom inputs |
+| `isLocalWorkspace`, `workspaceRootFileSpec`, `workspaceStreamFileSpec`, `requireWorkspaceStreamFileSpec` | Removed; `/node` workspace matching/root checks and explicit app-selected `fileSpec` |
+
+
+| Old field / behavior | 0.13 field / behavior |
+| --- | --- |
+| History `time`, `timeIso` | `submittedAt`, ISO string; no raw seconds pair |
+| Changelist `createdAtIso` | `createdAt` already contains the ISO value; do not parse it as seconds |
+| Workspace raw/ISO time pairs, current-client marker | ISO `updatedAt` / `accessedAt`; compare `workspace.client` to the chosen connection client |
+| Diff `diffFlags` string | Array of flag strings, e.g. `['-du']` |
+| Printed file metadata | Single `P4PrintedFile` has flattened metadata and `content`; batch items have `{ file, content }` |
+| Deferred diff zero line counts / load-state fields | Unloaded counts are `null`; apps own deferred UI state |
+| Successful diff process `exitCode` | Removed; success is the resolved domain result, apps can project legacy success code `0` |
+| Pending list array | Paged `.items`; follow `.nextCursor` until null |
+| Print workspace default | Head; explicitly pass `revision: 'have'` to preserve workspace behavior |
+
+A literal `status: 'submitted'` or `'shelved'` now guarantees numeric `change`
+in Promise, native service, operation-runner and watched results. Pending or
+union-status results still admit `'default'`.
+
+## Effect compatibility and process boundaries
+
+Development uses stable Effect 4.0.4; the peer contract is `^4.0.0`. Pre-release
+beta runtimes are outside that contract. Native layers, services and schemas must
+use a compatible stable Effect installation. The old beta.37 `ServiceMap` import
+is gone: use `Context.Service`, `Schema.TaggedError`, and `yield* P4` directly.
+
+An app retaining an incompatible Effect version can isolate a stable installation
+using its package-manager dependency policy and use `/promise` as its boundary.
+The library does not bundle a private Effect runtime. Exchange plain options,
+results and AbortSignals; do not pass the app's incompatible schemas or layers.
+Call `runTagged` without a schema and validate returned `items` on the app side.
+The trial-specific beta.37 peer-removal hooks are obsolete; do not carry them to
+stable. A scoped override alone may not isolate a peer: inspect the resolved tree.
+
+For an existing stdout/stderr integration, `/node` exports
+`runNodeProcessPromise(invocation, { signal })`, returning
+`{ stdout: string, stderr: string, exitCode: number | null }`. It uses the same
+process cleanup as the stream executor, accepts stdin, returns nonzero exits, and
+rejects spawn failures and cancellation. It is a low-level process executor:
+provide all flags/environment yourself; it applies no P4 guard or message policy.
+It buffers UTF-8 text; use `printFile` / `printBatch` for binary content.
+
+`runTagged({ args: ['-x', '-', 'diff', '-se'], input: specs.join('\n') + '\n' })`
+keeps large read batches off Windows argv. The library adds JSON/global flags and
+inspects stdin arguments: option lines and mutating commands still require
+`allowMutation`. `taggedOperation` and watched raw commands accept the same input.
+Raw tagged results also expose `failures`; a custom item policy requires auditing
+both `.items` and `.failures`.
+
+`with({ connection: { client } })` affects only the new client. An intentional
+persistent active-workspace action must remain app-owned; the library adds no
+persistent `p4 set` switching API.
+
+## Settings resolution and project binding
+
+The old settings source `cli` is now `p4`. The separate `registry` source disappears:
+`p4 set -q` includes Windows registry, environment, P4CONFIG and P4ENVIRO resolution.
+Old `P4PORT` / `P4USER` / `P4CLIENT` / `P4CHARSET` fields become
+`port` / `user` / `client` / `charset`. Contribution arrays become a field-to-source
+record, for example `{ port: 'p4', client: 'p4v-app-settings' }`.
+Sources are consulted in order and only fill missing values; resolution may stop
+once port, user and client are known. Use the returned record for diagnostics.
+
+`cwd` is client configuration. Discovery reads local settings without server info;
+`getEnvironment({})` contacts the server and reports configured connection fields,
+so its `port` may be null when selected only through environment. There is no
+`getEnvironment({ mode: 'local' })` fallback. Retain explicit offline app state or
+resolve only P4V sources when the CLI is unavailable. Unreadable P4V files contribute
+nothing; the `p4` source can reject (spawn, timeout or command failure), rather than
+silently skipping to P4V. Catch that rejection before an app-selected fallback.
+
+See the Getting Started guide for a complete recipe: configure project cwd,
+resolve settings, derive an explicit connection, get server info, filter clients
+by user, find the project-bound workspace, and derive its isolated runtime.
+Never choose an arbitrary first workspace from the unfiltered server list.
+
+## Ownership, partial results and materialization
+
+Opened files no longer promise local filesystem paths. Run `whereFiles` on their
+`clientFile` values, inspect mapping failures and remove exclusions. Reject missing
+or ambiguous mappings before doing filesystem work. The Getting Started guide
+shows that recipe and a preview that refuses partial sync evidence.
+
+Materialization preserves caller metadata generically:
+`P4MaterializeResult<YourSnapshotRow>.items[].file` retains action, change and type
+when supplied, including watched items. Inputs still require exact positive
+revision numbers. Missing revisions fail with `P4CommandError`; deleted revisions
+that print no output fail with `P4MaterializationError` / `missing_output`.
+Each output is staged, checked as a regular file, then moved to its final path;
+an existing output is preserved when that revision prints nothing. Empty files
+are valid. Temporary output is cleaned on completion, failure and interruption.
+The batch is not transactional: other files may already have been written when
+one fails. No success item or progress increment is emitted for absent output.
+
+## Constructing and mapping errors
+
+The positional constructor becomes an object:
+
+```ts
+import { P4CommandError } from 'p4client-ts';
+
+const error = new P4CommandError({
+  message: 'Workspace configuration is unavailable.',
+  reason: 'server_config',
+  category: 'configuration',
+  command: 'p4',
+  args: ['info'],
+  exitCode: 1,
+  messages: [],
+  stderr: 'Check P4PORT.',
+});
+if (error._tag === 'P4CommandError' && error.category === 'configuration') {
+  console.log(error.reason); // select the recovery action using the reason
+}
+```
+
+| Old category | New category / detail |
+| --- | --- |
+| `server_config`, `client`, `user`, `charset` | `configuration` for configuration diagnostics such as `server_config`, `misconfigured`, `charset`; missing named clients/users use `not_found` with `unknown_client` / `unknown_user` |
+| Connection errors | `connection`, e.g. `server_unreachable` |
+| Authentication errors | `authentication`, e.g. `not_logged_in`, `ticket_expired` |
+| Permission errors | `permission`, e.g. `permission_denied` |
+
+The full public category set is `connection`, `authentication`, `configuration`,
+`permission`, `usage`, `not_found`, `not_in_view`, `notice`, `conflict`,
+`filesystem`, `fault`, `limit`, `unknown`. Non-command errors
+have their own tags and fields; narrow `_tag` before accessing category.
+
+Stable Schema removes the beta `onExcessProperty: 'preserve'` option. A supplied
+Struct decoder returns its declared fields; declare all fields you need or use an
+appropriate record/rest schema. Untyped `runTagged` retains the original row.

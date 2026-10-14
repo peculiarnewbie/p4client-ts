@@ -137,7 +137,7 @@ export function recordingExecutor(inner: Layer.Layer<P4Executor>): {
 } {
   const invocations: P4Invocation[] = [];
   const layer = Layer.effect(P4Executor, Effect.gen(function* () {
-    const executor = yield* P4Executor.asEffect();
+    const executor = yield* P4Executor;
     return {
       run: (invocation: P4Invocation) => Stream.suspend(() => {
         invocations.push(invocation);

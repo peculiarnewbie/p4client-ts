@@ -50,7 +50,7 @@ function readP4vFile(name: string, parse: (xml: string) => P4Settings): Effect.E
 
 /** `p4 set -q` in the configured directory, ignoring the configured connection it would otherwise report. */
 const p4Settings: Effect.Effect<P4Settings, P4Error, P4Executor | P4Config> = Effect.gen(function* () {
-  const options = yield* P4Config.asEffect();
+  const options = yield* P4Config;
   const output = yield* runPlainCommand({ args: ['set', '-q'] }).pipe(
     Effect.provideService(P4Config, { ...options, connection: {} }),
   );

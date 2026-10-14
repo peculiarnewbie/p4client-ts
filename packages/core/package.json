@@ -64,10 +64,10 @@
     "wire:reasons": "bun scripts/wire-reasons.ts"
   },
   "peerDependencies": {
-    "effect": "^4.0.0-beta.37"
+    "effect": "^4.0.0"
   },
   "devDependencies": {
-    "effect": "4.0.0-beta.37"
+    "effect": "4.0.4"
   },
   "engines": {
     "node": ">=18"

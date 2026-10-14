@@ -1,10 +1,13 @@
-import { Effect, Layer, Option, ServiceMap, Stream } from 'effect';
+import { Effect, Layer, Option, Context, Stream } from 'effect';
 import { taggedOperation } from './commands/raw.js';
 import { P4Config, withOptions } from './engine/config.js';
 import { runOperation, watchOperation } from './engine/operation.js';
 import { P4Executor } from './exec/executor.js';
 import { ops } from './ops.js';
 import type { Schema } from 'effect';
+import type {
+  ListChangelistsOptions, P4ChangelistStatus, P4Changelist, P4ChangelistPage,
+} from './commands/changelists.js';
 import type { P4TaggedResult, RunTaggedOptions } from './commands/raw.js';
 import type { P4ResolvedOptions } from './engine/config.js';
 import type { P4Operation, P4OperationEvent, P4WatchOptions } from './engine/operation.js';
@@ -33,6 +36,9 @@ export interface P4TaggedWatchMethod {
 /** Watched methods generated from the operation registry. */
 export type P4WatchService = {
   readonly [K in keyof P4Ops]: K extends 'runTagged' ? P4TaggedWatchMethod :
+    K extends 'listChangelists' ? <S extends P4ChangelistStatus>(
+      options: ListChangelistsOptions & { readonly status: S }, watch?: P4WatchOptions,
+    ) => Stream.Stream<P4OperationEvent<P4Changelist<S>, P4ChangelistPage<S>>, P4Error> :
     (options: OpOptions<K>, watch?: P4WatchOptions) =>
       Stream.Stream<P4OperationEvent<OpItem<K>, OpResult<K>>, P4Error>;
 };
@@ -40,6 +46,9 @@ export type P4WatchService = {
 /** Effect methods generated from the operation registry. */
 export type P4Service = {
   readonly [K in keyof P4Ops]: K extends 'runTagged' ? P4TaggedMethod :
+    K extends 'listChangelists' ? <S extends P4ChangelistStatus>(
+      options: ListChangelistsOptions & { readonly status: S },
+    ) => Effect.Effect<P4ChangelistPage<S>, P4Error> :
     (options: OpOptions<K>) => Effect.Effect<OpResult<K>, P4Error>;
 } & { readonly watch: P4WatchService };
 
@@ -81,7 +90,7 @@ function makeP4Service(config: P4ResolvedOptions, executor: P4Executor['Service'
 }
 
 /** Perforce operations as a service. Provide an executor and config to build {@link P4.layer}. */
-export class P4 extends ServiceMap.Service<P4, P4Service>()('p4client-ts/P4') {
+export class P4 extends Context.Service<P4, P4Service>()('p4client-ts/P4') {
   /** Bind every operation to the supplied executor and configuration. */
   static readonly layer: Layer.Layer<P4, never, P4Config | P4Executor> = Layer.effect(P4,
     Effect.gen(function* () {

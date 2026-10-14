@@ -26,7 +26,7 @@ describe('runTagged', () => {
     expect(result).toMatchObject({ messages: [], failures: [] });
   });
 
-  it('decodes each record with a schema, keeping its other fields', async () => {
+  it('decodes each record with a schema', async () => {
     const result = await run(runTagged, { args: ['info'], schema: InfoRow }, replay('info-json'));
     expect(result.items[0]).toMatchObject({
       userName: 'p4ts-e2e',
@@ -118,7 +118,30 @@ describe('runTagged', () => {
     expect(progress?._tag === 'progress' ? progress.progress : null).toMatchObject({ completed: 1, total: null, unit: 'records' });
   });
 
-  it('rejects empty arguments', async () => {
+  it('forwards stdin and refuses stdin options on a read-only client', async () => {
+    const input = '//depot/a\n//depot/b\n';
+    const args = ['-x', '-', 'diff', '-se'];
+    const result = await run(runTagged, { args, input }, scriptedExecutor((invocation) => {
+      expect(invocation.input).toBe(input);
+      expect(commandArgs(invocation.args)).toEqual([...TAG, ...args]);
+      return { stdout: '{"depotFile":"//depot/a"}\n' };
+    }));
+    expect(result.items).toHaveLength(1);
+    const never = scriptedExecutor(() => { throw new Error('must not run'); });
+    expect(await failure(runTagged, { args, input: '-f\n' }, never)).toMatchObject({ _tag: 'P4ReadOnlyError' });
+    expect(await failure(runTagged, { args: ['-x', '-', 'edit'], input }, never)).toMatchObject({ _tag: 'P4ReadOnlyError' });
+  });
+
+  it('reports studio-server missing files as item failures with their spec', async () => {
+    const missing = '//depot/__missing__.txt';
+    const result = await run(runTagged, {
+      args: ['files', '//depot/a', missing], policy: { no_such_file: 'item' },
+    }, scriptedExecutor(() => ({ stdout: JSON.stringify({ data: `${missing} - no such file(s).\n`, generic: 17, severity: 2 }) + '\n' })));
+    expect(result.failures[0]).toMatchObject({ spec: missing, reason: 'no_such_file', message: { reasonSource: 'text' } });
+    expect(result.messages).toEqual([]);
+  });
+
+  it('rejects empty arguments' , async () => {
     const error = await failure(runTagged, { args: [] }, scriptedExecutor(() => ({})));
     expect(error).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'args' });
   });
