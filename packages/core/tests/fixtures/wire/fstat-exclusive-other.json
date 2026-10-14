@@ -18,7 +18,7 @@
   ],
   "exitCode": 0,
   "stopped": null,
-  "stdout": "{\"clientFile\":\"<WORKSPACE>\\\\wire\\\\exclusive.uasset\",\"depotFile\":\"//p4ts/main/wire/exclusive.uasset\",\"effectiveComponentType\":\"none\",\"haveRev\":\"1\",\"headAction\":\"add\",\"headChange\":\"4\",\"headModTime\":\"1791920164\",\"headRev\":\"1\",\"headTime\":\"1791920164\",\"headType\":\"binary+l\",\"isMapped\":\"\",\"otherAction0\":\"edit\",\"otherChange0\":\"default\",\"otherLock\":\"\",\"otherLock0\":\"p4ts-e2e@wire_second\",\"otherOpen\":\"1\",\"otherOpen0\":\"p4ts-e2e@wire_second\",\"pathPermissions\":\"writable\",\"pathSource\":\"//p4ts/main\",\"pathType\":\"share\"}\n",
+  "stdout": "{\"clientFile\":\"<WORKSPACE>\\\\wire\\\\exclusive.uasset\",\"depotFile\":\"//p4ts/main/wire/exclusive.uasset\",\"effectiveComponentType\":\"none\",\"haveRev\":\"1\",\"headAction\":\"add\",\"headChange\":\"4\",\"headModTime\":\"1791937500\",\"headRev\":\"1\",\"headTime\":\"1791937500\",\"headType\":\"binary+l\",\"isMapped\":\"\",\"otherAction0\":\"edit\",\"otherChange0\":\"default\",\"otherLock\":\"\",\"otherLock0\":\"p4ts-e2e@wire_second\",\"otherOpen\":\"1\",\"otherOpen0\":\"p4ts-e2e@wire_second\",\"pathPermissions\":\"writable\",\"pathSource\":\"//p4ts/main\",\"pathType\":\"share\"}\n",
   "stdoutBase64": null,
   "stderr": "",
   "rows": [

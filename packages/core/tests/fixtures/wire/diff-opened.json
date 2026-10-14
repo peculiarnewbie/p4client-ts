@@ -16,7 +16,7 @@
   ],
   "exitCode": 0,
   "stopped": null,
-  "stdout": "--- //p4ts/main/wire/text.txt\t2026-10-13 19:36:04.000000000 0700\r\n+++ <WORKSPACE>\\wire\\text.txt\t2026-10-13 19:36:04.000000000 0700\r\n@@ -1,2 +1,2 @@\r\n-one\r\n-two\r\n+one\r\n+changed line\r\n",
+  "stdout": "--- //p4ts/main/wire/text.txt\t2026-10-14 00:25:00.000000000 0700\r\n+++ <WORKSPACE>\\wire\\text.txt\t2026-10-14 00:25:00.000000000 0700\r\n@@ -1,2 +1,2 @@\r\n-one\r\n-two\r\n+one\r\n+changed line\r\n",
   "stdoutBase64": null,
   "stderr": "",
   "rows": []

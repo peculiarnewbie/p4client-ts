@@ -19,7 +19,7 @@
   ],
   "exitCode": 0,
   "stopped": null,
-  "stdout": "{\"Access\":\"2026/10/14 02:36:03\",\"Description\":\"Disposable p4-ts E2E mainline stream.\\n\",\"Name\":\"main\",\"Options\":\"allsubmit unlocked notoparent nofromparent mergedown\",\"Owner\":\"p4ts-e2e\",\"Parent\":\"none\",\"ParentView\":\"inherit\",\"Paths0\":\"share ...\",\"Stream\":\"//p4ts/main\",\"Type\":\"mainline\",\"Update\":\"2026/10/14 02:36:03\",\"baseParent\":\"none\",\"extraTag0\":\"firmerThanParent\",\"extraTag1\":\"baseParent\",\"extraTag2\":\"streamSpecDigest\",\"extraTagType0\":\"word\",\"extraTagType1\":\"word\",\"extraTagType2\":\"digest\",\"firmerThanParent\":\"n/a\",\"streamSpecDigest\":\"E9F8F6AA619249DD28AC5BE885337821\"}\n",
+  "stdout": "{\"Access\":\"2026/10/14 07:24:59\",\"Description\":\"Disposable p4-ts E2E mainline stream.\\n\",\"Name\":\"main\",\"Options\":\"allsubmit unlocked notoparent nofromparent mergedown\",\"Owner\":\"p4ts-e2e\",\"Parent\":\"none\",\"ParentView\":\"inherit\",\"Paths0\":\"share ...\",\"Stream\":\"//p4ts/main\",\"Type\":\"mainline\",\"Update\":\"2026/10/14 07:24:59\",\"baseParent\":\"none\",\"extraTag0\":\"firmerThanParent\",\"extraTag1\":\"baseParent\",\"extraTag2\":\"streamSpecDigest\",\"extraTagType0\":\"word\",\"extraTagType1\":\"word\",\"extraTagType2\":\"digest\",\"firmerThanParent\":\"n/a\",\"streamSpecDigest\":\"E9F8F6AA619249DD28AC5BE885337821\"}\n",
   "stdoutBase64": null,
   "stderr": "",
   "rows": [

@@ -1,0 +1,26 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "info"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"allowStreamSpecInteg\":\"1\",\"caseHandling\":\"insensitive\",\"clientAddress\":\"127.0.0.1\",\"clientCase\":\"insensitive\",\"clientCwd\":\"<WORKSPACE>\",\"clientHost\":\"p4ts_e2e_client\",\"clientLock\":\"none\",\"clientName\":\"p4ts_e2e_client\",\"clientRoot\":\"<WORKSPACE>\",\"clientStream\":\"//p4ts/main\",\"depotStats\":\"revs(15R/14F/822B/1D/0C/0U); changes(6T/6C/6:1791937500L/6:1791937500LC/1:1791937499F/0:0FC); users(1); lastCalculated(1791937500);\",\"depotStatsEnc\":\"T8IaYsYN15/gtXkIhWep2DwJEHs97DTcxupGtrywfGukr91ZFDsb9L1MOKQXoTKDaQdbmYMXIQHR7HGR7gSF1G6XsViSjF8E7jHblSBKGlZaABrmQ/pnQx9iKhdVj2I0Oa5KLQJ2nBySLMCltaT/zbnHLbCsrzrgq3EGCBq8Rnr8PMttLWXoCk86Ubj4Z50Lv2I9hzRNCgugDg7/V8KuSWRa0kNmfccNpYyF07jYfnoTN2ejcpV6LF0MSVkE/FW3F2bwAGLgkxqFdyTUa5J867ox4r7PAi+qxGGdfTadTMohMQqiglNcqqcpXOceCPkXag0xANILk+6ktgxZRULGfA:OwSJPOJR9Gc0Q0spEDbpuko6uFajyEpZwk5k7jOnoaq4a4ScEHbRoZi4tGY3hhCabCLWyjelvo4t9gXq2/JLf7wYlXfhKe+aTFpFyK7+K8lJNxTHbSOfSy79feTo7geGMUH47TupK/+xhI6Pap4MBKuEs3q8BZg5gfH4j4NBNg0/pGWCnT1fBbP2hGWBhUzm\",\"extensionsSupport\":\"enabled\",\"memoryManager\":\"mimalloc 212\",\"monitor\":\"enabled\",\"parentViewDefault\":\"inheritAll\",\"peerAddress\":\"127.0.0.1:64805\",\"resourcePressureCPU\":\"0\",\"resourcePressureLastUpdate\":\"0\",\"resourcePressureMem\":\"0\",\"serverAddress\":\"DESKTOP-WORK-ARIF:64747\",\"serverDate\":\"2026/10/14 07:25:01 +0700 SE Asia Standard Time\",\"serverLicense\":\"none\",\"serverRoot\":\"<SCRATCH>\\\\server\",\"serverServices\":\"standard\",\"serverUptime\":\"00:00:02\",\"serverVersion\":\"P4D/NTX64/2026.1/3089746 (2026/10/07)\",\"tzoffset\":\"25200\",\"unicode\":\"enabled\",\"unloadSupport\":\"disabled\",\"userName\":\"p4ts-e2e\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data"
+  ]
+}

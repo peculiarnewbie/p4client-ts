@@ -19,7 +19,7 @@
   ],
   "exitCode": 0,
   "stopped": null,
-  "stdout": "{\"action0\":\"delete\",\"change\":\"6\",\"changeType\":\"public\",\"client\":\"p4ts_e2e_client\",\"depotFile0\":\"//p4ts/main/wire/deleted.txt\",\"desc\":\"Wire deleted head fixture\",\"path\":\"//p4ts/main/wire/*\",\"rev0\":\"2\",\"status\":\"submitted\",\"time\":\"1791920164\",\"type0\":\"text\",\"user\":\"p4ts-e2e\"}\n",
+  "stdout": "{\"action0\":\"delete\",\"change\":\"6\",\"changeType\":\"public\",\"client\":\"p4ts_e2e_client\",\"depotFile0\":\"//p4ts/main/wire/deleted.txt\",\"desc\":\"Wire deleted head fixture\",\"path\":\"//p4ts/main/wire/*\",\"rev0\":\"2\",\"status\":\"submitted\",\"time\":\"1791937500\",\"type0\":\"text\",\"user\":\"p4ts-e2e\"}\n",
   "stdoutBase64": null,
   "stderr": "",
   "rows": [

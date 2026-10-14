@@ -18,7 +18,7 @@
   ],
   "exitCode": 0,
   "stopped": null,
-  "stdout": "{\"action\":\"add\",\"change\":\"4\",\"depotFile\":\"//p4ts/main/wire/text.txt\",\"rev\":\"1\",\"time\":\"1791920164\",\"type\":\"text\"}\n",
+  "stdout": "{\"action\":\"add\",\"change\":\"4\",\"depotFile\":\"//p4ts/main/wire/text.txt\",\"rev\":\"1\",\"time\":\"1791937500\",\"type\":\"text\"}\n",
   "stdoutBase64": null,
   "stderr": "",
   "rows": [

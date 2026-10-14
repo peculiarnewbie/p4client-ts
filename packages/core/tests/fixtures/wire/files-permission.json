@@ -18,7 +18,7 @@
   ],
   "exitCode": 0,
   "stopped": null,
-  "stdout": "{\"action\":\"move/add\",\"change\":\"9\",\"depotFile\":\"//p4ts/main/wire/renamed.txt\",\"rev\":\"1\",\"time\":\"1791920168\",\"type\":\"text\"}\n",
+  "stdout": "{\"action\":\"move/add\",\"change\":\"9\",\"depotFile\":\"//p4ts/main/wire/renamed.txt\",\"rev\":\"1\",\"time\":\"1791937505\",\"type\":\"text\"}\n",
   "stdoutBase64": null,
   "stderr": "",
   "rows": [

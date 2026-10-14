@@ -1,0 +1,29 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "users",
+    "p4ts-e2e",
+    "missing-user"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"Access\":\"1791937499\",\"Email\":\"p4-ts-e2e@example.invalid\",\"FullName\":\"p4-ts isolated E2E fixture\",\"Type\":\"standard\",\"Update\":\"1791937499\",\"User\":\"p4ts-e2e\"}\n{\"code0\":554768750,\"data\":\"missing-user - no such user(s).\\n\",\"fmt0\":\"[%argc% - no|No] such user(s).\",\"generic\":17,\"severity\":2,\"severityformat\":\"warning\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data",
+    "message"
+  ]
+}

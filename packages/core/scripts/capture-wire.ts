@@ -3,6 +3,7 @@ import {
   chmodSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -32,7 +33,8 @@ function assertLocal(
     env.P4PORT !== fixture.environment.P4PORT ||
     !/^127\.0\.0\.1:\d+$/.test(env.P4PORT ?? '') ||
     args.some((arg) => arg.startsWith('-p')) ||
-    args.some((arg) => arg.startsWith('-x'))
+    // `-x -` reads arguments from captured stdin; an argument file could name anything.
+    args.some((arg, index) => arg.startsWith('-x') && (arg !== '-x' || args[index + 1] !== '-'))
   ) {
     throw new Error('Refusing a wire scenario outside its disposable server.');
   }
@@ -127,6 +129,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     mode: Mode = 'json',
     overrides: NodeJS.ProcessEnv = {},
     timeoutMs = 30_000,
+    input?: string,
   ) =>
     Effect.gen(function* () {
       const environment = { ...env, ...overrides };
@@ -147,6 +150,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
         workspace,
         environment,
         timeoutMs,
+        input,
       );
       writeFileSync(
         join(privateRoot, `${name}.json`),
@@ -183,6 +187,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
             cwd: '<WORKSPACE>',
             charset: environment.P4CHARSET,
             args: actual.map(normalize),
+            ...(input === undefined ? {} : { input: normalize(input) }),
             exitCode: result.exitCode,
             stopped: result.stopped,
             stdout: mode === 'marshal' ? null : stdout,
@@ -280,6 +285,30 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       ['have', ['have', file]],
     ];
     for (const [name, args, mode] of normal) yield* capture(name, args, mode);
+    // 0.13 rearchitecture: info and content commands in structured modes.
+    yield* capture('info-json', ['info']);
+    yield* capture('info-short-json', ['info', '-s']);
+    yield* capture('info-zprog', ['-zprog=p4client-ts', '-zversion=0.13.0', 'info', '-s']);
+    yield* capture('print-json', ['print', '-q', file]);
+    yield* capture('print-json-binary', ['print', '-q', '//p4ts/main/wire/full.uasset']);
+    yield* capture('print-marshal-text', ['print', file], 'marshal');
+    yield* capture('print-marshal-binary', ['print', '//p4ts/main/wire/full.uasset'], 'marshal');
+    yield* capture('print-marshal-utf16', ['print', '//p4ts/main/wire/wide.txt'], 'marshal');
+    yield* capture('print-marshal-missing', ['print', '//p4ts/main/missing.txt'], 'marshal');
+    yield* capture(
+      'print-marshal-batch',
+      ['-x', '-', 'print'],
+      'marshal',
+      {},
+      30_000,
+      `${file}\n//p4ts/main/wire/full.uasset\n//p4ts/main/missing.txt\n//p4ts/main/wire/wide.txt\n`,
+    );
+    yield* capture('files-mixed', ['files', file, '//p4ts/main/missing.txt']);
+    yield* capture('where-mixed', ['where', file, '//other/main/a.txt']);
+    yield* capture('fstat-mixed-missing', ['fstat', file, '//p4ts/main/missing.txt']);
+    yield* capture('users-mixed', ['users', env.P4USER ?? '', 'missing-user']);
+    yield* capture('describe-submitted-shelved-flag', ['describe', '-S', '-s', lastChange]);
+    yield* capture('filelog-wildcard-limit', ['filelog', '-l', '-m', '1', '//p4ts/main/wire/...']);
     yield* capture('fstat-mixed-revision', ['fstat', `${file}#999999`, '//p4ts/main/docs/guide/getting-started.md']);
     yield* write(['sync', `${file}#none`]);
     yield* capture('files-unsynced-have', ['files', `${file}#have`]);
@@ -355,6 +384,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     yield* capture('opened-default', ['opened', '-c', 'default']);
     writeFileSync(local, 'one\nchanged line\n');
     yield* capture('diff-opened', ['diff', '-du', file], 'plain');
+    yield* capture('diff-opened-json', ['diff', '-du', file]);
     yield* write(
       ['change', '-i'],
       `Change: new\nClient: ${env.P4CLIENT}\nUser: ${env.P4USER}\nDescription:\n\tPending wire fixture\n`,
@@ -383,6 +413,14 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       env.P4CLIENT ?? '',
     ]);
     yield* capture('describe-pending', ['describe', '-s', pendingChange]);
+    yield* capture('changes-pending-long', [
+      'changes',
+      '-s',
+      'pending',
+      '-l',
+      '-m',
+      '5',
+    ]);
     yield* capture('describe-shelved-empty', [
       'describe',
       '-S',
@@ -482,6 +520,8 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       ['diff2', '-du', `${file}#1`, `${file}#2`],
       'plain',
     );
+    yield* capture('diff2-normal-json', ['diff2', '-du', `${file}#1`, `${file}#2`]);
+    yield* capture('diff2-normal-marshal', ['diff2', '-du', `${file}#1`, `${file}#2`], 'marshal');
     // noclobber must be set explicitly: the canonical fixture normally permits clobbering.
     const spec = yield* run(['client', '-o']);
     yield* write(
@@ -494,6 +534,15 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     );
     yield* capture('sync-clobber', ['sync', '//p4ts/main/wire/clobber.txt']);
     yield* write(['sync', '-f', '//p4ts/main/wire/clobber.txt']);
+    // A directory occupying a file's local path makes the OS refuse the write.
+    rmSync(local, { force: true });
+    mkdirSync(join(local, 'occupied'), { recursive: true });
+    yield* capture('sync-os-error-preview', ['sync', '-n', '-f', file]);
+    yield* capture('sync-os-error', ['sync', '-f', file]);
+    rmSync(local, { recursive: true, force: true });
+    yield* write(['sync', '-f', file]);
+    // Later scenarios edit this file offline, as they could before the forced sync.
+    chmodSync(local, 0o666);
     // Reconcile reports data plus warnings. Reserved names remain escaped on the wire.
     writeFileSync(join(workspace, 'wire/new file.txt'), 'local add\n');
     writeFileSync(local, 'offline edit\n');
@@ -564,6 +613,20 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     const large = yield* run(['-Mj', '-z', 'tag', 'changes', '-m', '1']);
     const largeChange = decodeChange(large.stdout.trim()).change;
     yield* capture('describe-large', ['describe', '-s', largeChange]);
+    // Enough untracked files for reconcile to have a chance to report -I progress through a pipe.
+    for (let index = 0; index < 2000; index += 1)
+      writeFileSync(
+        join(bulk, `new${String(index).padStart(4, '0')}.txt`),
+        'untracked reconcile fixture\n',
+      );
+    yield* capture('reconcile-progress-large', [
+      '-I',
+      'reconcile',
+      '-n',
+      '//p4ts/main/bulk/...',
+    ]);
+    for (let index = 0; index < 2000; index += 1)
+      rmSync(join(bulk, `new${String(index).padStart(4, '0')}.txt`));
     yield* capture('changes-cursor-separated', [
       'changes',
       '-s',
@@ -582,6 +645,16 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       '-m',
       '5',
       '//p4ts/main/wire/...@4',
+    ]);
+    yield* capture('changes-multi-scope', [
+      'changes',
+      '-s',
+      'submitted',
+      '-l',
+      '-m',
+      '5',
+      '//p4ts/main/wire/...@4',
+      '//p4ts/main/docs/...@4',
     ]);
     // Permission failures can be errors or intentionally empty listings, depending on command.
     yield* write(

@@ -18,7 +18,7 @@
   ],
   "exitCode": 0,
   "stopped": null,
-  "stdout": "{\"action\":\"add\",\"change\":\"10\",\"depotFile\":\"//p4ts/main/wire/link\",\"rev\":\"1\",\"time\":\"1791920168\",\"type\":\"symlink\"}\n",
+  "stdout": "{\"action\":\"add\",\"change\":\"10\",\"depotFile\":\"//p4ts/main/wire/link\",\"rev\":\"1\",\"time\":\"1791937505\",\"type\":\"symlink\"}\n",
   "stdoutBase64": null,
   "stderr": "",
   "rows": [
