@@ -11,26 +11,26 @@ const wireRoot = join(testsRoot, 'fixtures/wire');
  * a test covers it.
  */
 const UNREFERENCED = new Set([
-  'annotate-integrations', 'changes-empty', 'changes-multi-scope', 'changes-pending-empty',
-  'changes-pending-long', 'changes-pending', 'changes-shelved-empty', 'changes-shelved',
-  'client-spec', 'client-unknown', 'client-version', 'command-timeout', 'describe-pending',
-  'describe-submitted-shelved-flag', 'describe-submitted', 'diff-not-opened', 'diff-opened-json',
-  'diff-opened',  'diff2-empty',
-  'diff2-normal-json', 'diff2-normal-marshal',  'diff2-shelved',
+  'annotate-integrations', 'changes-empty', 'changes-pending-empty',
+  'changes-pending', 'changes-shelved-empty',
+  'client-spec', 'client-unknown', 'client-version', 'command-timeout',
+  'diff-not-opened', 'diff-opened-json',
+  'diff-opened', 'diff2-empty',
+  'diff2-normal-json', 'diff2-normal-marshal', 'diff2-shelved',
   'exclusive-edit-failure', 'filelog-integrations', 'filelog-move', 'filelog-wildcard-limit',
-  'files-at-unknown-change', 'files-existing',  'files-permission', 'files-symlink',
+  'files-at-unknown-change', 'files-existing', 'files-permission', 'files-symlink',
   'fstat-mixed-missing', 'fstat-reserved', 'fstat-size', 'fstat-unresolved', 'have-not-on-client',
-  'info-json', 'info-short-json', 'info-unknown-user', 'info-zprog', 'modes-json-empty',
+  'info-json', 'info-unknown-user', 'info-zprog', 'modes-json-empty',
   'modes-marshal-empty', 'modes-marshal-files', 'modes-tagged-empty', 'modes-tagged-files',
-  'opened-default', 'opened-move', 'opened-other-client', 'opened-unchanged-json',
+  'opened-unchanged-json',
   'opened-unchanged-marshal', 'opened-unchanged-tagged', 'print-empty', 'print-json-binary',
   'print-json', 'print-marshal-missing',
   'print-marshal-utf16', 'print-materialize', 'print-utf16',
   'property-empty', 'reconcile-data', 'reconcile-modtime', 'reconcile-progress-large',
-  'reconcile-progress', 'reconcile-writable', 'resolve-preview',  'status-preview',
+  'reconcile-progress', 'reconcile-writable', 'resolve-preview', 'status-preview',
   'stream-import-spec', 'stream-spec', 'streams-empty', 'sync-force-preview', 'sync-keep-preview',
   'sync-opened-new-head-marshal', 'sync-opened-new-head-tagged', 'sync-os-error-preview',
-  'sync-os-error', 'sync-outside-stream', 'users-mixed',  'where-reserved',
+  'sync-os-error', 'sync-outside-stream', 'users-mixed', 'where-reserved',
 ]);
 
 function testSources(directory: string): string[] {

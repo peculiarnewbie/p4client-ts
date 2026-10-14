@@ -60,24 +60,33 @@ export function scriptedExecutor(
 /** Global options that identify the connection rather than the command. */
 const CONNECTION_OPTIONS = new Set(['-p', '-u', '-c', '-C', '-H']);
 
+/** Other global options that take a separate value. */
+const VALUE_OPTIONS = new Set(['-z', '-x', '-d', '-r', '-v', '-P', '-L', '-Q']);
+
 /**
  * The arguments that identify a command, without connection options and
  * program identification, so recordings from any server compare equal.
+ * Only global options, before the subcommand, are removed: a subcommand's
+ * own `-u` or `-c` is part of the command.
  *
  * @param args Complete argument vector.
- * @returns Arguments without `-p`, `-u`, `-c`, `-C`, `-H` and `-zprog`/`-zversion`.
+ * @returns Arguments without global `-p`, `-u`, `-c`, `-C`, `-H` and `-zprog`/`-zversion`.
  */
 export function commandArgs(args: readonly string[]): string[] {
   const result: string[] = [];
-  for (let index = 0; index < args.length; index += 1) {
+  let index = 0;
+  for (; index < args.length && args[index]!.startsWith('-'); index += 1) {
     const arg = args[index]!;
     if (CONNECTION_OPTIONS.has(arg)) {
+      index += 1;
+    } else if (VALUE_OPTIONS.has(arg)) {
+      result.push(arg, ...args.slice(index + 1, index + 2));
       index += 1;
     } else if (!/^-z(?:prog|version)=/.test(arg)) {
       result.push(arg);
     }
   }
-  return result;
+  return [...result, ...args.slice(index)];
 }
 
 const key = (args: readonly string[], input: string | undefined) =>
