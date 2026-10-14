@@ -4,6 +4,56 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
+## 0.13.0 - 2026-10-14
+
+### Breaking changes
+
+- The cached `P4Client` and `createP4Service` are replaced by a stateless Effect core, a
+  registry-derived `P4` service (`layerNode` from `/node`) and the `createP4Client` Promise
+  facade (`/promise`). The root entry is platform neutral; `/testing` holds test layers.
+- `effect` is a peer dependency, `^4.0.0`, developed against stable 4.0.4. Effect betas,
+  including beta.37's `ServiceMap`, are not supported.
+- Every operation takes one options object, including `{}`. Lists return enumerable
+  `{ items, messages }` envelopes; batch operations add `failures: { spec, reason, message }[]`.
+  Mixed `files`, `fstat`, `where`, batch print and sync requests keep valid items and report
+  each missing or unmapped spec as a failure.
+- Operations and inputs are renamed: one `listChangelists({ status })` with `cursor` /
+  `nextCursor`, `listOpenedFiles`, `limit`, `file` for one spec and `fileSpec` for lists.
+  Timestamps are ISO strings, and several result fields and exported types are renamed.
+- `setClient`, `switchWorkspace`, global `p4 set` writes, caches and `refresh` are removed.
+  Derive immutable clients with `with` or scope Effects with `P4.with`. Sync and mutating raw
+  commands require `allowMutation: true`. Dispose every Promise client.
+- Watch-specific methods are replaced by `client.watch.<operation>`, available for every
+  registry operation, with `_tag` events, heartbeat progress, cancellation and bounded buffering.
+- `printFile` and `printBatch` return binary-safe bytes read through marshal (`-G`);
+  `printedText` decodes UTF-8. The head revision and raw keywords are the defaults.
+- Messages are classified by protocol code in one place. Errors are tagged classes with
+  object constructors, new categories and reasons, and an IPC codec (`encodeP4Error` /
+  `decodeP4Error`).
+
+### Added
+
+- `runTagged` and `taggedOperation` for typed raw commands, including stdin (`-x -`) input
+  inspected by the read-only guard.
+- `runNodeProcessPromise` in `/node` for plain stdout/stderr integrations, and
+  `withP4Client` in `/promise` for scoped disposal.
+- Connection source resolution, isolated settings (P4CONFIG and P4ENVIRO), and workspace
+  matching by path, including AltRoots.
+- `listFiles`, `listHaveFiles`, `getStream`, `printBatch`, history `hasMore` and
+  integrations, and the `followMoves` helper.
+- Numeric `change` types for submitted and shelved changelist results, and caller metadata
+  retained through materialization.
+- Strict fixture replay, recording and mock layers in `/testing`.
+
+### Fixed
+
+- `materializeDepotFiles()` stages and verifies each file. A revision that prints nothing,
+  such as a deleted revision, fails with `P4MaterializationError` (`missing_output`) instead
+  of reporting a file that was never written, and existing output is left in place.
+
+See [MIGRATION.md](./MIGRATION.md) for the full operation map, type and field renames, and
+behavior changes.
+
 ## 0.12.1 - 2026-10-14
 
 ### Fixed

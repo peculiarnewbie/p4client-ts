@@ -26,7 +26,7 @@ describe("p4-ts e2e sync preview", () => {
       );
     }
 
-    expect(preview.totalCount).toBe(preview.items.length);
-    expect(preview.items[0]?.depotFile ?? preview.items[0]?.localFile).toBeTruthy();
+    expect(preview.failures).toEqual([]);
+    expect(preview.items[0]?.depotFile ?? preview.items[0]?.clientFile).toBeTruthy();
   });
 });

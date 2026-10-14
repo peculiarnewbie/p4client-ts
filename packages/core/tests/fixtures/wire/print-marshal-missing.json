@@ -1,0 +1,24 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "marshal",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-G",
+    "print",
+    "-k",
+    "//p4ts/main/missing.txt"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": null,
+  "stdoutBase64": "e3MEAAAAY29kZXMFAAAAZXJyb3JzBAAAAGRhdGFzKwAAAC8vcDR0cy9tYWluL21pc3NpbmcudHh0IC0gbm8gc3VjaCBmaWxlKHMpLgpzCAAAAHNldmVyaXR5aQIAAABzBwAAAGdlbmVyaWNpEQAAAHMOAAAAc2V2ZXJpdHlmb3JtYXRzBwAAAHdhcm5pbmdzBQAAAGNvZGUwaXcZESFzBAAAAGZtdDBzHgAAAFslYXJnYyUgLSBub3xOb10gc3VjaCBmaWxlKHMpLjA=",
+  "stderr": "",
+  "rows": []
+}

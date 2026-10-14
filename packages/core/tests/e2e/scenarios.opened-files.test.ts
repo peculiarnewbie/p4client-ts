@@ -32,22 +32,22 @@ describe("p4-ts e2e opened files", () => {
     numberedChange = await harness.createNumberedChangelist("p4-ts e2e opened files");
     await harness.openOpenedFilesScenario(numberedChange);
 
-    const openedFiles = await harness.client.getOpenedFiles();
-    const defaultFiles = await harness.client.getOpenedFiles({ change: "default" });
-    const numberedFiles = await harness.client.getChangelistFiles(numberedChange);
-    const pending = await harness.client.listPendingChangelists({ includeDefault: true });
+    const openedFiles = await harness.client.listOpenedFiles({});
+    const defaultFiles = await harness.client.listOpenedFiles({ change: "default" });
+    const numberedFiles = await harness.client.listOpenedFiles({ change: numberedChange });
+    const pending = await harness.client.listChangelists({ status: 'pending', includeDefault: true });
 
-    expect(openedFiles.map((entry) => String(entry.action)).sort()).toEqual(["add", "delete", "edit"]);
-    expect(defaultFiles.map((entry) => basename(entry.localFile ?? ""))).toEqual(["new-feature.txt"]);
-    expect(numberedFiles.map((entry) => entry.changelist)).toEqual([numberedChange, numberedChange]);
-    expect(numberedFiles.map((entry) => String(entry.action)).sort()).toEqual(["delete", "edit"]);
+    expect(openedFiles.items.map((entry) => String(entry.action)).sort()).toEqual(["add", "delete", "edit"]);
+    expect(defaultFiles.items.map((entry) => basename(entry.clientFile ?? ""))).toEqual(["new-feature.txt"]);
+    expect(numberedFiles.items.map((entry) => entry.change)).toEqual([numberedChange, numberedChange]);
+    expect(numberedFiles.items.map((entry) => String(entry.action)).sort()).toEqual(["delete", "edit"]);
     expect(
-      numberedFiles
-        .map((entry) => basename(entry.localFile ?? entry.clientFile ?? ""))
+      numberedFiles.items
+        .map((entry) => basename(entry.clientFile ?? ""))
         .sort()
     ).toEqual(["config.json", "getting-started.md"]);
 
-    expect(pending.some((entry) => entry.change === numberedChange)).toBe(true);
-    expect(pending.some((entry) => entry.change === "default")).toBe(true);
+    expect(pending.items.some((entry) => entry.change === numberedChange)).toBe(true);
+    expect(pending.items.some((entry) => entry.change === "default")).toBe(true);
   });
 });

@@ -249,14 +249,18 @@ export function captureSubprocess(
   cwd: string,
   env: NodeJS.ProcessEnv,
   timeoutMs: number,
+  input?: string,
 ): Effect.Effect<ProductionCapture, WireScriptError> {
   return Effect.callback<ProductionCapture, WireScriptError>((resume) => {
     const child = spawn(executable, args, {
       cwd,
       env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: 'pipe',
       windowsHide: true,
     });
+    // Disposable captures feed `-x -` argument lists; production reads close stdin empty.
+    child.stdin.on('error', () => undefined);
+    child.stdin.end(input);
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let bytes = 0;

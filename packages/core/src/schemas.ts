@@ -1,0 +1,114 @@
+import { Schema } from 'effect';
+
+const PathText = Schema.String.check(Schema.isPattern(/\S/), Schema.isPattern(/^[^\0\r\n]+$/));
+const PerforcePath = PathText.check(Schema.isPattern(/^\/\/[^/\\\s][^\\]*$/));
+
+/** Validate a depot-syntax path, including depot roots and filespecs. */
+export const P4DepotPathSchema = PerforcePath.pipe(Schema.brand('P4DepotPath'));
+
+/** Validate a client-syntax path beginning with `//client`. */
+export const P4ClientPathSchema = PerforcePath.pipe(Schema.brand('P4ClientPath'));
+
+/** Validate a non-empty local path without NUL or line-break characters. */
+export const P4LocalPathSchema = PathText.pipe(Schema.brand('P4LocalPath'));
+
+/** Validate an action token, allowing future Perforce actions without an enum update. */
+export const P4FileActionSchema = Schema.String.check(
+  Schema.isPattern(/^[a-z]+(?:\/[a-z]+)*$/)
+).pipe(Schema.brand('P4FileAction'));
+
+/** Decode a decimal CLI integer or JSON number without truncation or precision loss. */
+export const P4NonNegativeIntegerSchema = Schema.Union([
+  Schema.String.check(Schema.isPattern(/^\d+$/)).pipe(Schema.decodeTo(Schema.NumberFromString)),
+  Schema.Number
+]).check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
+
+/** Decode a positive revision or numbered changelist from CLI output. */
+export const P4PositiveIntegerSchema = P4NonNegativeIntegerSchema.check(Schema.isGreaterThan(0));
+
+/** Decode the default changelist sentinel or a non-negative numbered changelist. */
+export const P4ChangeSchema = Schema.Union([Schema.Literal('default'), P4NonNegativeIntegerSchema]);
+
+/** Validate OutputInfo, OutputWarning and OutputError fields in tagged JSON records. */
+export const P4MessageRowSchema = Schema.Struct({
+  data: Schema.String,
+  level: Schema.optionalKey(Schema.NullOr(P4NonNegativeIntegerSchema)),
+  severity: Schema.optionalKey(Schema.NullOr(P4NonNegativeIntegerSchema)),
+  generic: Schema.optionalKey(Schema.NullOr(P4NonNegativeIntegerSchema)),
+  code: Schema.optionalKey(Schema.NullOr(Schema.String))
+});
+
+/** Runtime contract for the required and optional fields emitted by `p4 clients`. */
+export const P4JsonWorkspaceSchema = Schema.Struct({
+  client: Schema.NonEmptyString,
+  Stream: Schema.optionalKey(Schema.String),
+  Root: Schema.NonEmptyString,
+  Host: Schema.optionalKey(Schema.String),
+  Owner: Schema.NonEmptyString,
+  Access: Schema.optionalKey(Schema.String),
+  Update: Schema.optionalKey(Schema.String)
+});
+
+/** A validated depot-syntax path. */
+export type P4DepotPath = typeof P4DepotPathSchema.Type;
+
+/** A validated client-syntax path. */
+export type P4ClientPath = typeof P4ClientPathSchema.Type;
+
+/** A validated local path. */
+export type P4LocalPath = typeof P4LocalPathSchema.Type;
+
+/** A validated file action token, such as `edit` or `move/add`. */
+export type P4FileAction = typeof P4FileActionSchema.Type;
+
+/** Validated depot path constructor. @throws {Schema.SchemaError} For invalid depot syntax. */
+export const P4DepotPath = {
+  /**
+   * Validate and brand a string.
+   * @param value The unbranded value.
+   * @returns The validated branded value.
+   * @throws {Schema.SchemaError} When validation fails.
+   */
+  make(value: string): P4DepotPath {
+    return Schema.decodeUnknownSync(P4DepotPathSchema)(value);
+  },
+};
+
+/** Validated client path constructor. @throws {Schema.SchemaError} For invalid client syntax. */
+export const P4ClientPath = {
+  /**
+   * Validate and brand a string.
+   * @param value The unbranded value.
+   * @returns The validated branded value.
+   * @throws {Schema.SchemaError} When validation fails.
+   */
+  make(value: string): P4ClientPath {
+    return Schema.decodeUnknownSync(P4ClientPathSchema)(value);
+  },
+};
+
+/** Validated local path constructor. @throws {Schema.SchemaError} For empty paths or control characters. */
+export const P4LocalPath = {
+  /**
+   * Validate and brand a string.
+   * @param value The unbranded value.
+   * @returns The validated branded value.
+   * @throws {Schema.SchemaError} When validation fails.
+   */
+  make(value: string): P4LocalPath {
+    return Schema.decodeUnknownSync(P4LocalPathSchema)(value);
+  },
+};
+
+/** Validated action constructor. @throws {Schema.SchemaError} For invalid action tokens. */
+export const P4FileAction = {
+  /**
+   * Validate and brand a string.
+   * @param value The unbranded value.
+   * @returns The validated branded value.
+   * @throws {Schema.SchemaError} When validation fails.
+   */
+  make(value: string): P4FileAction {
+    return Schema.decodeUnknownSync(P4FileActionSchema)(value);
+  },
+};

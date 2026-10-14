@@ -28,11 +28,11 @@ describe("p4-ts e2e sync", () => {
 
     const result = await harness.sync();
 
-    expect(result.totalCount).toBeGreaterThan(0);
-    expect(result.items[0]?.depotFile ?? result.items[0]?.localFile).toBeTruthy();
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items[0]?.depotFile ?? result.items[0]?.clientFile).toBeTruthy();
 
     const previewAfter = await harness.previewSync();
     expect(previewAfter.items).toEqual([]);
-    expect(previewAfter.totalCount).toBe(0);
+    expect(previewAfter.items.length).toBe(0);
   });
 });

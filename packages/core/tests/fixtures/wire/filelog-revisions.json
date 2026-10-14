@@ -1,0 +1,30 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "filelog",
+    "-l",
+    "-m",
+    "11",
+    "//p4ts/main/blame/blame.txt"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"action0\":\"edit\",\"action1\":\"edit\",\"action2\":\"add\",\"change0\":\"14\",\"change1\":\"13\",\"change2\":\"12\",\"client0\":\"p4ts_e2e_client\",\"client1\":\"p4ts_e2e_client\",\"client2\":\"p4ts_e2e_client\",\"depotFile\":\"//p4ts/main/blame/blame.txt\",\"desc0\":\"Blame revision three\",\"desc1\":\"Blame revision two\",\"desc2\":\"Blame revision one\",\"digest0\":\"FEF0E110306C042B61845A54F46F0918\",\"digest1\":\"67C62663B722611BA87041EB05870EB9\",\"digest2\":\"B00F5EBD2719660908505EC74F769AD0\",\"fileSize0\":\"19\",\"fileSize1\":\"19\",\"fileSize2\":\"13\",\"rev0\":\"3\",\"rev1\":\"2\",\"rev2\":\"1\",\"time0\":\"1791941701\",\"time1\":\"1791941701\",\"time2\":\"1791941701\",\"type0\":\"text\",\"type1\":\"text\",\"type2\":\"text\",\"user0\":\"p4ts-e2e\",\"user1\":\"p4ts-e2e\",\"user2\":\"p4ts-e2e\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data"
+  ]
+}

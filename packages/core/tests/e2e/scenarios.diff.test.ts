@@ -44,16 +44,16 @@ describe("p4-ts e2e diff inspection", () => {
     await harness.run(['submit', '-d', 'p4-ts deletion diff fixture add']);
     await harness.run(['delete', localPath]);
     await harness.run(['submit', '-d', 'p4-ts deletion diff fixture delete']);
-    const changes = await harness.client.listSubmittedChangelists({ fileSpec: depotFile, limit: 1 });
+    const changes = await harness.client.listChangelists({ status: 'submitted', fileSpec: depotFile, limit: 1 });
     const change = changes.items[0];
     if (!change) throw new Error('Missing submitted deletion changelist.');
-    const description = await harness.client.describeChangelist(change.change);
+    const description = await harness.client.describeChangelist({ change: change.change });
     const file = description.files[0];
     if (!file) throw new Error('Missing deleted file description.');
-    expect(file.action).toBe('delete');
+    expect(String(file.action)).toBe('delete');
     expect(file.revision).toBe(2);
     const diff = await harness.client.diffFile({
-      depotFile,
+      file: depotFile,
       changelistStatus: 'submitted',
       action: file.action,
       revision: file.revision
@@ -67,34 +67,38 @@ describe("p4-ts e2e diff inspection", () => {
     numberedChange = await harness.createNumberedChangelist("p4-ts e2e diff inspection");
     await harness.openOpenedFilesScenario(numberedChange);
 
-    const description = await harness.client.describeChangelist(numberedChange);
-    const summary = await harness.client.getChangelistDiffSummary(numberedChange);
+    const description = await harness.client.describeChangelist({ change: numberedChange });
+    const summary = await harness.client.getChangelistDiffSummary({ change: numberedChange });
     const editedFile = description.files.find((file) => file.action === "edit");
 
     expect(description.change).toBe(numberedChange);
     expect(description.status).toBe("pending");
     expect(description.files.map((file) => String(file.action)).sort()).toEqual(["delete", "edit"]);
-    expect(summary.files.some((file) => file.patchLoadState === "deferred")).toBe(true);
+    expect(summary.files.some((file) => file.additions === null)).toBe(true);
 
     if (!editedFile) {
       throw new Error("Expected an edited file in the changelist description.");
     }
 
-    const opened = await harness.client.getChangelistFiles(numberedChange);
-    const openedEdit = opened.find((file) => file.action === "edit");
-    const printResult = await harness.client.printFile(editedFile.depotFile, { revision: "have" });
+    const opened = await harness.client.listOpenedFiles({ change: numberedChange });
+    const openedEdit = opened.items.find((file) => file.action === "edit");
+    const mappings = await harness.client.whereFiles({ fileSpec: editedFile.depotFile });
+    const localFile = mappings.items.find((mapping) => !mapping.isExcluded)?.localFile;
+    expect(openedEdit?.depotFile).toBe(editedFile.depotFile);
+    expect(localFile).toBeTruthy();
+    const printResult = await harness.client.printFile({ file: editedFile.depotFile, revision: 'have' });
     const diffResult = await harness.client.diffFile({
-      depotFile: editedFile.depotFile,
-      localFile: openedEdit?.localFile ?? undefined,
+      file: editedFile.depotFile,
+      localFile: localFile ?? undefined,
       type: editedFile.type
     });
 
     expect(printResult.isBinary).toBe(false);
     expect(printResult.content.length).toBeGreaterThan(0);
-    expect(diffResult.exitCode).toBeLessThanOrEqual(1);
+    expect(diffResult.messages).toBeArray();
     expect(diffResult.unifiedDiff.length).toBeGreaterThan(0);
     expect(diffResult.additions + diffResult.deletions).toBeGreaterThan(0);
-    expect(basename(openedEdit?.localFile ?? "")).toBe(CONFIG_PATH.split("/").pop()!);
+    expect(basename(localFile ?? '')).toBe(CONFIG_PATH.split('/').pop()!);
   });
 
   it("reviews shelved changelist content without local opens", async () => {
@@ -120,24 +124,24 @@ describe("p4-ts e2e diff inspection", () => {
     await harness.run(["shelve", "-c", String(numberedChange)]);
     await harness.run(["revert", "-c", String(numberedChange), localPath]);
 
-    const shelved = await harness.client.listShelvedChangelists({
+    const shelved = await harness.client.listChangelists({ status: 'shelved',
       fileSpec: "...",
       limit: 50
     });
-    const description = await harness.client.describeChangelist(numberedChange, {
+    const description = await harness.client.describeChangelist({ change: numberedChange,
       shelved: true
     });
-    const summary = await harness.client.getChangelistDiffSummary(numberedChange, {
+    const summary = await harness.client.getChangelistDiffSummary({ change: numberedChange,
       shelved: true,
       includeLineCounts: true
     });
-    const opened = await harness.client.getChangelistFiles(numberedChange);
+    const opened = await harness.client.listOpenedFiles({ change: numberedChange });
     const editedFile = description.files.find((file) => file.action === "edit");
 
     expect(shelved.items.some((item) => item.change === numberedChange)).toBe(true);
-    expect(description.contentSource).toBe("shelved");
+    expect(description.status).toBe("shelved");
     expect(description.files.map((file) => String(file.action))).toEqual(["edit"]);
-    expect(opened).toEqual([]);
+    expect(opened.items).toEqual([]);
     expect(summary.files[0]).toMatchObject({
       localFile: null,
       additions: expect.any(Number),
@@ -149,7 +153,7 @@ describe("p4-ts e2e diff inspection", () => {
     }
 
     const diffResult = await harness.client.diffFile({
-      depotFile: editedFile.depotFile,
+      file: editedFile.depotFile,
       action: editedFile.action,
       revision: editedFile.revision,
       changelistStatus: "shelved",

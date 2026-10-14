@@ -1,0 +1,29 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "sync",
+    "-f",
+    "//p4ts/main/wire/text.txt"
+  ],
+  "exitCode": 1,
+  "stopped": null,
+  "stdout": "{\"action\":\"refreshed\",\"change\":\"8\",\"clientFile\":\"<WORKSPACE>\\\\wire\\\\text.txt\",\"depotFile\":\"//p4ts/main/wire/text.txt\",\"fileSize\":\"23\",\"rev\":\"2\",\"totalFileCount\":\"1\",\"totalFileSize\":\"23\"}\n{\"code0\":857800705,\"data\":\"open for write: <WORKSPACE>\\\\wire\\\\text.txt: Access is denied. \\n\",\"fmt0\":\"%operation%: %arg%: %errmsg%\",\"generic\":33,\"severity\":3,\"severityformat\":\"error\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data",
+    "message"
+  ]
+}

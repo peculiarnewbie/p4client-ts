@@ -1,13 +1,31 @@
 {
   "$schema": "https://typedoc.org/schema.json",
-  "entryPoints": ["src/public/index.ts"],
+  "entryPoints": [
+    "src/index.ts",
+    "src/node/index.ts",
+    "src/promise/index.ts",
+    "src/testing/index.ts"
+  ],
   "tsconfig": "tsconfig.json",
-  "plugin": ["typedoc-plugin-markdown"],
+  "plugin": [
+    "typedoc-plugin-markdown"
+  ],
   "out": ".typedoc/api",
   "readme": "none",
   "hideGenerator": true,
+  "treatWarningsAsErrors": true,
   "excludePrivate": true,
   "excludeProtected": true,
   "excludeInternal": true,
-  "sort": ["source-order"]
+  "sort": [
+    "source-order"
+  ],
+  "externalSymbolLinkMappings": {
+    "effect": {
+      "BottomWithoutNew.make": "https://effect.website/docs/v4/api/effect/Schema",
+      "BottomWithoutNew.makeOption": "https://effect.website/docs/v4/api/effect/Schema",
+      "BottomWithoutNew.makeEffect": "https://effect.website/docs/v4/api/effect/Schema",
+      "withConstructorDefault": "https://effect.website/docs/v4/api/effect/Schema"
+    }
+  }
 }

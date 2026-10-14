@@ -1,0 +1,29 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "diff",
+    "-du",
+    "//p4ts/main/wire/text.txt"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"clientFile\":\"<WORKSPACE>\\\\wire\\\\text.txt\",\"depotFile\":\"//p4ts/main/wire/text.txt\",\"rev\":\"1\",\"type\":\"text+D\"}\n{\"data\":\"@@ -1,2 +1,2 @@\\n-one\\n-two\\n+one\\n+changed line\\n\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data",
+    "data"
+  ]
+}

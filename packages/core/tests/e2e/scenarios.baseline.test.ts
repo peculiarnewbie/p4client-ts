@@ -18,47 +18,70 @@ describe("p4-ts e2e baseline", () => {
   });
 
   it("resolves the configured p4 environment", async () => {
-    const environment = await harness.client.getEnvironment({ refresh: true });
+    const environment = await harness.client.getEnvironment({});
 
-    expect(environment.p4Client).toBe(config.client);
-    expect(environment.hostName.length).toBeGreaterThan(0);
-    expect(environment.p4User).toBe(config.user);
-    expect(environment.p4Port).toBe(config.p4Port);
+    expect(environment.client).toBe(config.client);
+    expect(environment.clientHost!.length).toBeGreaterThan(0);
+    expect(environment.user).toBe(config.user);
+    expect(environment.port).toBe(config.p4Port);
   });
 
   it("lists the configured workspace as current", async () => {
-    const workspaces = await harness.client.listWorkspaces({ refresh: true });
-    const workspace = workspaces.find((entry) => entry.client === config.client);
+    const workspaces = await harness.client.listWorkspaces({});
+    const workspace = workspaces.items.find((entry) => entry.client === config.client);
 
     expect(workspace).toBeDefined();
-    expect(workspace?.isCurrentClient).toBe(true);
-    expect(workspace?.stream).toBe(config.stream);
+    expect(workspace?.owner).toBe(config.user);
+    expect(String(workspace?.stream)).toBe(config.stream);
     expect(workspace?.root).toBe(config.workspaceRoot);
   });
 
   it("has no reconcile candidates or opened files after cleanup", async () => {
     const reconcilePreview = await harness.client.previewReconcile({ fileSpec: "..." });
-    const openedFiles = await harness.client.getOpenedFiles();
+    const openedFiles = await harness.client.listOpenedFiles({});
 
     expect(reconcilePreview).toMatchObject({
       added: [],
       edited: [],
       deleted: []
     });
-    expect(reconcilePreview.messages?.[0]?.reason).toBe('empty');
-    expect(openedFiles).toEqual([]);
+    expect(reconcilePreview.messages[0]?.reason).toBe('nothing_to_reconcile');
+    expect(openedFiles.items).toEqual([]);
   });
 
   it("returns either no pending changelists or only default", async () => {
-    const pending = await harness.client.listPendingChangelists({ includeDefault: true });
+    const pending = await harness.client.listChangelists({ status: 'pending', includeDefault: true });
 
-    expect(pending.every((entry) => entry.isDefault)).toBe(true);
+    expect(pending.items.every((entry) => entry.isDefault)).toBe(true);
   });
 
   it("has no pending sync items after syncing to head", async () => {
     const preview = await harness.previewSync();
 
     expect(preview.items).toEqual([]);
-    expect(preview.totalCount).toBe(0);
+    expect(preview.items.length).toBe(0);
+  });
+
+  it('rejects a derived connection outside the isolated port before spawning', async () => {
+    const redirected = harness.client.with({ connection: { port: '127.0.0.1:1' } });
+    try {
+      await expect(redirected.getEnvironment({})).rejects.toThrow(
+        'Refusing command outside the disposable localhost server.',
+      );
+    } finally {
+      await redirected.dispose();
+    }
+  });
+
+  it('allows stdin print batches and keeps valid bytes beside an item miss', async () => {
+    const printed = await harness.client.printBatch({ fileSpec: [
+      `${config.stream}/src/app/config.json`,
+      `${config.stream}/src/app/config.json#999999`,
+    ] });
+    expect(printed.items).toHaveLength(1);
+    expect(printed.items[0]?.content.length).toBeGreaterThan(0);
+    expect(printed.failures).toHaveLength(1);
+    expect(printed.failures[0]?.reason).toBe('unknown_revision');
+    expect(structuredClone(printed)).toEqual(printed);
   });
 });

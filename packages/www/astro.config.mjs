@@ -33,7 +33,7 @@ export default defineConfig({
       ],
       plugins: [
         starlightTypeDoc({
-          entryPoints: ["../core/src/public/index.ts"],
+          entryPoints: ["../core/src/index.ts", "../core/src/node/index.ts", "../core/src/promise/index.ts", "../core/src/testing/index.ts"],
           tsconfig: "../core/tsconfig.json",
           output: "api",
           sidebar: {
@@ -42,6 +42,15 @@ export default defineConfig({
           },
           typeDoc: {
             hideGenerator: true,
+            treatWarningsAsErrors: true,
+            externalSymbolLinkMappings: {
+              effect: {
+                "BottomWithoutNew.make": "https://effect.website/docs/v4/api/effect/Schema",
+                "BottomWithoutNew.makeOption": "https://effect.website/docs/v4/api/effect/Schema",
+                "BottomWithoutNew.makeEffect": "https://effect.website/docs/v4/api/effect/Schema",
+                withConstructorDefault: "https://effect.website/docs/v4/api/effect/Schema"
+              }
+            },
             readme: "none",
             sort: ["source-order"]
           }

@@ -1,72 +1,47 @@
-# p4-ts
+# p4client-ts
 
-Typed TypeScript helpers for working with the Perforce `p4` CLI.
+Typed helpers for the Perforce `p4` CLI, with an Effect core and an immutable
+Promise facade. Requires Node >=18, a local `p4` executable for live commands,
+and the Effect peer dependency.
 
-The published package name is `p4client-ts`.
-
-## Scope
-
-`p4-ts` is intended to be a preview-first foundation for custom P4 tooling, with opt-in mutating sync support.
-
-In scope:
-- Inspect current P4 environment and workspace state
-- List local or relevant workspaces
-- Inspect pending changelists and opened files
-- Preview reconcile operations
-- Preview sync operations and apply sync when the caller explicitly opts in
-- Read file metadata and depot/local path mappings
-- Inspect historical depot state and materialize bounded exact revisions
-  outside the workspace
-
-Out of scope:
-- `submit`
-- `shelve` or `unshelve`
-- `edit`, `add`, `delete`, or other checkout/open-for-edit flows
-- `revert`, `lock`, `unlock`, `move`, `integrate`, or `resolve`
-- Changelist creation or mutation
-- Server administration or any workflow that mutates server-side state
-
-`sync()` is the only workspace-content mutation currently exposed, and the recommended pattern is still `previewSync()` first, then `sync()`. `setClient()` / `switchWorkspace()` only update the local `P4CLIENT` setting and clear this client's cached environment/workspace state.
-
-## Packages
-
-| Package | Description | Status |
-|---------|-------------|--------|
-| [`packages/core`](./packages/core) | Runtime library for running and parsing `p4` commands | Available |
-| [`packages/test-stream`](./packages/test-stream) | Canonical fixture stream content for end-to-end testing | Available |
-| [`packages/www`](./packages/www) | Astro Starlight docs app with generated API reference | Available |
-
-## Install
-
-```bash
-npm install p4client-ts
+```sh
+bun add p4client-ts effect@4.0.4
 ```
 
-## Documentation
+```ts
+import { createP4Client } from 'p4client-ts/promise';
+import { printedText } from 'p4client-ts';
 
-The repository includes a Starlight docs site in `packages/www` with authored guides and TypeDoc-generated API pages sourced from `packages/core/src/public/index.ts`.
-
-Run the docs site locally:
-
-```bash
-bun run docs:dev
+const client = createP4Client({
+  connection: { port: 'ssl:perforce:1666', user: 'alice', client: 'alice_ws', isolated: true },
+});
+try {
+  const opened = await client.listOpenedFiles({});
+  const file = await client.printFile({ file: '//depot/main/README.md' });
+  console.log(opened.items, opened.messages, printedText(file));
+} finally {
+  await client.dispose();
+}
 ```
 
-Build the static docs site:
+All methods take one options object. Lists return enumerable envelopes;
+batch operations add `failures`. `client.watch.<operation>` returns
+`{ events, result }`, with items, messages, failures, progress and a final done event.
+Pass an AbortSignal to cancel. Dispose every client, including clients from `with`.
 
-```bash
-bun run docs:build
-```
+Mutation is disabled by default. Preview with `previewSync` or `previewReconcile`;
+derive a client with `with({ allowMutation: true })` when applying sync.
+Clients have no caches and never write `p4 set`.
 
-## Development
+The root entry exports the platform-neutral Effect service, operations, types,
+schemas and error codec. Use `p4client-ts/node` for `layerNode` and filesystem helpers,
+`p4client-ts/promise` for the Promise facade, and `p4client-ts/testing` for mocks,
+strict fixture replay and recording.
 
-```bash
-bun install
-bun run typecheck
-bun run test
-bun run test:e2e
-bun run build
-bun run docs:build
-```
+See the [guides](https://p4client-ts.peculiarnewbie.com/guides/getting-started/)
+and [migration guide](./MIGRATION.md) for the breaking 0.13 changes.
 
-`bun run test:e2e` is the canonical E2E command. It downloads or reuses hash-verified Perforce `p4`/`p4d` binaries, creates a disposable localhost server and stream from `packages/test-stream`, runs the full E2E suite, and removes the temporary fixture. The first run requires network access; binaries are cached outside the repository.
+The Bun monorepo contains `packages/core` (library), `packages/test-stream`
+(live fixtures) and `packages/www` (Astro guides and generated API).
+Run `bun run typecheck`, `bun run test`, `bun run test:e2e`, `bun run docs:check`,
+`bun run build` and `bun run pack:core` from this directory.

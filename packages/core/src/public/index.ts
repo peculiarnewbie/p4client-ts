@@ -1,197 +1,30 @@
-export { P4Client } from "./client.js";
-export {
-  P4DepotPathSchema,
-  P4ClientPathSchema,
-  P4LocalPathSchema,
-  P4FileActionSchema,
-  P4NonNegativeIntegerSchema,
-  P4PositiveIntegerSchema,
-  P4ChangeSchema,
-  P4JsonWorkspaceSchema,
-  P4MessageRowSchema
-} from './schemas.js';
-export {
-  P4ClientOperationError,
-  P4CommandError,
-  P4MaterializationError,
-  P4ParseError,
-  P4TimeoutError,
-  classifyP4Error,
-  classifyP4Failure,
-  isP4ConnectionError
-} from "./errors.js";
-export type { P4ErrorCategory, P4FailureReason } from "./errors.js";
-export type { P4ServiceError } from "./errors.js";
-export {
-  createP4Service,
-  describeChangelist,
-  diffFile,
-  getChangelistDiffSummary,
-  getChangelistFiles,
-  getP4Environment,
-  getOpenedFiles,
-  listDepotFilesAtChange,
-  listDepots,
-  listDepotDirs,
-  listDepotFiles,
-  statFiles,
-  whereFiles,
-  getFileHistory,
-  listUsers,
-  listStreams,
-  annotateFile,
-  listChangelists,
-  listPendingChangelists,
-  listP4Workspaces,
-  listShelvedChangelists,
-  listSubmittedChangelists,
-  previewReconcile,
-  materializeDepotFiles,
-  printFile,
-  setClient,
-  streamPreviewReconcile,
-  streamSync,
-  switchWorkspace,
-  previewSync,
-  sync
-} from "./service.js";
-export {
-  mergeIncompleteSettings,
-  parseP4SetOutput,
-  parseP4vApplicationSettingsXml,
-  parseP4vConnectionMapXml,
-  parseP4vConnectionString,
-  parseRegQueryOutput,
-  resolveP4Settings,
-  resolveP4SettingsWithDetails
-} from "./settings.js";
-export {
-  buildDepotDiffFilespec,
-  isBinaryP4Type,
-  isLocalWorkspace,
-  normalizeNullableNumber,
-  normalizeNullableString,
-  normalizeP4Change,
-  parseP4JsonLines,
-  parseP4PrintHeader,
-  parseP4ProgressLine,
-  parseP4KeyValueOutput,
-  parseTaggedJsonLine,
-  parseUnifiedDiff,
-  requireNonNegativeInteger,
-  requirePositiveInteger,
-  requirePositiveTimeoutMs,
-  resolveDepotDiffRevisions,
-  resolveDiffPlan,
-  resolveShelvedDiffRevisions,
-  summarizeUnifiedDiff,
-  unixSecondsToIsoString,
-  requireWorkspaceStreamFileSpec,
-  workspaceRootFileSpec,
-  workspaceStreamFileSpec
-} from "./helpers.js";
-export { formatCommandArgs, redactCommandArgs } from "./command-format.js";
-export type { ResolvedDiffPlan } from "./helpers.js";
-export type {
-  P4Message, P4MessageCarrier, P4MessageReason, P4ResultArray,
-  DescribeChangelistOptions,
-  DiffFileOptions,
-  GetChangelistDiffSummaryOptions,
-  GetEnvironmentOptions,
-  GetOpenedFilesOptions,
-  ListDepotFilesAtChangeOptions,
-  ListDepotFilesAtChangeResult,
-  ListDepotsOptions,
-  ListDepotDirsOptions,
-  ListDepotDirsResult,
-  ListDepotFilesOptions,
-  ListDepotFilesResult,
-  P4Depot,
-  P4DepotDir,
-  P4DepotFileListing,
-  P4FileStat,
-  StatFilesOptions,
-  WhereFilesOptions,
-  P4WhereMapping,
-  GetFileHistoryOptions,
-  P4FileRevision,
-  P4FileHistory,
-  ListUsersOptions,
-  P4User,
-  ListStreamsOptions,
-  P4Stream,
-  AnnotateFileOptions,
-  P4AnnotatedLine,
-  P4AnnotationResult,
-  ListChangelistsOptions,
-  ListChangelistsResult,
-  ListWorkspacesOptions,
-  ListPendingChangelistsOptions,
-  ListShelvedChangelistsOptions,
-  ListShelvedChangelistsResult,
-  ListSubmittedChangelistsOptions,
-  ListSubmittedChangelistsResult,
-  LocalWorkspaceCandidate,
-  P4ChangelistListSummary,
-  P4ChangelistListStatus,
-  P4ChangelistDescription,
-  P4ChangelistDiffFileSummary,
-  P4ChangelistDiffSummary,
-  P4CliSettings,
-  P4CommandExecutor,
-  P4CommandOptions,
-  P4CommandResult,
-  P4CommandStreamEvent,
-  P4CommandStreamSource,
-  P4DescribedFile,
-  P4DiffHunk,
-  P4DiffSource,
-  P4DepotPath,
-  P4DepotFileRevision,
-  P4EnvironmentSummary,
-  P4FileAction,
-  P4FileDiffResult,
-  P4ClientPath,
-  P4JsonValue,
-  P4JsonWorkspace,
-  P4ListWorkspaceResult,
-  P4LocalPath,
-  P4OperationHandle,
-  P4OperationOptions,
-  P4OpenedFileSummary,
-  P4PendingChangelistSummary,
-  P4PrintResult,
-  P4MaterializedFile,
-  P4MaterializeResult,
-  P4ResolvedSettings,
-  P4ReconcileCandidate,
-  P4ReconcileProgressEvent,
-  P4ReconcilePreviewResult,
-  P4ClientOptions,
-  P4ProgressSnapshot,
-  P4Service,
-  P4SettingKey,
-  P4SettingsContribution,
-  P4SettingsSource,
-  P4StreamingCommandExecutor,
-  P4ShelvedChangelistSummary,
-  P4SubmittedChangelistSummary,
-  P4SyncErrorItem,
-  P4SyncItem,
-  P4SyncProgressEvent,
-  P4SyncResult,
-  P4SyncResultWithErrors,
-  P4SyncPreviewItem,
-  P4SyncPreviewResult,
-  P4WorkspaceSummary,
-  PreviewReconcileOptions,
-  PreviewSyncOptions,
-  PrintFileOptions,
-  MaterializeDepotFilesOptions,
-  ResolveP4SettingsOptions,
-  SetClientOptions,
-  SetClientResult,
-  SyncOptions,
-  RunTaggedJsonOptions,
-  WatchP4CommandOptions
-} from "./types.js";
+export * from '../P4.js';
+export * from '../ops.js';
+export * from '../schemas.js';
+export * from '../errors.js';
+export * from '../engine/config.js';
+export * from '../engine/operation.js';
+export * from '../exec/executor.js';
+export * from '../wire/message.js';
+export * from '../wire/reasons.js';
+export * from '../wire/policy.js';
+export * from '../connection/argv.js';
+export * from '../connection/settings.js';
+export * from '../commands/annotate.js';
+export * from '../commands/changelists.js';
+export * from '../commands/describe.js';
+export * from '../commands/diff.js';
+export * from '../commands/diff-text.js';
+export * from '../commands/environment.js';
+export * from '../commands/files.js';
+export * from '../commands/history.js';
+export * from '../commands/opened.js';
+export * from '../commands/print.js';
+export * from '../commands/raw.js';
+export * from '../commands/reconcile.js';
+export * from '../commands/streams.js';
+export * from '../commands/sync.js';
+export * from '../commands/users.js';
+export * from '../commands/workspaces.js';
+export type { P4ItemFailure, FileSpecs, Row } from '../commands/shared.js';
+export type { P4CommandSpec, P4CommandOutput, P4CommandEvent } from '../engine/command.js';

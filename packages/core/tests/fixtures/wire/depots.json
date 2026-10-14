@@ -17,7 +17,7 @@
   ],
   "exitCode": 0,
   "stopped": null,
-  "stdout": "{\"desc\":\"Default depot\",\"map\":\"depot/...\",\"name\":\"depot\",\"time\":\"1791920162\",\"type\":\"local\"}\n{\"depth\":\"1\",\"desc\":\"Disposable p4-ts E2E conformance depot.\\n\",\"map\":\"p4ts/...\",\"name\":\"p4ts\",\"time\":\"1791920163\",\"type\":\"stream\"}\n",
+  "stdout": "{\"desc\":\"Default depot\",\"map\":\"depot/...\",\"name\":\"depot\",\"time\":\"1791941688\",\"type\":\"local\"}\n{\"depth\":\"1\",\"desc\":\"Disposable p4-ts E2E conformance depot.\\n\",\"map\":\"p4ts/...\",\"name\":\"p4ts\",\"time\":\"1791941690\",\"type\":\"stream\"}\n",
   "stdoutBase64": null,
   "stderr": "",
   "rows": [

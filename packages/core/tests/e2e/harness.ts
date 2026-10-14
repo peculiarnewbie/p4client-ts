@@ -1,8 +1,13 @@
 import { appendFileSync, copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { P4Client } from "../../src/public/client.js";
-import { runCommand, watchCommand } from '../../src/internal/command.js';
-import type { P4CommandOptions, P4CommandResult, SyncOptions } from "../../src/public/types.js";
+import { afterAll } from 'bun:test';
+import { Effect, Layer, Stream } from 'effect';
+import { P4, P4Executor, configLayer, globalArgs, connectionEnv } from '../../src/index.js';
+import { runNodeProcess } from '../../src/node/index.js';
+import { createP4ClientFromLayer } from '../../src/promise/index.js';
+import { captureProcess } from '../support/process.js';
+import type { P4ClientOptions, P4Invocation, SyncOptions } from '../../src/index.js';
+import type { P4PromiseClient } from '../../src/promise/index.js';
 import type { E2EConfig } from "./config.js";
 import { assertSeededWorkspace, type E2EFixture, type FixtureSentinel } from "./fixture.js";
 
@@ -13,39 +18,57 @@ const RENAME_SOURCE_PATH = "history/chain-source.txt";
 const RENAME_TARGET_PATH = "history/chain-renamed.txt";
 
 export class P4E2EHarness {
-  readonly client: P4Client;
+  readonly client: P4PromiseClient;
+  private readonly _clients: P4PromiseClient[] = [];
 
   constructor(
     readonly config: E2EConfig,
     readonly fixture: E2EFixture
   ) {
     this.client = this.createWorkspaceClient(config.workspaceRoot);
+    afterAll(async () => {
+      for (const client of this._clients) await client.dispose();
+    });
   }
 
   /**
    * A library client for a disposable workspace, with the same localhost isolation checks.
    * Pass `client` to target a workspace other than the fixture's `P4CLIENT`.
    */
-  createWorkspaceClient(cwd: string, client?: string): P4Client {
+  createWorkspaceClient(cwd: string, client?: string): P4PromiseClient {
     const config = this.config;
-    return new P4Client({
+    const options: P4ClientOptions = {
       executable: config.p4Executable,
       cwd,
       env: config.p4Env,
-      ...(client === undefined ? {} : { client }),
-      executor: (command, args, options) => {
-        this.assertIsolated(args, options);
-        return runCommand(command, ['-p', config.p4Port, '-u', config.user, ...args], options);
-      },
-      streamExecutor: (command, args, options) => {
-        this.assertIsolated(args, options);
-        return watchCommand(command, ['-p', config.p4Port, '-u', config.user, ...args], options);
-      }
+      connection: { port: config.p4Port, user: config.user,
+        client: client ?? config.client, isolated: true },
+      allowMutation: true,
+    };
+    const executor = Layer.succeed(P4Executor, {
+      run: (invocation) => Stream.unwrap(Effect.sync(() => {
+        this.assertIsolated(invocation);
+        return runNodeProcess(invocation);
+      })),
     });
+    const derive = (patch: P4ClientOptions) => P4.layer.pipe(
+      Layer.provideMerge(Layer.merge(configLayer(patch), executor)),
+    );
+    const created = createP4ClientFromLayer(derive(options), derive, options);
+    this._clients.push(created);
+    return created;
   }
 
-  private assertIsolated(args: string[], options: P4CommandOptions): void {
-    if (options.env?.P4PORT !== this.config.p4Port || this.config.p4Port !== process.env.P4_TS_E2E_ISOLATED_PORT || !/^127\.0\.0\.1:\d+$/.test(this.config.p4Port) || args.some((arg) => arg.startsWith('-p') || arg.startsWith('-x'))) {
+  private assertIsolated(invocation: P4Invocation): void {
+    const args = invocation.args;
+    const ports = args.flatMap((arg, index) => arg === '-p' ? [args[index + 1]] :
+      arg.startsWith('-p') ? [arg.slice(2)] : []);
+    const batches = args.flatMap((arg, index) => arg === '-x' ? [index] :
+      arg.startsWith('-x') ? [-1] : []);
+    if (ports.length !== 1 || ports[0] !== this.config.p4Port ||
+      this.config.p4Port !== process.env.P4_TS_E2E_ISOLATED_PORT ||
+      !/^127\.0\.0\.1:\d+$/.test(this.config.p4Port) ||
+      batches.some((index) => index < 0 || args[index + 1] !== '-' || args[index + 2] !== 'print')) {
       throw new Error('Refusing command outside the disposable localhost server.');
     }
   }
@@ -94,9 +117,9 @@ export class P4E2EHarness {
   }
 
   async assertCleanWorkspace() {
-    const openedFiles = await this.client.getOpenedFiles();
-    if (openedFiles.length > 0) {
-      throw new Error(`Workspace is not clean; found ${openedFiles.length} opened file(s).`);
+    const openedFiles = await this.client.listOpenedFiles({});
+    if (openedFiles.items.length > 0) {
+      throw new Error(`Workspace is not clean; found ${openedFiles.items.length} opened file(s).`);
     }
 
     const reconcilePreview = await this.client.previewReconcile({ fileSpec: "..." });
@@ -232,12 +255,22 @@ export class P4E2EHarness {
     copyFileSync(sentinel.seedPath, sentinel.workspacePath);
   }
 
-  async run(args: string[], options: P4CommandOptions = {}): Promise<P4CommandResult> {
-    return this.client.run(args, {
+  async run(args: string[], options: { input?: string; allowNonZeroExit?: boolean } = {}) {
+    const connection = { port: this.config.p4Port, user: this.config.user,
+      client: this.config.client, isolated: true };
+    const invocation: P4Invocation = {
+      executable: this.config.p4Executable,
+      args: [...globalArgs(connection), ...args],
       cwd: this.config.workspaceRoot,
-      env: this.config.p4Env,
-      ...options
-    });
+      env: { ...this.config.p4Env, ...connectionEnv(connection) },
+      input: options.input,
+    };
+    this.assertIsolated(invocation);
+    const result = await Effect.runPromise(captureProcess(invocation));
+    if (result.exitCode !== 0 && !options.allowNonZeroExit) {
+      throw new Error(`Fixture command failed: ${args.join(' ')}\n${result.stderr}${result.stdout}`);
+    }
+    return result;
   }
 }
 

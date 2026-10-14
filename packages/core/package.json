@@ -1,6 +1,6 @@
 {
   "name": "p4client-ts",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "description": "Typed TypeScript helpers for the Perforce p4 CLI",
   "license": "MIT",
   "author": "peculiarnewbie",
@@ -28,12 +28,25 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node/index.d.ts",
+      "import": "./dist/node/index.js"
+    },
+    "./promise": {
+      "types": "./dist/promise/index.d.ts",
+      "import": "./dist/promise/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
     }
   },
   "files": [
     "dist",
     "README.md",
     "CHANGELOG.md",
+    "MIGRATION.md",
     "LICENSE"
   ],
   "sideEffects": false,
@@ -42,15 +55,19 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.type-tests.json && tsc -p tsconfig.scripts.json",
     "wire:capture": "bun scripts/capture-wire.ts",
-    "test": "bun test tests/*.test.ts",
+    "test": "bun test tests/*.test.ts tests/unit/",
     "test:e2e": "bun scripts/test-perforce-e2e.ts",
     "docs:api": "typedoc --options typedoc.json",
     "docs:api:check": "typedoc --options typedoc.json",
-    "pack:check": "npm pack --dry-run",
-    "prepublishOnly": "bun run clean && bun run typecheck && bun run test && bun run build"
+    "pack:check": "bun scripts/pack-check.ts",
+    "prepublishOnly": "bun run clean && bun run typecheck && bun run test && bun run build",
+    "wire:reasons": "bun scripts/wire-reasons.ts"
   },
-  "dependencies": {
-    "effect": "^4.0.0-beta.37"
+  "peerDependencies": {
+    "effect": "^4.0.0"
+  },
+  "devDependencies": {
+    "effect": "4.0.4"
   },
   "engines": {
     "node": ">=18"

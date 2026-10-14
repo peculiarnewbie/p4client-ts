@@ -1,0 +1,29 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "where",
+    "//p4ts/main/wire/text.txt",
+    "//other/main/a.txt"
+  ],
+  "exitCode": 1,
+  "stopped": null,
+  "stdout": "{\"clientFile\":\"//p4ts_e2e_client/wire/text.txt\",\"depotFile\":\"//p4ts/main/wire/text.txt\",\"path\":\"<WORKSPACE>\\\\wire\\\\text.txt\"}\n{\"code0\":838998116,\"data\":\"//other/main/a.txt - must refer to client 'p4ts_e2e_client' or a depot.\\n\",\"fmt0\":\"%path% - must refer to client '%client%' or a depot.\",\"generic\":2,\"severity\":3,\"severityformat\":\"error\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data",
+    "message"
+  ]
+}

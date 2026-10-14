@@ -27,8 +27,8 @@ describe("p4-ts e2e reconcile preview", () => {
 
     const preview = await harness.client.previewReconcile({ fileSpec: "..." });
 
-    expect(preview.edited.map((entry) => basename(entry.localFile ?? ""))).toContain("config.json");
-    expect(preview.deleted.map((entry) => basename(entry.localFile ?? ""))).toContain("getting-started.md");
-    expect(preview.added.map((entry) => basename(entry.localFile ?? ""))).toContain("new-feature.txt");
+    expect(preview.edited.map((entry) => basename(entry.clientFile ?? ""))).toContain("config.json");
+    expect(preview.deleted.map((entry) => basename(entry.clientFile ?? ""))).toContain("getting-started.md");
+    expect(preview.added.map((entry) => basename(entry.clientFile ?? ""))).toContain("new-feature.txt");
   });
 });

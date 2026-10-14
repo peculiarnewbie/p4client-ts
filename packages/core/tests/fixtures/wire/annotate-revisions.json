@@ -1,0 +1,32 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "annotate",
+    "-q",
+    "-c",
+    "//p4ts/main/blame/blame.txt"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"action\":\"edit\",\"change\":\"14\",\"depotFile\":\"//p4ts/main/blame/blame.txt\",\"rev\":\"3\",\"time\":\"1791941701\",\"type\":\"text\"}\n{\"data\":\"first\\r\\n\",\"lower\":\"12\",\"upper\":\"14\"}\n{\"data\":\"SECOND\\r\\n\",\"lower\":\"14\",\"upper\":\"14\"}\n{\"data\":\"third\\r\\n\",\"lower\":\"13\",\"upper\":\"14\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data",
+    "data",
+    "data",
+    "data"
+  ]
+}

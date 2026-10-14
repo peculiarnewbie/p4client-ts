@@ -1,0 +1,27 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "info",
+    "-s"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"allowStreamSpecInteg\":\"1\",\"caseHandling\":\"insensitive\",\"clientAddress\":\"127.0.0.1\",\"clientCase\":\"insensitive\",\"clientCwd\":\"<WORKSPACE>\",\"clientHost\":\"p4ts_e2e_client\",\"clientName\":\"p4ts_e2e_client\",\"extensionsSupport\":\"enabled\",\"memoryManager\":\"mimalloc 212\",\"monitor\":\"enabled\",\"parentViewDefault\":\"inheritAll\",\"peerAddress\":\"127.0.0.1:57811\",\"serverAddress\":\"kubernetes.docker.internal:57754\",\"serverDate\":\"2026/10/14 08:34:51 +0700 SE Asia Standard Time\",\"serverLicense\":\"none\",\"serverRoot\":\"<SCRATCH>\\\\server\",\"serverServices\":\"standard\",\"serverUptime\":\"00:00:02\",\"serverVersion\":\"P4D/NTX64/2026.1/3089746 (2026/10/07)\",\"tzoffset\":\"25200\",\"unicode\":\"enabled\",\"unloadSupport\":\"disabled\",\"userName\":\"p4ts-e2e\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data"
+  ]
+}

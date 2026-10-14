@@ -16,6 +16,7 @@
     "changes",
     "-s",
     "pending",
+    "-l",
     "-m",
     "5"
   ],

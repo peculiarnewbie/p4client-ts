@@ -1,0 +1,26 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "info"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"allowStreamSpecInteg\":\"1\",\"caseHandling\":\"insensitive\",\"clientAddress\":\"127.0.0.1\",\"clientCase\":\"insensitive\",\"clientCwd\":\"<WORKSPACE>\",\"clientHost\":\"p4ts_e2e_client\",\"clientLock\":\"none\",\"clientName\":\"p4ts_e2e_client\",\"clientRoot\":\"<WORKSPACE>\",\"clientStream\":\"//p4ts/main\",\"depotStats\":\"revs(15R/14F/822B/1D/0C/0U); changes(6T/6C/6:1791941691L/6:1791941691LC/1:1791941690F/0:0FC); users(1); lastCalculated(1791941691);\",\"depotStatsEnc\":\"HMI/BhsGhChJkUKITFNZwIfna87GgANXkmOzkxML7MxZfaarvnveQUd92rVadYWxvyQ0GMXnOVksZFDwsRfDpjm6SAFsz4mqKv+Pxq7VkPD6uRqI+jH6AbdVcZdDNPGkxGimw7UHSRi7iSFKNt4LAjNYzFP84Q2+KkjuZztwrJTro5/Xdqcf1luYuf8Bydd6wHYzigWKopOgusOcfyHzOHK6CZK1fvETolWLpuvSXzTTJ8RLwHrFt5cVn2USIL0/etNPhe1N8XEh6uy7UYpwLGXNeZ+kkBfSgyioAvtPFABnzUi2BgsmxXEcMCJHfGCcc/fFtbj/kI8iEcqciGtpMQ:LKmKxTFbMroJC/tu+BxoZFJnAZdF1DR7uvIbG9QBLLP8YxMN1m+vAwtRY3OezYqMZ282nniBA69gFYbNLre245YR1IKcrwJGqo2/ECO1QVY8qFoPNplc74tGe8eS53TEy8vl7ksqLN6tUxcw/2FS+kP5+6T13gryc5dLoLkc9pFjCJJstKNHBJceEwg9X3uV\",\"extensionsSupport\":\"enabled\",\"memoryManager\":\"mimalloc 212\",\"monitor\":\"enabled\",\"parentViewDefault\":\"inheritAll\",\"peerAddress\":\"127.0.0.1:57810\",\"resourcePressureCPU\":\"0\",\"resourcePressureLastUpdate\":\"0\",\"resourcePressureMem\":\"0\",\"serverAddress\":\"kubernetes.docker.internal:57754\",\"serverDate\":\"2026/10/14 08:34:51 +0700 SE Asia Standard Time\",\"serverLicense\":\"none\",\"serverRoot\":\"<SCRATCH>\\\\server\",\"serverServices\":\"standard\",\"serverUptime\":\"00:00:02\",\"serverVersion\":\"P4D/NTX64/2026.1/3089746 (2026/10/07)\",\"tzoffset\":\"25200\",\"unicode\":\"enabled\",\"unloadSupport\":\"disabled\",\"userName\":\"p4ts-e2e\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data"
+  ]
+}

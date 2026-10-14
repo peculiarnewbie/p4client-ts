@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { loadE2EConfig } from "./config.js";
 import { loadFixture } from "./fixture.js";
 import { P4E2EHarness } from "./harness.js";
-import type { P4SyncProgressEvent } from "../../src/public/types.js";
+import type { P4OperationEvent, P4SyncItem, P4SyncResult } from '../../src/index.js';
 
 const config = loadE2EConfig();
 const harness = new P4E2EHarness(config, loadFixture(config));
@@ -47,7 +47,7 @@ describe("p4-ts e2e sync with a writable file that is not opened", () => {
         ""
       ].join("\n")
     });
-    await workspace.run(["sync", FILE_SPEC], { cwd: NOCLOBBER_ROOT });
+    await workspace.sync({ fileSpec: FILE_SPEC });
 
     // Make the synced file writable without opening it, as Unreal does, then change it.
     const local = join(NOCLOBBER_ROOT, TARGET);
@@ -77,30 +77,25 @@ describe("p4-ts e2e sync with a writable file that is not opened", () => {
         [`${config.stream}/${OTHER}`, "updated"]
       ])
     );
-    expect(preview.totalCount).toBe(2);
-    expect(preview.errors).toBeUndefined();
+    expect(preview.items.length).toBe(2);
+    expect(preview.failures).toEqual([]);
 
     const result = await workspace.sync({ fileSpec: FILE_SPEC });
-    expect(result.items.map((item) => item.depotFile)).toContain(`${config.stream}/${OTHER}`);
-    expect(result.errors).toEqual([
-      {
-        clientFile: localTarget,
-        depotFile: null,
-        message: expect.stringMatching(/^Can't clobber writable file /)
-      }
-    ]);
+    expect(result.items.map((item) => String(item.depotFile))).toContain(`${config.stream}/${OTHER}`);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({ spec: localTarget, reason: 'clobber' });
     // `LineEnd: local` writes CRLF on Windows.
     expect(readFileSync(join(NOCLOBBER_ROOT, OTHER), "utf8").replace(/\r\n/g, "\n")).toBe("other #2\n");
     expect(readFileSync(localTarget, "utf8")).toBe(LOCAL_CONTENT);
 
     // The watched form classifies the same row the same way, and streams it as it arrives.
-    const handle = workspace.watchSync({ fileSpec: FILE_SPEC });
-    const events: P4SyncProgressEvent[] = [];
+    const handle = workspace.watch.sync({ fileSpec: FILE_SPEC });
+    const events: P4OperationEvent<P4SyncItem, P4SyncResult>[] = [];
     for await (const event of handle.events) events.push(event);
     const watched = await handle.result;
-    expect(watched.errors).toEqual(result.errors ?? []);
-    expect(events.filter((event) => event.type === "error-row")).toEqual(
-      (result.errors ?? []).map((error) => ({ type: "error-row", error }))
+    expect(watched.failures).toEqual(result.failures);
+    expect(events.filter((event) => event._tag === 'failure')).toEqual(
+      result.failures.map((failure) => ({ _tag: 'failure', failure }))
     );
     expect(readFileSync(localTarget, "utf8")).toBe(LOCAL_CONTENT);
   });

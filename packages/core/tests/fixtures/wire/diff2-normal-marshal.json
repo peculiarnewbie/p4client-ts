@@ -1,0 +1,25 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "marshal",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-G",
+    "diff2",
+    "-du",
+    "//p4ts/main/wire/text.txt#1",
+    "//p4ts/main/wire/text.txt#2"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": null,
+  "stdoutBase64": "e3MEAAAAY29kZXMEAAAAc3RhdHMGAAAAc3RhdHVzcwcAAABjb250ZW50cwkAAABkZXBvdEZpbGVzGQAAAC8vcDR0cy9tYWluL3dpcmUvdGV4dC50eHRzAwAAAHJldnMBAAAAMXMEAAAAdHlwZXMEAAAAdGV4dHMKAAAAZGVwb3RGaWxlMnMZAAAALy9wNHRzL21haW4vd2lyZS90ZXh0LnR4dHMEAAAAcmV2MnMBAAAAMnMFAAAAdHlwZTJzBAAAAHRleHQw",
+  "stderr": "",
+  "rows": []
+}

@@ -85,8 +85,16 @@ bun run pack:core
 packages/
   core/           # Main library (p4client-ts)
     src/
-      public/     # Public API exports
-      internal/   # Implementation details
+      wire/       # Pure protocol, catalog, templates and message policy
+      exec/       # Executor service and mutation guard
+      connection/ # Connection flags and pure settings parsers
+      engine/     # Effect command and operation runners, config service
+      commands/   # Typed operation families; ops.ts is the registry
+      node/       # Process executor, layers and filesystem helpers
+      promise/    # Registry-derived Promise facade and runtime lifecycle
+      testing/    # Replay, recording and fixtures
+      public/     # Platform-neutral export barrel only
+      internal/   # Async event queue retained by the Promise facade
     tests/
       e2e/        # End-to-end tests
   test-stream/    # Test fixtures
@@ -94,12 +102,12 @@ packages/
 ```
 
 ### Key Conventions
-- Read-only operations only (no submit, edit, or mutation)
+- Commands are read-only by default; sync and raw mutation require config allowMutation: true
 - Preview-first approach (`-n` flag for dry runs)
 - **MUST use Effect library** for all async operations and functional patterns
 - **MUST use Effect Schema** for runtime validation and data transformation
-- JSON output parsing from `p4 -Mj -z tag` commands
-- Caching in P4Client instance (respect `refresh` option)
+- Structured JSON parsing from `p4 -Mj -z tag`; binary print uses `-G` marshal
+- Stateless, immutable configuration; no caches, refresh options or global p4 set writes
 - Always export from `src/public/index.ts` for public API
 
 ### Effect Library Guidelines
@@ -110,6 +118,14 @@ packages/
 
 <!-- effect-solutions:start -->
 ## Effect Best Practices
+
+This repository pins Effect 4.0.4 (stable), with peer range `^4.0.0`. Use
+`Context.Service` and `Schema.TaggedError`; yield service classes directly.
+Check effect-solutions examples against installed stable types. `Stream.runCollect` returns an array.
+Execute Effects only at application boundaries. Every operation accepts one
+options object and returns an enumerable envelope. Dispose Promise clients,
+including clients derived with `with`. The platform-neutral root must not
+import Node process APIs; use `/node` or `/promise` for live execution.
 
 **IMPORTANT:** Always consult effect-solutions before writing Effect code.
 
