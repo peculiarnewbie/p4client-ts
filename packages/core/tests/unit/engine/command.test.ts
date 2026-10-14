@@ -10,10 +10,12 @@ import {
 } from '../../../src/errors.js';
 import { P4Executor } from '../../../src/exec/executor.js';
 import { recordingExecutor, replayExecutor, scriptedExecutor } from '../../../src/testing/executor.js';
+import { fixtureStdout } from '../../../src/testing/fixture.js';
 import { corpus } from '../../support/corpus.js';
 import type { P4ClientOptions } from '../../../src/engine/config.js';
 import type { P4Error } from '../../../src/errors.js';
-import type { P4CommandSpec } from '../../../src/engine/command.js';
+import type { P4CommandEvent, P4CommandSpec } from '../../../src/engine/command.js';
+import type { P4ScriptedOutput } from '../../../src/testing/executor.js';
 
 const fixtures = (...names: string[]) => names.map((name) => {
   const fixture = corpus.get(name);
@@ -172,6 +174,77 @@ describe('structured commands', () => {
       },
     }), scriptedExecutor(() => ({ stdout: '{"depotFile":"//d/a.txt"}\n' })));
     expect(error).toMatchObject({ _tag: 'P4ParseError', message: 'bad row', command: 'p4' });
+  });
+});
+
+describe('output cut short', () => {
+  const marshal = (): P4CommandSpec<Readonly<Record<string, unknown>>> => ({
+    args: ['print', '-k'],
+    format: 'marshal',
+    policy: { no_such_file: 'item' },
+    decode: (row) => row,
+  });
+  const batch = fixtureStdout(fixtures('print-marshal-batch')[0]!);
+  const cutJson = '{"depotFile":"//d/a.txt"}\n{"depotFile":"//d/b';
+  const cutStderr = '{"data":"//d/a.txt - file(s) up-to-date.\\n","severity":2,"generic":17}\n{"data":"//d/b';
+
+  /** Events streamed before the command failed, and its error. */
+  const streamed = async (spec: P4CommandSpec<Readonly<Record<string, unknown>>>, output: P4ScriptedOutput, chunkSize?: number) => {
+    const events: Array<P4CommandEvent<Readonly<Record<string, unknown>>>> = [];
+    const error = await failure(
+      Stream.runForEach(streamCommand(spec), (event) => Effect.sync(() => {
+        events.push(event);
+      })),
+      scriptedExecutor(() => output, { chunkSize }),
+    );
+    return { events, error };
+  };
+
+  const expectSignal = (error: P4Error) => {
+    expect(error).toBeInstanceOf(P4CommandError);
+    expect(error).toMatchObject({ exitCode: -1, reason: 'unknown' });
+    expect(error.message).toContain('(exit signal)');
+  };
+
+  it('reports a signal, not the JSON record it cut short, keeping earlier records', async () => {
+    for (const chunkSize of [undefined, 1, 7]) {
+      const { events, error } = await streamed(fields(['files', '//d/...']), { stdout: cutJson, exitCode: null }, chunkSize);
+      expect(events).toEqual([{ _tag: 'data', value: { depotFile: '//d/a.txt' } }]);
+      expectSignal(error);
+      expect(error.message).toContain('p4 was terminated by a signal.');
+    }
+  });
+
+  it('reports a signal, not the marshal record it cut short, keeping earlier records', async () => {
+    for (const chunkSize of [undefined, 9]) {
+      const { events, error } = await streamed(marshal(), { stdout: batch.subarray(0, batch.length - 3), exitCode: null }, chunkSize);
+      expect(events.some((event) => event._tag === 'data' && event.value.depotFile === '//p4ts/main/wire/text.txt')).toBe(true);
+      expectSignal(error);
+      expect(error.message).toContain('p4 was terminated by a signal.');
+    }
+  });
+
+  it('reports a signal, not the stderr diagnostic it cut short', async () => {
+    const { error } = await streamed(fields(['files', '//d/...']), { stderr: cutStderr, exitCode: null });
+    expectSignal(error);
+    if (error instanceof P4CommandError) expect(error.stderr).toBe(cutStderr);
+  });
+
+  it('still reports a malformed final record after a normal exit', async () => {
+    for (const exitCode of [0, 1]) {
+      const json = await failure(runCommand(fields(['files', '//d/...'])), scriptedExecutor(() => ({ stdout: cutJson, exitCode })));
+      expect(json).toBeInstanceOf(P4ParseError);
+      expect(json).toMatchObject({ message: 'Unable to parse tagged Perforce JSON output.', line: '{"depotFile":"//d/b', command: 'p4' });
+      const marshalled = await failure(
+        runCommand(marshal()),
+        scriptedExecutor(() => ({ stdout: batch.subarray(0, batch.length - 3), exitCode }), { chunkSize: 9 }),
+      );
+      expect(marshalled).toBeInstanceOf(P4ParseError);
+      expect(marshalled).toMatchObject({ detail: 'Marshal output ended inside a record.', command: 'p4' });
+      const stderr = await failure(runCommand(fields(['files', '//d/...'])), scriptedExecutor(() => ({ stderr: cutStderr, exitCode })));
+      expect(stderr).toBeInstanceOf(P4ParseError);
+      expect(stderr).toMatchObject({ message: 'Unable to parse Perforce diagnostics.', line: '{"data":"//d/b' });
+    }
   });
 });
 

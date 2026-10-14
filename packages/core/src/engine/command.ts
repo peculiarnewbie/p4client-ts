@@ -185,19 +185,32 @@ class OutputReader {
     this.stderrText += this.stderrDecoder.decode(bytes, { stream: true });
   }
 
-  /** Records still buffered when the process exits, then stderr's diagnostics. */
-  finish(exitCode: number): { records: WireRecord[]; stderrMessages: P4Message[] } {
+  /**
+   * Records still buffered when the process exits, then stderr's diagnostics.
+   *
+   * A signal (`exitCode` null) can cut the last stdout record or stderr line
+   * short. That unfinished output is not parsed, so `verdict` reports the
+   * termination rather than a parse error; stderr keeps the raw text.
+   */
+  finish(exitCode: number | null): { records: WireRecord[]; stderrMessages: P4Message[] } {
     const records: WireRecord[] = [];
-    if (this.format === 'json') {
-      records.push(...this.jsonLine(this.stdoutCarry + this.stdoutDecoder.decode()));
-    } else if (this.format === 'marshal') {
-      this.marshal.end();
+    if (exitCode !== null) {
+      if (this.format === 'json') {
+        records.push(...this.jsonLine(this.stdoutCarry + this.stdoutDecoder.decode()));
+      } else if (this.format === 'marshal') {
+        this.marshal.end();
+      }
     }
     this.stderrText += this.stderrDecoder.decode();
-    const stderrMessages = groupDiagnostics(this.stderrText).flatMap((line) => {
-      if (!line.startsWith('{')) return [textMessage(line, exitCode)];
+    const groups = groupDiagnostics(this.stderrText);
+    const lastLineCut = exitCode === null && !/\n\s*$/.test(this.stderrText);
+    const stderrMessages = groups.flatMap((line, index) => {
+      if (!line.startsWith('{')) return [textMessage(line, exitCode ?? 1)];
       const parsed = readJsonLine(line);
-      if (!parsed.ok) throw this.parseError('Unable to parse Perforce diagnostics.', line, parsed.detail);
+      if (!parsed.ok) {
+        if (lastLineCut && index === groups.length - 1) return [];
+        throw this.parseError('Unable to parse Perforce diagnostics.', line, parsed.detail);
+      }
       const record = toWireRecord(parsed.fields);
       if (record._tag !== 'message') throw this.parseError('Unexpected data on stderr.', line, 'Expected a message.');
       return [record.message];
@@ -347,7 +360,7 @@ export function streamCommand<A>(spec: P4CommandSpec<A>): Stream.Stream<P4Comman
     spec,
     toEvents,
     (reader, code) => Effect.gen(function* () {
-      const { records, stderrMessages } = yield* attempt(reader, () => reader.finish(code ?? 1));
+      const { records, stderrMessages } = yield* attempt(reader, () => reader.finish(code));
       const events = yield* toEvents(reader, records);
       for (const message of stderrMessages) {
         const event = reader.classify(message);
@@ -396,7 +409,7 @@ export function runPlainCommand(spec: P4PlainCommandSpec): Effect.Effect<P4Plain
     spec,
     () => Effect.succeed([]),
     (reader, code) => Effect.gen(function* () {
-      const { stderrMessages } = yield* attempt(reader, () => reader.finish(code ?? 1));
+      const { stderrMessages } = yield* attempt(reader, () => reader.finish(code));
       for (const message of stderrMessages) reader.classify(message);
       const stdout = reader.plainStdout();
       const error = reader.verdict(code, () => code !== null && (spec.acceptExit?.(code, stdout) ?? false));
