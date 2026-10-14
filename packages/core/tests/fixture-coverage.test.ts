@@ -15,10 +15,10 @@ const UNREFERENCED = new Set([
   'changes-pending-long', 'changes-pending', 'changes-shelved-empty', 'changes-shelved',
   'client-spec', 'client-unknown', 'client-version', 'command-timeout', 'describe-pending',
   'describe-submitted-shelved-flag', 'describe-submitted', 'diff-not-opened', 'diff-opened-json',
-  'diff-opened', 'diff2-bad-revision-plain', 'diff2-empty',
-  'diff2-normal-json', 'diff2-normal-marshal', 'diff2-normal', 'diff2-shelved',
+  'diff-opened',  'diff2-empty',
+  'diff2-normal-json', 'diff2-normal-marshal',  'diff2-shelved',
   'exclusive-edit-failure', 'filelog-integrations', 'filelog-move', 'filelog-wildcard-limit',
-  'files-at-unknown-change', 'files-existing', 'files-mixed', 'files-permission', 'files-symlink',
+  'files-at-unknown-change', 'files-existing',  'files-permission', 'files-symlink',
   'fstat-mixed-missing', 'fstat-reserved', 'fstat-size', 'fstat-unresolved', 'have-not-on-client',
   'info-json', 'info-short-json', 'info-unknown-user', 'info-zprog', 'modes-json-empty',
   'modes-marshal-empty', 'modes-marshal-files', 'modes-tagged-empty', 'modes-tagged-files',
@@ -27,10 +27,10 @@ const UNREFERENCED = new Set([
   'print-json', 'print-marshal-missing',
   'print-marshal-utf16', 'print-materialize', 'print-utf16',
   'property-empty', 'reconcile-data', 'reconcile-modtime', 'reconcile-progress-large',
-  'reconcile-progress', 'reconcile-writable', 'resolve-preview', 'settings', 'status-preview',
+  'reconcile-progress', 'reconcile-writable', 'resolve-preview',  'status-preview',
   'stream-import-spec', 'stream-spec', 'streams-empty', 'sync-force-preview', 'sync-keep-preview',
   'sync-opened-new-head-marshal', 'sync-opened-new-head-tagged', 'sync-os-error-preview',
-  'sync-os-error', 'sync-outside-stream', 'users-mixed', 'where-mixed', 'where-reserved',
+  'sync-os-error', 'sync-outside-stream', 'users-mixed',  'where-reserved',
 ]);
 
 function testSources(directory: string): string[] {
@@ -52,11 +52,11 @@ const isReferenced = (name: string): boolean =>
 describe('wire fixture coverage', () => {
   it('names every capture in at least one test, apart from the shrinking allowlist', () => {
     const missing = fixtures.filter((name) => !UNREFERENCED.has(name) && !isReferenced(name));
-    expect(missing).toEqual([]);
+    expect(missing.join(', ')).toBe('');
   });
 
   it('drops allowlist entries once a test covers them or the capture is removed', () => {
     const stale = [...UNREFERENCED].filter((name) => !fixtures.includes(name) || isReferenced(name));
-    expect(stale).toEqual([]);
+    expect(stale.join(', ')).toBe('');
   });
 });
