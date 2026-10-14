@@ -146,3 +146,126 @@ testing/      replayExecutor(fixtures) with strict normalized-argv matching (nea
 - IPC check: `structuredClone(result)` and `decodeP4Error(encodeP4Error(err))` round-trip losslessly.
 - Root-entry check: importing `p4client-ts` in a bundle with `node:*` marked external pulls no `child_process`.
 - `bun run docs:check` and `bun run pack:core`, then the Phase 7 consumer trial typecheck/tests in electroswag and ue-shed.
+
+---
+
+## Progress and handoff (2026-10-14)
+
+Branch `rearch/0.13`, PR #8. Phases 0–3 are done and pushed; Phase 4 has not started.
+`bun run typecheck` and `bun run test` (487 tests) pass at `5a65d9d`.
+
+| Phase | Commit | State |
+|---|---|---|
+| 0 Capture | `760c01c` | Done. 25 new fixtures; `tests/fixture-coverage.test.ts` allowlist may only shrink. |
+| 1 Wire | `84cb3ec` | Done. `src/wire/*`, `src/errors.ts`, `src/testing/fixture.ts`, golden `tests/fixtures/wire/_reasons.json`. |
+| 2 Exec | `b90ab0c` | Done. `src/exec/{executor,guard}.ts`, `src/node/executor.ts`, `src/connection/argv.ts`, `src/version.ts` (0.13.0). |
+| 3 Engine | `5a65d9d` | Done. `src/engine/{command,config}.ts`, `src/connection/settings.ts`, `src/node/connection.ts`, `src/testing/executor.ts`. |
+| 4 Commands | — | Next. See below. |
+
+The old code in `src/public` and `src/internal`, and its tests in `tests/*.test.ts`, are untouched and still pass. They are deleted at cutover (Phase 6).
+
+### What exists
+
+- **`wire/`** (pure, no Node imports):
+  - `reasons.ts`: the `P4Reason` and `P4Category` literal schemas, `categoryOf`, and severity names.
+  - `catalog.ts`: `decodeMessageCode`, and `MESSAGE_CATALOG` keyed by `subsystem:subcode`, covering all 22 codes in the corpus. `GENERIC_REASONS` covers the `EV_*` generic codes.
+  - `template.ts`: `fmt0` matching.
+  - `message.ts`: `P4MessageSchema`, `toMessage` and `textMessage`. Multi-part messages match `fmt0` against their trailing lines.
+  - `fallback.ts`: the only English regexes, enforced by a test.
+  - `marshal.ts`: incremental `-G` decoder.
+  - `record.ts`: `-Mj` line reader and data/message classification.
+  - `policy.ts`: `dispose(message, policy)` returns `'fail' | 'item' | 'empty' | 'notice'`.
+- **`errors.ts`:** Schema tagged errors (`P4CommandError`, `P4TimeoutError`, `P4ParseError`, `P4SpawnError`, `P4ReadOnlyError`, `P4InvalidArgumentError`, `P4MaterializationError`), plus the `P4ErrorSchema` union and `encodeP4Error`/`decodeP4Error`.
+- **`exec/`:**
+  - `P4Executor` service: `run(invocation) → Stream<stdout | stderr | exit>`, with `exit` always last.
+  - `checkCommand(args, input)`: the read-only guard.
+- **`engine/command.ts`:**
+  - `streamCommand(spec)` gives data, message and failure events.
+  - `runCommand(spec)` is that stream folded.
+  - `runPlainCommand(spec)` handles plain-text commands.
+  - All three share one exit rule, add the global args, `-zprog=p4client-ts` and `-zversion`, apply the guard and handle timeouts.
+- **`engine/config.ts`:** the `P4Config` service, `configLayer(options)`, `withOptions(patch)`, and `P4ClientOptions` (`executable`, `connection`, `cwd`, `env`, `timeoutMs`, `allowMutation`).
+- **`node/`:** `NodeP4Executor` and `runNodeProcess`; `resolveConnection` (sources: `p4` set, `p4v-app-settings`, `p4v-connection-map`).
+- **`testing/`:**
+  - `readWireFixtures` and `fixtureStdout`.
+  - `scriptedExecutor`.
+  - `replayExecutor`: strict on command args plus stdin, ignoring `-p/-u/-c/-C/-H/-zprog/-zversion`.
+  - `recordingExecutor`.
+
+### Decisions made while implementing (beyond the plan)
+
+- **What fails by default:**
+  - Errors (severity ≥ failed) and these reasons fail regardless of severity: session/connection/auth, charset, permission, configuration, `unknown_client`, `not_in_view`, `unknown_changelist`, `unknown_user`. Batch operations override the last three to `item`.
+  - EV_EMPTY warnings and the empty reasons are `empty`.
+  - Everything else is `notice`.
+- **Non-zero exits:** fail only if no message was emitted at all, or the plain spec's `acceptExit` rejects it.
+- **Plain-text stderr:**
+  - A header plus tab-indented lines is one message (for example "Perforce client error:" followed by "Connect to server failed…").
+  - Severity: known empty-result notices are warnings; otherwise the message is `failed` when the exit code is non-zero.
+- **Commands per format:**
+  - `-Mj diff` returns the body in `data` rows.
+  - `-Mj`/`-G` `diff2` return only a header, so `diff2` stays plain.
+  - `info` uses `-Mj info -s`.
+  - `print` and `printBatch` use `-G`. `-Mj print` puts bytes in a JSON string, which isn't binary-safe.
+- **Reconcile progress:** `reconcile -I` emits no progress through a pipe, even over 2,000 files (fixture `reconcile-progress-large`). Drop the `-I` fallback machinery; stream reconcile items instead.
+- **`describe -S`** on a submitted change reports `status: submitted` (fixture `describe-submitted-shelved-flag`).
+- **Sync OS errors** are code `0:1`, generic 33, template `%operation%: %arg%: %errmsg%`; the file is `args.arg`.
+- **The registry settings source is dropped:** `p4 set -q` already reports registry values. `resolveConnection` lives in `p4client-ts/node` because it reads P4V files.
+- **Executor environment:** `env` holds changes on top of `process.env`, and `undefined` removes a variable. A broken stdin pipe only fails the run when `p4` exits 0.
+- **Replay collisions:** `info-json`, `server-unreachable` and `command-timeout` share command args (`-Mj -z tag info`), so replay them individually, never as a whole-corpus map.
+
+### Streaming and progress (requested during Phase 3, design for Phase 4)
+
+The requirement is that every operation can report progress, not just sync.
+
+- **Every operation is a program:** `(sink) => Effect<Result, P4Error, P4Executor | P4Config>`. The sink receives `item`, `message`, `failure` and `progress` updates.
+  - `watch(op)` wraps the program in a `Stream` of `P4OperationEvent<Item, Result>`: `item | message | failure | progress | done(result)`.
+  - `run(op)` runs the same program with a sink that discards events.
+  - Both forms execute one code path, so they cannot drift.
+- **`P4Progress`:** `{ completed, total | null, unit, bytesCompleted | null, bytesTotal | null, elapsedMs }`.
+  - **Determinate:**
+    - sync and preview sync: the first row carries `totalFileCount`/`totalFileSize`, giving files and bytes
+    - printBatch and materialize: the input list
+    - diff summary: the file list
+    - paged changelists: the limit
+  - **Indeterminate** (running count, `total: null`): reconcile, describe, fstat, filelog and the other lists.
+- **`progressIntervalMs` (heartbeat):** emits a progress snapshot with `elapsedMs` while `p4` prints nothing, so UIs never sit silent. Implement it as a ticker merged with `haltStrategy: 'left'`.
+- **`Stream.callback` gotcha:** a *failing* effect inside `Stream.callback` hangs the stream instead of failing it (verified in beta.37). The watch runner must catch the program's cause and call `Queue.failCauseUnsafe(queue, cause)`, and call `Queue.endUnsafe` after `done`.
+- **Promise facade:** `client.sync(opts)` resolves to the result; `client.watch.sync(opts)` (or `watchSync`) returns `{ events: AsyncIterable, result: Promise }`. Both are generated from the op registry.
+
+### Phase 4 checklist
+
+1. **Runner:** `src/engine/operation.ts` with the program/sink, `watch`/`run`, the heartbeat, and a forwarding helper that takes `streamCommand` events into the sink.
+2. **Commands:** `src/commands/*.ts`, one family at a time, each with its policy from the plan's per-command overrides:
+   - environment (`info -s`)
+   - workspaces
+   - changelists (pending with `-l`, plus default synthesis sharing one `opened -c default`; submitted/shelved paging)
+   - opened
+   - describe
+   - files (depots/dirs/files/fstat/where, with `not_in_view → item`)
+   - history (`hasMore` via `-m N+1`, integrations from `how{n},{m}`/`file{n},{m}`)
+   - print (`printFile -G`, `printBatch -G -x -`, materialize `-o`)
+   - diff (`-Mj diff`, plain `diff2`)
+   - annotate, users (ids: `unknown_user → item`), streams
+   - sync/previewSync (clobber, filesystem, fault, client_fault and not_in_view → item; `failures` always present)
+   - reconcile
+   - raw `runTagged(args, { schema, policy })`
+3. **Branded constructors:** reuse `src/public/schemas.ts` (move it to `src/schemas.ts`) and row schemas from `src/internal/rows.ts`; mappers port from `client.ts` `to*` methods.
+4. **Tests:** turn the `client.test.ts` argv pins into a table `{ op, options, argv, fixture }` replayed strictly. Shrink the fixture-coverage allowlist as fixtures get used. Record deliberate behaviour changes in `MIGRATION.md`.
+5. **Workspace for a directory:** `findWorkspaceForPath` in `src/node/workspace.ts`, built on the workspaces op (win32 case-insensitive and realpath; AltRoots via `client -o`).
+
+### Working notes
+
+- **Effect 4.0.0-beta.37:**
+  - Use `ServiceMap.Service<Self, Shape>()('key')`; there is no `Context` module, and the effect-solutions docs assume a newer beta.
+  - `Stream.runCollect` returns an array.
+  - `Effect.runPromise(e, { signal })` rejects an abort with a generic "All fibers interrupted" error, so the Promise facade must rethrow `signal.reason`.
+  - Tagged errors are real `Error`s and survive `runPromise` rejection.
+- **Tests:**
+  - `bun run test` runs `tests/*.test.ts` and `tests/unit/`; e2e is excluded.
+  - New tests are typechecked through `tsconfig.scripts.json`, which includes `tests/unit/**` and `tests/support/**`.
+- **Captures:**
+  - `bun run wire:capture` rebuilds every fixture against a disposable `p4d`. Binaries are cached in `%LOCALAPPDATA%\p4-ts\perforce` on Windows and `~/.cache/p4-ts/perforce` elsewhere.
+  - Then run `bun run wire:reasons` and review the diff of `_reasons.json`.
+  - Marshal captures are not path-normalized, so don't capture commands whose `-G` output contains local paths (that is why `diff-opened-marshal` was dropped).
+- **Editing:** scripted Python edits mangled `\n`/`\s` inside heredocs. Edit files directly when replacements contain escapes.
