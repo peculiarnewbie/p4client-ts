@@ -3,5 +3,5 @@
 See the complete [package migration guide](packages/core/MIGRATION.md), including
 the old → new operation map, envelopes, watches, binary printing and view exclusions.
 
-Phase 6 follow-up standardizes `file` / `fileSpec`, clarifies inclusive changelist
-cursors, and validates packaged entry points; see the package guide for exact renames.
+It also lists the exact `file` / `fileSpec` renames, inclusive changelist cursors, and
+a pnpm recipe for apps whose workspace root still pins a beta `effect`.

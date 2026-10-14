@@ -178,9 +178,7 @@ validation with casts when consuming untrusted CLI or IPC data.
 and declaration entry, including all four subpaths. It fails if the current build is
 incomplete or an entry is excluded from packing. It does not build: run
 `bun run clean` and `bun run build` before retrying after missing output. This catches
-a retained incremental cache with missing dist files. Consumer trials exposed the compatibility and behavioral fixes described below.
-Repeat app validation with a fresh stable-Effect tarball before release.
-
+a retained incremental cache with missing dist files.
 
 ## Exported types and field migration
 
@@ -274,13 +272,42 @@ beta runtimes are outside that contract. Native layers, services and schemas mus
 use a compatible stable Effect installation. The old beta.37 `ServiceMap` import
 is gone: use `Context.Service`, `Schema.TaggedError`, and `yield* P4` directly.
 
-An app retaining an incompatible Effect version can isolate a stable installation
-using its package-manager dependency policy and use `/promise` as its boundary.
-The library does not bundle a private Effect runtime. Exchange plain options,
-results and AbortSignals; do not pass the app's incompatible schemas or layers.
-Call `runTagged` without a schema and validate returned `items` on the app side.
-The trial-specific beta.37 peer-removal hooks are obsolete; do not carry them to
-stable. A scoped override alone may not isolate a peer: inspect the resolved tree.
+### Installing beside a beta Effect (pnpm)
+
+The library does not bundle a private Effect runtime. If the workspace root still
+pins a beta `effect`, the stable peer range alone is not enough: with pnpm 11.17 the
+peer binds to the root's beta and import fails (`Schema.TaggedError is not a function`).
+Scoped `overrides` and `packageExtensions` did not change that binding. A private
+workspace package that declares both dependencies itself does resolve stable Effect:
+
+```json
+{
+  "name": "@app/p4-runtime",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": { "types": "./index.d.ts", "import": "./index.js" },
+    "./promise": { "types": "./promise.d.ts", "import": "./promise.js" },
+    "./node": { "types": "./node.d.ts", "import": "./node.js" }
+  },
+  "dependencies": { "effect": "4.0.4", "p4client-ts": "^0.13.0" }
+}
+```
+
+Each `.js` and `.d.ts` file is a one-line re-export, such as
+`export * from 'p4client-ts/promise';`; add `./testing` the same way if needed.
+Keep the package inside a `pnpm-workspace.yaml` packages glob. In the app, replace the direct `p4client-ts` dependency with
+`"@app/p4-runtime": "workspace:*"` and import only from the boundary package.
+`pnpm why effect` should then report 4.0.4 for p4client-ts. No readPackage hook or
+manifest rewrite is needed. Delete the package once the app moves to stable Effect.
+
+Pass only plain Promise values across this boundary: options, result envelopes,
+rejected errors (narrow by `_tag`) and AbortSignals. Do not pass app Effect schemas,
+layers, services or Effects into the library, and do not use library schemas with
+the app's beta `Schema`. Call `runTagged` without a schema and validate its `items`
+on the app side.
+
+### Plain processes, stdin and persistent settings
 
 For an existing stdout/stderr integration, `/node` exports
 `runNodeProcessPromise(invocation, { signal })`, returning

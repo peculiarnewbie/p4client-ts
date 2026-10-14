@@ -4,41 +4,55 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
-## 0.13.0 - Unreleased
+## 0.13.0 - 2026-10-14
 
-### Breaking
+### Breaking changes
 
-- Replace cached `P4Client` and `createP4Service` with a stateless Effect core,
-  registry-derived `P4` service and `createP4Client` Promise facade. Effect is a peer dependency.
-- Split platform-neutral root exports from `/node`, `/promise` and `/testing`.
-- Every operation takes one options object; lists return enumerable envelopes.
-  Batch failures use `{ spec, reason, message }`; sync failures are always present.
-- Remove global workspace setting writes and caches. Use immutable `with` clients
-  or scoped `P4.with`. Mutation requires `allowMutation: true`.
-- Replace watch-specific methods with `client.watch.<operation>`, discriminated
-  events and heartbeat progress. Add cancellation, bounded buffering and disposal.
-- Print binary-safe bytes using marshal; head revision and raw keywords are defaults.
-- Classify protocol message codes centrally; expose tagged, IPC-serializable errors.
+- The cached `P4Client` and `createP4Service` are replaced by a stateless Effect core, a
+  registry-derived `P4` service (`layerNode` from `/node`) and the `createP4Client` Promise
+  facade (`/promise`). The root entry is platform neutral; `/testing` holds test layers.
+- `effect` is a peer dependency, `^4.0.0`, developed against stable 4.0.4. Effect betas,
+  including beta.37's `ServiceMap`, are not supported.
+- Every operation takes one options object, including `{}`. Lists return enumerable
+  `{ items, messages }` envelopes; batch operations add `failures: { spec, reason, message }[]`.
+  Mixed `files`, `fstat`, `where`, batch print and sync requests keep valid items and report
+  each missing or unmapped spec as a failure.
+- Operations and inputs are renamed: one `listChangelists({ status })` with `cursor` /
+  `nextCursor`, `listOpenedFiles`, `limit`, `file` for one spec and `fileSpec` for lists.
+  Timestamps are ISO strings, and several result fields and exported types are renamed.
+- `setClient`, `switchWorkspace`, global `p4 set` writes, caches and `refresh` are removed.
+  Derive immutable clients with `with` or scope Effects with `P4.with`. Sync and mutating raw
+  commands require `allowMutation: true`. Dispose every Promise client.
+- Watch-specific methods are replaced by `client.watch.<operation>`, available for every
+  registry operation, with `_tag` events, heartbeat progress, cancellation and bounded buffering.
+- `printFile` and `printBatch` return binary-safe bytes read through marshal (`-G`);
+  `printedText` decodes UTF-8. The head revision and raw keywords are the defaults.
+- Messages are classified by protocol code in one place. Errors are tagged classes with
+  object constructors, new categories and reasons, and an IPC codec (`encodeP4Error` /
+  `decodeP4Error`).
 
 ### Added
 
-- Stable Effect 4.0.4 development runtime with `^4.0.0` peer contract.
-- Stdin for tagged commands, a plain `runNodeProcessPromise` bridge, and scoped `withP4Client` ownership.
-- Generic materialization metadata and status-specific changelist result types in both APIs.
-
-- Typed raw commands, connection source resolution and isolated settings,
-  workspace root/AltRoots matching, batch printing, history pagination and integrations.
-- Strict replay, recording and mock layers. Live e2e scenarios now exercise the new API.
+- `runTagged` and `taggedOperation` for typed raw commands, including stdin (`-x -`) input
+  inspected by the read-only guard.
+- `runNodeProcessPromise` in `/node` for plain stdout/stderr integrations, and
+  `withP4Client` in `/promise` for scoped disposal.
+- Connection source resolution, isolated settings (P4CONFIG and P4ENVIRO), and workspace
+  matching by path, including AltRoots.
+- `listFiles`, `listHaveFiles`, `getStream`, `printBatch`, history `hasMore` and
+  integrations, and the `followMoves` helper.
+- Numeric `change` types for submitted and shelved changelist results, and caller metadata
+  retained through materialization.
+- Strict fixture replay, recording and mock layers in `/testing`.
 
 ### Fixed
 
-- Refine code-less EV_EMPTY diagnostics using specific text, preserving missing-file specs in item failures.
-- Stage and verify materialized output so deleted revisions cannot report nonexistent files or overwrite prior output.
-- Expand migration type/field maps and typechecked discovery, mapping, watch and Promise replay recipes.
+- `materializeDepotFiles()` stages and verifies each file. A revision that prints nothing,
+  such as a deleted revision, fails with `P4MaterializationError` (`missing_output`) instead
+  of reporting a file that was never written, and existing output is left in place.
 
-- Decode `opened` revision/have-revision `none` as `null` for newly added files.
-
-See [MIGRATION.md](./MIGRATION.md) for the full operation map and behavior changes.
+See [MIGRATION.md](./MIGRATION.md) for the full operation map, type and field renames, and
+behavior changes.
 
 ## 0.12.1 - 2026-10-14
 

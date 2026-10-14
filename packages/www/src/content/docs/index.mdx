@@ -19,6 +19,10 @@ Install `p4client-ts` and its Effect peer dependency:
 bun add p4client-ts effect@4.0.4
 ```
 
+An app whose workspace root still pins a beta `effect` can isolate the library in a
+small workspace package; see
+[Installing beside a beta Effect](/guides/getting-started/#installing-beside-a-beta-effect).
+
 The Effect core and Promise facade run the same operations. Results carry enumerable
 `messages`; lists use `items`, and batch failures identify the failed spec.
 

@@ -5,19 +5,37 @@ description: Release notes for p4client-ts.
 
 All notable changes to `p4client-ts` are documented here.
 
-## 0.13.0 - Unreleased
+## 0.13.0 - 2026-10-14
 
-- Effect core, immutable Promise facade and platform-neutral root exports, with
-  separate `/node`, `/promise` and `/testing` entries. Effect is a peer dependency.
-- One options object per operation, enumerable envelopes and tagged errors with an IPC codec.
-- Shared protocol classification and run/watch programs, per-item batch failures,
-  heartbeat progress, cancellation, bounded buffering and client disposal.
-- Remove caches and global workspace-setting writes; mutation requires explicit configuration.
-- Binary-safe printing, batch print, history pagination/integrations, connection
-  discovery/isolation and workspace matching. Live tests and guides use the new API.
-- Fix `opened` revision `none` decoding for newly added files.
+### Breaking changes
 
-See the [migration guide](https://github.com/peculiarnewbie/p4client-ts/blob/rearch/0.13/packages/core/MIGRATION.md)
+- A stateless Effect core, registry-derived `P4` service and `createP4Client` Promise
+  facade replace `P4Client`. The root is platform neutral; use `/node`, `/promise`, `/testing`.
+- `effect` is a `^4.0.0` peer, developed against stable 4.0.4. Effect betas are unsupported.
+- One options object per operation; lists return enumerable `{ items, messages }`, and
+  batch operations report `{ spec, reason, message }` failures next to valid items.
+- Renamed operations and inputs (`listChangelists({ status })`, `cursor`, `limit`, `file`,
+  `fileSpec`), ISO timestamps and renamed result fields and types.
+- No caches, `refresh`, `setClient` or `p4 set` writes; derive clients with `with`.
+  Mutation requires `allowMutation: true`. Dispose every Promise client.
+- `client.watch.<operation>` replaces watch-specific methods, with `_tag` events and
+  heartbeat progress.
+- Printing returns binary-safe bytes; head revision and raw keywords are the defaults.
+- Code-based message classification and tagged errors with an IPC codec.
+
+### Added
+
+- Typed raw commands with stdin, `runNodeProcessPromise` and `withP4Client`.
+- Connection discovery, isolated settings and workspace matching by path.
+- `listFiles`, `listHaveFiles`, `getStream`, `printBatch`, history `hasMore`/integrations.
+- Strict replay, recording and mock layers in `/testing`.
+
+### Fixed
+
+- `materializeDepotFiles()` fails for a revision that prints nothing, such as a deleted
+  revision, instead of reporting a file that was never written.
+
+See the [migration guide](https://github.com/peculiarnewbie/p4client-ts/blob/main/packages/core/MIGRATION.md)
 for the complete old → new operation map.
 
 ## 0.12.1 - 2026-10-14

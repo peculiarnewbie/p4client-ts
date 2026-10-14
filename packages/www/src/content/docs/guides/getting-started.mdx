@@ -4,7 +4,8 @@ description: Use the immutable Promise client, envelopes, binary printing and wa
 ---
 
 Install `p4client-ts` with `effect@4.0.4`. Node 18 or newer and a local
-`p4` executable are required for live commands.
+`p4` executable are required for live commands. If your workspace root still pins a
+beta `effect`, see [Installing beside a beta Effect](#installing-beside-a-beta-effect).
 
 ```ts
 import { createP4Client } from 'p4client-ts/promise';
@@ -248,3 +249,32 @@ console.log(processOutput.stdout, processOutput.stderr, processOutput.exitCode);
 The process bridge is a low-level executor with no mutation guard or connection
 resolution. Nonzero exits are returned; cancellation/spawn errors reject. It buffers
 UTF-8 stdout/stderr. For binary data, use the library print operations.
+
+### Installing beside a beta Effect
+
+The library has no private Effect runtime; its peer is `^4.0.0`. With pnpm 11.17, a
+workspace root that pins a beta `effect` binds that peer to the beta, and the import
+fails. Scoped `overrides` and `packageExtensions` did not change that in testing. Add a
+private workspace package that declares both dependencies:
+
+```json
+{
+  "name": "@app/p4-runtime",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": { "types": "./index.d.ts", "import": "./index.js" },
+    "./promise": { "types": "./promise.d.ts", "import": "./promise.js" },
+    "./node": { "types": "./node.d.ts", "import": "./node.js" }
+  },
+  "dependencies": { "effect": "4.0.4", "p4client-ts": "^0.13.0" }
+}
+```
+
+Each `.js` and `.d.ts` file is one line, such as `export * from 'p4client-ts/promise';`.
+The app depends on `"@app/p4-runtime": "workspace:*"` instead of `p4client-ts` and
+imports only from that package; `pnpm why effect` should report 4.0.4 for p4client-ts.
+Pass only plain Promise values across it: options, results, rejected errors and
+AbortSignals. App Effect schemas, layers and services must not cross; call `runTagged`
+without a schema and validate rows on the app side. Remove the package once the app
+moves to stable Effect.
