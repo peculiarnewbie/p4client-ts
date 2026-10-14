@@ -1,7 +1,7 @@
 import { Effect } from 'effect';
-import { runCommand, streamCommand } from '../engine/command.js';
+import { streamCommand } from '../engine/command.js';
 import { drain, operation, progressCounter } from '../engine/operation.js';
-import { openedCommand } from './opened.js';
+import { readDefaultChangelist } from './default-changelist.js';
 import {
   change,
   description,
@@ -98,29 +98,6 @@ function scopedSpecs(specs: string[], cursor: number | undefined) {
 }
 
 /**
- * The default changelist, when files are open in it. Its description and
- * owner come from the first opened file.
- */
-function defaultChangelist(options: ListChangelistsOptions) {
-  return Effect.map(
-    runCommand(openedCommand({ change: 'default', user: options.user, client: options.client, fileSpec: options.fileSpec })),
-    (output) => {
-      const first = output.items[0];
-      const synthesized: P4Changelist | null = first === undefined ? null : {
-        change: 'default',
-        status: 'pending',
-        user: options.user ?? first.user,
-        client: options.client ?? first.client,
-        description: first.changeDescription ?? 'Default changelist',
-        createdAt: null,
-        isDefault: true,
-      };
-      return { changelist: synthesized, messages: output.messages };
-    },
-  );
-}
-
-/**
  * List pending, submitted or shelved changelists, newest first, a page at a time.
  *
  * @returns One page, with the cursor for the next.
@@ -150,10 +127,20 @@ export const listChangelists = operation<ListChangelistsOptions, P4Changelist, P
 
     const wantsDefault = options.status === 'pending' && (options.includeDefault ?? true) && cursor === undefined;
     if (wantsDefault) {
-      const found = yield* defaultChangelist(options);
+      const { description: found, opened } = yield* readDefaultChangelist(options);
       messages.push(...found.messages);
       for (const message of found.messages) yield* sink.message(message);
-      if (found.changelist !== null) page.unshift(found.changelist);
+      if (opened.length > 0) {
+        page.unshift({
+          change: 'default',
+          status: 'pending',
+          user: found.user,
+          client: found.client,
+          description: found.description,
+          createdAt: null,
+          isDefault: true,
+        });
+      }
     }
     for (const item of page) yield* sink.item(item);
 

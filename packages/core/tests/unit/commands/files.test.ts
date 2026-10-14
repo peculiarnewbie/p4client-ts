@@ -10,7 +10,7 @@ import {
   whereFiles,
 } from '../../../src/commands/files.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';
-import { argvCase, argvTable, failure, fixtures, replay, run, watch } from './support.js';
+import { argvCase, argvTable, failure, fixtureTime, fixtures, replay, run, watch } from './support.js';
 
 const TAG = ['-Mj', '-z', 'tag'];
 
@@ -63,11 +63,11 @@ describe('listDepots', () => {
     expect(depots.items).toEqual([
       {
         name: 'depot', depotPath: '//depot' as never, type: 'local', map: 'depot/...',
-        description: 'Default depot', createdAt: new Date(1791937498 * 1000).toISOString(),
+        description: 'Default depot', createdAt: fixtureTime('depots', 'time', (row) => row.name === 'depot'),
       },
       {
         name: 'p4ts', depotPath: '//p4ts' as never, type: 'stream', map: 'p4ts/...',
-        description: 'Disposable p4-ts E2E conformance depot.', createdAt: new Date(1791937499 * 1000).toISOString(),
+        description: 'Disposable p4-ts E2E conformance depot.', createdAt: fixtureTime('depots', 'time', (row) => row.name === 'p4ts'),
       },
     ]);
     expect(depots.messages).toEqual([]);
@@ -114,7 +114,7 @@ describe('listDepotFiles', () => {
       action: 'add' as never,
       type: 'text',
       change: 4,
-      submittedAt: new Date(1791937500 * 1000).toISOString(),
+      submittedAt: fixtureTime('files', 'time'),
       isDeletedAtHead: false,
       isBinary: false,
     });
@@ -248,7 +248,7 @@ describe('statFiles', () => {
       headType: 'text',
       headRevision: 1,
       headChange: 4,
-      headTime: new Date(1791937500 * 1000).toISOString(),
+      headTime: fixtureTime('fstat', 'headTime'),
       haveRevision: 1,
       fileSize: null,
       digest: null,
@@ -371,7 +371,7 @@ describe('listHaveFiles', () => {
       clientFile: '//p4ts_e2e_client/wire/text.txt' as never,
       localFile: '<WORKSPACE>\\wire\\text.txt' as never,
       haveRevision: 1,
-      syncedAt: new Date(1791937500 * 1000).toISOString(),
+      syncedAt: fixtureTime('have', 'syncTime'),
     }]);
   });
 

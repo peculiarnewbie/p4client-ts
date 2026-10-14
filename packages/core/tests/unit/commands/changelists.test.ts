@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { listChangelists } from '../../../src/commands/changelists.js';
 import { describeChangelist } from '../../../src/commands/describe.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';
-import { argvCase, argvTable, failure, fixtures, replay, run, watch } from './support.js';
+import { argvCase, argvTable, failure, fixtureTime, fixtures, replay, run, watch } from './support.js';
 
 const TAG = ['-Mj', '-z', 'tag'];
 
@@ -86,9 +86,25 @@ describe('listChangelists', () => {
       user: 'p4ts-e2e',
       client: 'p4ts_e2e_client',
       description: 'Pending wire fixture',
-      createdAt: new Date(1791937503 * 1000).toISOString(),
+      createdAt: fixtureTime('changes-pending-long', 'time'),
       isDefault: false,
     }]);
+  });
+
+  it('filters pending changelists by user and workspace', async () => {
+    const page = await run(listChangelists, {
+      status: 'pending', limit: 4, user: 'p4ts-e2e', client: 'p4ts_e2e_client', includeDefault: false,
+    }, replay('changes-pending'));
+    expect(page.items.map((item) => [item.change, item.user, item.client])).toEqual([[7, 'p4ts-e2e', 'p4ts_e2e_client']]);
+  });
+
+  it('returns an empty page when nothing matches', async () => {
+    const empty = { items: [], messages: [], hasMore: false, nextCursor: null };
+    expect(await run(listChangelists, { status: 'submitted', limit: 4, fileSpec: '//p4ts/main/missing.txt' }, replay('changes-empty')))
+      .toEqual(empty);
+    expect(await run(listChangelists, { status: 'pending', limit: 4, includeDefault: false }, replay('changes-pending-empty')))
+      .toEqual(empty);
+    expect(await run(listChangelists, { status: 'shelved', limit: 4 }, replay('changes-shelved-empty'))).toEqual(empty);
   });
 
   it('lists shelved changelists', async () => {

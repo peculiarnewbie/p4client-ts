@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { Layer, Schema, Stream } from 'effect';
-import { runTagged } from '../../../src/commands/raw.js';
+import { runTagged, taggedOperation } from '../../../src/commands/raw.js';
 import { P4Executor } from '../../../src/exec/executor.js';
 import { commandArgs, scriptedExecutor } from '../../../src/testing/executor.js';
 import { argvCase, argvTable, failure, fixtures, replay, run, watch } from './support.js';
@@ -33,6 +33,14 @@ describe('runTagged', () => {
       clientName: 'p4ts_e2e_client',
       serverVersion: 'P4D/NTX64/2026.1/3089746 (2026/10/07)',
     });
+  });
+
+  it('types records by the schema of a tagged operation', async () => {
+    const info = taggedOperation(InfoRow);
+    const result = await run(info, { args: ['info'] }, replay('info-json'));
+    const user: string | undefined = result.items[0]?.userName;
+    expect(user).toBe('p4ts-e2e');
+    expect(info.name).toBe('runTagged');
   });
 
   it('fails with P4ParseError, naming the command, for a record the schema rejects', async () => {

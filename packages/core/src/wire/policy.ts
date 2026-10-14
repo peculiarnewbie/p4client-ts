@@ -1,3 +1,4 @@
+import { Schema } from 'effect';
 import { isErrorSeverity } from './reasons.js';
 import type { P4Message } from './message.js';
 import type { P4Reason } from './reasons.js';
@@ -10,7 +11,10 @@ import type { P4Reason } from './reasons.js';
  * - `empty`: the request matched nothing; returned in `messages`.
  * - `notice`: informational; returned in `messages`.
  */
-export type P4Disposition = 'fail' | 'item' | 'empty' | 'notice';
+export const P4DispositionSchema = Schema.Literals(['fail', 'item', 'empty', 'notice']);
+
+/** What an operation does with a message; see {@link P4DispositionSchema}. */
+export type P4Disposition = typeof P4DispositionSchema.Type;
 
 /** Per-operation overrides of the default disposition, by reason. */
 export type P4MessagePolicy = Readonly<Partial<Record<P4Reason, P4Disposition>>>;
@@ -58,7 +62,10 @@ const EMPTY_REASONS = new Set<P4Reason>([
  * @param policy The operation's overrides.
  * @returns The disposition.
  */
-export function dispose(message: P4Message, policy: P4MessagePolicy = {}): P4Disposition {
+export function dispose(
+  message: Pick<P4Message, 'reason' | 'severity' | 'code'>,
+  policy: P4MessagePolicy = {},
+): P4Disposition {
   const override = policy[message.reason];
   if (override !== undefined) return override;
   if (ALWAYS_FAIL.has(message.reason) || isErrorSeverity(message.severity)) return 'fail';

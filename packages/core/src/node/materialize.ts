@@ -127,7 +127,7 @@ function destinationError(path: string): P4MaterializationError {
 
 /**
  * Write exact depot revisions beneath an existing directory, one
- * `p4 print -q -o <path> <file>#<rev>` per file (`-K` unless keywords are
+ * `p4 print -q -o <path> <file>#<rev>` per file (`-k` unless keywords are
  * expanded), so content never passes through this process.
  *
  * Files land at `<directory>/<depot>/<path…>`. Nothing is synced and the
@@ -163,7 +163,7 @@ export const materializeDepotFiles = operation<
     if (!info.isDirectory()) return yield* destinationError(directory);
     const plans = yield* planPaths(directory, options.files);
 
-    const keywordArgs = (options.keywords ?? 'raw') === 'raw' ? ['-K'] : [];
+    const keywordArgs = (options.keywords ?? 'raw') === 'raw' ? ['-k'] : [];
     const counter = progressCounter(sink, 'files', plans.length);
     const messages: P4Message[] = [];
     const items = yield* Effect.forEach(plans, (plan) => Effect.gen(function* () {

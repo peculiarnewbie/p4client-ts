@@ -90,6 +90,21 @@ describe('structured commands', () => {
     ]);
   });
 
+  it('records what the policy did with each message', async () => {
+    const asItem = await run(
+      runCommand({ ...fields(['where', '//p4ts/main/wire/text.txt', '//other/main/a.txt']), policy: { not_in_view: 'item' } }),
+      replayExecutor(fixtures('where-mixed')),
+    );
+    expect(asItem.failures.map((message) => message.disposition)).toEqual(['item']);
+    const empty = await run(
+      runCommand(fields(['files', '//p4ts/main/wire/text.txt', '//p4ts/main/missing.txt'])),
+      replayExecutor(fixtures('files-mixed')),
+    );
+    expect(empty.messages.map((message) => message.disposition)).toEqual(['empty']);
+    const error = await failure(runCommand(fields(['changes', '-m', '1'])), replayExecutor(fixtures('changes-ticket-expired')));
+    expect(error instanceof P4CommandError ? error.messages.map((message) => message.disposition) : null).toEqual(['fail']);
+  });
+
   it('classifies plain-text failures printed before reaching a server', async () => {
     const error = await failure(runCommand(fields(['info'])), replayExecutor(fixtures('server-unreachable')));
     expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'server_unreachable', category: 'connection' });
@@ -122,7 +137,7 @@ describe('structured commands', () => {
   it('decodes marshal output, keeping content as bytes', async () => {
     const output = await run(
       runCommand({
-        args: ['print'],
+        args: ['print', '-k'],
         globalArgs: ['-x', '-'],
         input: '//p4ts/main/wire/text.txt\n//p4ts/main/wire/full.uasset\n//p4ts/main/missing.txt\n//p4ts/main/wire/wide.txt\n',
         format: 'marshal',

@@ -3,6 +3,7 @@ import { runCommand, runPlainCommand } from '../engine/command.js';
 import { operation, progressCounter, runOperation } from '../engine/operation.js';
 import { P4InvalidArgumentError } from '../errors.js';
 import { P4DepotPathSchema, P4LocalPathSchema } from '../schemas.js';
+import { readDefaultChangelist } from './default-changelist.js';
 import { describeChangelist } from './describe.js';
 import { hasUnifiedHunk, isBinaryP4Type, resolveDiffPlan, summarizeUnifiedDiff } from './diff-text.js';
 import { openedCommand } from './opened.js';
@@ -191,28 +192,6 @@ export interface P4ChangelistDiffSummary {
 
 const DEFAULT_CONCURRENCY = 3;
 
-/** The default changelist described from its opened files, as `describeChangelist` does. */
-function defaultChangelist(opened: readonly P4OpenedFile[], messages: P4Message[], client: string | undefined): P4ChangelistDescription {
-  const first = opened[0];
-  return {
-    change: 'default',
-    status: 'pending',
-    user: first?.user ?? null,
-    client: client ?? first?.client ?? null,
-    description: first?.changeDescription ?? 'Default changelist',
-    createdAt: null,
-    files: opened.flatMap((file) => file.depotFile === null ? [] : [{
-      depotFile: file.depotFile,
-      action: file.action,
-      type: file.type,
-      revision: file.revision,
-      digest: null,
-      fileSize: null,
-    }]),
-    messages,
-  };
-}
-
 function openedLocalFile(file: P4OpenedFile | undefined): P4LocalPath | null {
   const path = file?.clientFile ?? null;
   return path !== null && isLocalPath(path) && !path.startsWith('//') ? path : null;
@@ -261,10 +240,10 @@ export const getChangelistDiffSummary = operation<
     let opened: readonly P4OpenedFile[] = [];
     if (options.change === 'default') {
       if (shelved) return yield* invalid('shelved', 'Only a numbered changelist can have shelved files.');
-      const output = yield* runCommand(openedCommand({ change: 'default', client: options.client }));
-      changelist = defaultChangelist(output.items, output.messages, options.client);
-      opened = output.items;
-      messages.push(...output.messages);
+      const found = yield* readDefaultChangelist({ client: options.client });
+      changelist = found.description;
+      opened = found.opened;
+      messages.push(...changelist.messages);
     } else {
       changelist = yield* runOperation(describeChangelist, { change: options.change, shelved });
       messages.push(...changelist.messages);

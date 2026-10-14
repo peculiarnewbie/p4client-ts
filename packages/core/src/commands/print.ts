@@ -25,7 +25,7 @@ import type { P4ItemFailure, Row } from './shared.js';
  * Whether `$Keyword$` placeholders in `+k` files are expanded.
  *
  * - `raw` (the default) prints the content as stored, with keywords
- *   unexpanded (`p4 print -K`; servers before 2022.1 spell it `-k`).
+ *   unexpanded (`p4 print -k`).
  * - `expand` prints what a sync would write, with keywords expanded.
  */
 export type P4KeywordMode = 'raw' | 'expand';
@@ -72,6 +72,12 @@ export interface PrintBatchOptions {
   readonly files: readonly string[];
   /** Keyword expansion. Defaults to `raw`. */
   readonly keywords?: P4KeywordMode | undefined;
+  /**
+   * Keep each file's content in the result's `items`. Defaults to `true`.
+   * Pass `false` when watching a large batch: content then reaches only the
+   * `item` events, and `items` stays empty, so the batch is never held in memory.
+   */
+  readonly keepContent?: boolean | undefined;
 }
 
 /** One file printed by {@link printBatch}. */
@@ -82,7 +88,10 @@ export interface P4PrintedBatchItem {
 
 /** Everything {@link printBatch} printed. */
 export interface P4PrintBatchResult {
+  /** Printed files with their content; empty when `keepContent` is `false`. */
   readonly items: P4PrintedBatchItem[];
+  /** Every printed file, without content, in output order. */
+  readonly printed: P4PrintedFileInfo[];
   readonly messages: P4Message[];
   /** Specs that matched no file or revision, as the messages Perforce reported for them. */
   readonly failures: P4ItemFailure[];
@@ -124,8 +133,15 @@ function toPrintRecord(row: Row): PrintRecord | null {
   return null;
 }
 
-function printArgs(keywords: P4KeywordMode | undefined): string[] {
-  return (keywords ?? 'raw') === 'raw' ? ['print', '-K'] : ['print'];
+/**
+ * Print arguments for a keyword mode. 2022.1 renamed `-k` to `-K` and kept
+ * `-k` as an alias; servers before 2022.1 reject `-K`, so `-k` works everywhere.
+ *
+ * @param keywords The keyword mode.
+ * @returns `print`, with `-k` for raw content.
+ */
+export function printArgs(keywords: P4KeywordMode | undefined): string[] {
+  return (keywords ?? 'raw') === 'raw' ? ['print', '-k'] : ['print'];
 }
 
 function concat(chunks: readonly Uint8Array[]): Uint8Array {
@@ -245,7 +261,8 @@ export const printBatch = operation<PrintBatchOptions, P4PrintedBatchItem, P4Pri
     }
     const total = options.files.length;
     const counter = progressCounter(sink, 'files', total);
-    const result: P4PrintBatchResult = { items: [], messages: [], failures: [] };
+    const keepContent = options.keepContent ?? true;
+    const result: P4PrintBatchResult = { items: [], printed: [], messages: [], failures: [] };
     const step = () => Effect.suspend(() => {
       if (counter.snapshot().completed >= total) counter.expect(null);
       return Effect.void;
@@ -258,7 +275,10 @@ export const printBatch = operation<PrintBatchOptions, P4PrintedBatchItem, P4Pri
       policy: BATCH_POLICY,
       decode: toPrintRecord,
     }, {
-      file: (item) => Effect.sync(() => result.items.push(item)).pipe(
+      file: (item) => Effect.sync(() => {
+        result.printed.push(item.file);
+        if (keepContent) result.items.push(item);
+      }).pipe(
         Effect.andThen(sink.item(item)),
         Effect.andThen(step()),
         Effect.andThen(advance(counter, item)),

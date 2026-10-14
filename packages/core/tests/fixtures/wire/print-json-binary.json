@@ -19,7 +19,7 @@
   ],
   "exitCode": 0,
   "stopped": null,
-  "stdout": "{\"action\":\"add\",\"change\":\"4\",\"dataSize\":\"16\",\"depotFile\":\"//p4ts/main/wire/full.uasset\",\"fileSize\":\"16\",\"rev\":\"1\",\"time\":\"1791937500\",\"type\":\"binary+F\"}\n{\"data\":\"full binary\\u0000data\"}\n{\"data\":\"\"}\n",
+  "stdout": "{\"action\":\"add\",\"change\":\"4\",\"dataSize\":\"16\",\"depotFile\":\"//p4ts/main/wire/full.uasset\",\"fileSize\":\"16\",\"rev\":\"1\",\"time\":\"1791941690\",\"type\":\"binary+F\"}\n{\"data\":\"full binary\\u0000data\"}\n{\"data\":\"\"}\n",
   "stdoutBase64": null,
   "stderr": "",
   "rows": [

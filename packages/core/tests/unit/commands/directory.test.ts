@@ -2,13 +2,12 @@ import { describe, expect, it } from 'bun:test';
 import { getStream, listStreams } from '../../../src/commands/streams.js';
 import { listUsers } from '../../../src/commands/users.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';
-import { argvCase, argvTable, failure, replay, run, watch } from './support.js';
+import { argvCase, argvTable, failure, fixtureTime, replay, run, watch } from './support.js';
 import type { P4DepotPath } from '../../../src/schemas.js';
 
 const TAG = ['-Mj', '-z', 'tag'];
 
 const path = (value: string) => value as P4DepotPath;
-const iso = (seconds: number) => new Date(seconds * 1000).toISOString();
 
 describe('directory operations: argv', () => {
   argvTable([
@@ -35,8 +34,8 @@ describe('listUsers', () => {
         email: 'p4-ts-e2e@example.invalid',
         fullName: 'p4-ts isolated E2E fixture',
         type: 'standard',
-        accessedAt: iso(1791937499),
-        updatedAt: iso(1791937499),
+        accessedAt: fixtureTime('users', 'Access'),
+        updatedAt: fixtureTime('users', 'Update'),
       }],
       messages: [],
       failures: [],
@@ -82,8 +81,8 @@ describe('listStreams', () => {
         type: 'mainline',
         description: 'Import fixture',
         options: ['allsubmit', 'unlocked', 'notoparent', 'nofromparent', 'mergedown'],
-        accessedAt: iso(1791937500),
-        updatedAt: iso(1791937500),
+        accessedAt: fixtureTime('streams', 'Access'),
+        updatedAt: fixtureTime('streams', 'Update'),
       },
       expect.objectContaining({ stream: path('//p4ts/main'), name: 'main', description: 'Disposable p4-ts E2E mainline stream.' }),
     ]);

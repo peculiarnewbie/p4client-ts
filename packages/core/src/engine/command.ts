@@ -150,8 +150,9 @@ class OutputReader {
   }
 
   /** Classify a message; returns it as an event unless it fails the command. */
-  classify(message: P4Message): P4CommandEvent<never> | null {
-    const disposition = dispose(message, this.policy);
+  classify(received: P4Message): P4CommandEvent<never> | null {
+    const disposition = dispose(received, this.policy);
+    const message: P4Message = { ...received, disposition };
     if (disposition === 'fail') {
       this.fatal.push(message);
       this.messages.push(message);

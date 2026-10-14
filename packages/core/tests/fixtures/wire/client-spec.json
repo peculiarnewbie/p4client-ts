@@ -18,7 +18,7 @@
   ],
   "exitCode": 0,
   "stopped": null,
-  "stdout": "{\"Access\":\"2026/10/14 07:24:59\",\"Backup\":\"enable\",\"Client\":\"p4ts_e2e_client\",\"LineEnd\":\"local\",\"Options\":\"allwrite clobber nocompress unlocked nomodtime rmdir noaltsync\",\"Owner\":\"p4ts-e2e\",\"Root\":\"<WORKSPACE>\",\"Stream\":\"//p4ts/main\",\"SubmitOptions\":\"submitunchanged\",\"Type\":\"writeable\",\"Update\":\"2026/10/14 07:25:00\",\"View0\":\"//p4ts/main/... //p4ts_e2e_client/...\"}\n",
+  "stdout": "{\"Access\":\"2026/10/14 08:34:50\",\"Backup\":\"enable\",\"Client\":\"p4ts_e2e_client\",\"LineEnd\":\"local\",\"Options\":\"allwrite clobber nocompress unlocked nomodtime rmdir noaltsync\",\"Owner\":\"p4ts-e2e\",\"Root\":\"<WORKSPACE>\",\"Stream\":\"//p4ts/main\",\"SubmitOptions\":\"submitunchanged\",\"Type\":\"writeable\",\"Update\":\"2026/10/14 08:34:51\",\"View0\":\"//p4ts/main/... //p4ts_e2e_client/...\"}\n",
   "stdoutBase64": null,
   "stderr": "",
   "rows": [

@@ -1,7 +1,7 @@
 import { Effect } from 'effect';
 import { runCommand } from '../engine/command.js';
 import { operation, progressCounter } from '../engine/operation.js';
-import { openedCommand } from './opened.js';
+import { readDefaultChangelist } from './default-changelist.js';
 import {
   action,
   change,
@@ -67,29 +67,9 @@ function describedFiles(row: Row): P4DescribedFile[] {
 }
 
 function describeDefault(options: DescribeChangelistOptions) {
-  return Effect.gen(function* () {
-    if (options.shelved) return yield* invalid('shelved', 'Only a numbered changelist can have shelved files.');
-    const opened = yield* runCommand(openedCommand({ change: 'default', client: options.client }));
-    const first = opened.items[0];
-    const description: P4ChangelistDescription = {
-      change: 'default',
-      status: 'pending',
-      user: first?.user ?? null,
-      client: options.client ?? first?.client ?? null,
-      description: first?.changeDescription ?? 'Default changelist',
-      createdAt: null,
-      files: opened.items.flatMap((file) => file.depotFile === null ? [] : [{
-        depotFile: file.depotFile,
-        action: file.action,
-        type: file.type,
-        revision: file.revision,
-        digest: null,
-        fileSize: null,
-      }]),
-      messages: opened.messages,
-    };
-    return description;
-  });
+  return options.shelved
+    ? invalid('shelved', 'Only a numbered changelist can have shelved files.')
+    : Effect.map(readDefaultChangelist({ client: options.client }), (found) => found.description);
 }
 
 function describeNumbered(number: number, shelved: boolean) {

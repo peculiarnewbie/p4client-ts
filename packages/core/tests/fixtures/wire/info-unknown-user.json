@@ -14,7 +14,7 @@
   ],
   "exitCode": 0,
   "stopped": null,
-  "stdout": "User name: missing-user\r\nClient name: p4ts_e2e_client\r\nClient host: p4ts_e2e_client\r\nClient root: <WORKSPACE>\r\nClient stream: //p4ts/main\r\nCurrent directory: <WORKSPACE>\r\nPeer address: <LOCAL_PEER>\r\nClient address: 127.0.0.1\r\nServer date: 2026/10/14 07:25:03 +0700 SE Asia Standard Time\r\nServer version: P4D/NTX64/2026.1/3089746 (2026/10/07)\r\nServer license: none\r\nCase Handling: insensitive\r\n",
+  "stdout": "User name: missing-user\r\nClient name: p4ts_e2e_client\r\nClient host: p4ts_e2e_client\r\nClient root: <WORKSPACE>\r\nClient stream: //p4ts/main\r\nCurrent directory: <WORKSPACE>\r\nPeer address: <LOCAL_PEER>\r\nClient address: 127.0.0.1\r\nServer date: 2026/10/14 08:34:53 +0700 SE Asia Standard Time\r\nServer version: P4D/NTX64/2026.1/3089746 (2026/10/07)\r\nServer license: none\r\nCase Handling: insensitive\r\n",
   "stdoutBase64": null,
   "stderr": "",
   "rows": []

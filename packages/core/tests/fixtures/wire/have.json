@@ -18,7 +18,7 @@
   ],
   "exitCode": 0,
   "stopped": null,
-  "stdout": "{\"clientFile\":\"//p4ts_e2e_client/wire/text.txt\",\"depotFile\":\"//p4ts/main/wire/text.txt\",\"haveRev\":\"1\",\"path\":\"<WORKSPACE>\\\\wire\\\\text.txt\",\"syncTime\":\"1791937500\"}\n",
+  "stdout": "{\"clientFile\":\"//p4ts_e2e_client/wire/text.txt\",\"depotFile\":\"//p4ts/main/wire/text.txt\",\"haveRev\":\"1\",\"path\":\"<WORKSPACE>\\\\wire\\\\text.txt\",\"syncTime\":\"1791941690\"}\n",
   "stdoutBase64": null,
   "stderr": "",
   "rows": [

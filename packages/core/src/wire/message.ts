@@ -8,6 +8,7 @@ import {
   categoryOf,
   severityName,
 } from './reasons.js';
+import { P4DispositionSchema, dispose } from './policy.js';
 import { matchTemplate } from './template.js';
 import type { P4MessageCode } from './catalog.js';
 import type { P4Reason } from './reasons.js';
@@ -40,6 +41,12 @@ export const P4MessageSchema = Schema.Struct({
   args: Schema.Record(Schema.String, Schema.String),
   /** Whether the reason came from the unique code, the generic code, or the text. */
   reasonSource: Schema.Literals(['code', 'generic', 'text']),
+  /**
+   * What the operation did with the message: failed on it, reported it as a
+   * per-item failure, or returned it as an empty-result or other notice. Messages
+   * built outside an operation carry the default disposition.
+   */
+  disposition: P4DispositionSchema,
   /** The message row as received, for diagnostics. */
   raw: Schema.Record(Schema.String, Schema.Unknown),
 });
@@ -124,15 +131,17 @@ export function toMessage(fields: Readonly<Record<string, unknown>>): P4Message 
   const args = template === null ? {} : matchPrimaryPart(template, text);
   const generic = numberField(fields.generic) ?? code?.generic ?? null;
   const { reason, reasonSource } = resolveReason(code, generic, args, text);
+  const severity = severityName(numericSeverity(fields, code));
   return {
     text,
-    severity: severityName(numericSeverity(fields, code)),
+    severity,
     reason,
     category: categoryOf(reason),
     code,
     template,
     args,
     reasonSource,
+    disposition: dispose({ reason, severity, code }),
     raw: { ...fields },
   };
 }
@@ -150,15 +159,17 @@ export function toMessage(fields: Readonly<Record<string, unknown>>): P4Message 
 export function textMessage(text: string, exitCode: number): P4Message {
   const trimmed = text.trimEnd();
   const reason = textReason(trimmed);
+  const severity = severityName(textSeverity(reason, exitCode));
   return {
     text: trimmed,
-    severity: severityName(textSeverity(reason, exitCode)),
+    severity,
     reason,
     category: categoryOf(reason),
     code: null,
     template: null,
     args: {},
     reasonSource: 'text',
+    disposition: dispose({ reason, severity, code: null }),
     raw: { data: trimmed },
   };
 }

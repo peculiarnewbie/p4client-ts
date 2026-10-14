@@ -12,6 +12,7 @@
     "p4ts_e2e_client",
     "-G",
     "print",
+    "-k",
     "//p4ts/main/missing.txt"
   ],
   "exitCode": 0,

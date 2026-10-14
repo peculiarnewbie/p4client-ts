@@ -12,7 +12,7 @@
     "p4ts_e2e_client",
     "print",
     "-q",
-    "-K",
+    "-k",
     "-o",
     "<WORKSPACE>\\printed.txt",
     "//p4ts/main/wire/text.txt#1"

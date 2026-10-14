@@ -11,7 +11,6 @@ const wireRoot = join(testsRoot, 'fixtures/wire');
  * a test covers it.
  */
 const UNREFERENCED = new Set([
-  'changes-empty', 'changes-pending-empty', 'changes-pending', 'changes-shelved-empty',
   'client-spec', 'client-unknown', 'client-version', 'info-unknown-user', 'info-zprog',
   'modes-marshal-empty', 'modes-marshal-files', 'modes-tagged-empty', 'modes-tagged-files',
   'opened-unchanged-marshal', 'opened-unchanged-tagged', 'sync-opened-new-head-marshal',

@@ -152,7 +152,7 @@ testing/      replayExecutor(fixtures) with strict normalized-argv matching (nea
 ## Progress and handoff (2026-10-14)
 
 Branch `rearch/0.13`, PR #8. Phases 0–4 are done; Phase 5 (facades) is next.
-`bun run typecheck` and `bun run test` (756 tests) pass at the Phase 4 commit.
+`bun run typecheck` and `bun run test` (762 tests) pass at the Phase 4 follow-up commit.
 
 | Phase | Commit | State |
 |---|---|---|
@@ -243,20 +243,22 @@ The requirement is that every operation can report progress, not just sync.
 - **Tests:** `tests/unit/commands/*.test.ts` hold an argv table per family (`argvCase`/`argvTable` in `support.ts`) plus strict replays; sync, preview sync and reconcile have run/watch parity tests. The fixture-coverage allowlist went from about 70 to 17.
 - **Replay fix:** `commandArgs` now strips connection options only before the subcommand. Before, `opened -u arif` replayed as `opened`, and listings of fixture args hid `clients -u`, `opened -c default`, `annotate -c`.
 
-### Phase 4 follow-ups (decide or fix before or during Phase 5)
+### Phase 4 follow-ups (resolved)
 
-- **Re-capture fixtures whose args the new ops never produce:**
-  - `changes-pending`, `changes-empty`, `changes-pending-empty` and `changes-shelved-empty` lack `-l`.
-  - `filelog-move` is `-i -l` and `filelog-wildcard-limit` is `-m 1`; their tests serve them through a non-strict helper.
-  - The `-G print` fixtures lack `-K`; their replays pass `keywords: 'expand'`.
-  - The `-I reconcile` fixtures are replayed with `-I` stripped.
-- **`-K` needs a 2022.1+ server.** The default `keywords: 'raw'` passes `-K` (`-k` is the older alias, accepted by both). Decide whether to send `-k` for older servers; `print-materialize` was captured with `-K`.
-- **Annotate now attributes lines to `lower`** (the change that introduced the line), where the old code used `upper`. No fixture has a multi-revision file; add one to confirm.
-- **`P4Message` has no `disposition`** although the shape conventions list one. Either add it in the engine's `classify` or drop it from the plan.
-- **Default changelist synthesis is duplicated** in `describe.ts`, `changelists.ts` and `diff.ts`; factor it out.
-- **`printBatch` keeps every file's content in its result**, even when watched. Consider a watch-only mode for large batches.
-- **`runTagged` is untyped** (`Schema.Decoder<unknown>`): the facade should add a generic overload.
-- **Remaining allowlist entries:** the `-ztag`/`-G` mode-comparison captures, `client-version`, `info-unknown-user`, `info-zprog`, `client-spec` and `client-unknown`.
+- **Fixtures re-captured** (140 captures; `_reasons.json` unchanged):
+  - `changes-*` now carry `-l`.
+  - `filelog-move` is `-l -i`, and `filelog-wildcard-limit` is `-m 2`.
+  - The `-G print` captures carry `-k`.
+  - All of them replay strictly.
+  - The `-I reconcile` captures stay as evidence that `-I` reports no progress through a pipe; their tests strip `-I`.
+- **Tests read capture times from the fixtures** (`fixtureTime`/`fixtureRows` in `tests/unit/commands/support.ts`) instead of pinning them, so a re-capture only changes fixtures.
+- **Raw prints pass `-k`, not `-K`.** 2022.1 renamed `-k` to `-K` and kept `-k` as an alias, so `-k` works on every server.
+- **Annotate attributes each line to `lower`.** The capture `annotate-revisions` (three revisions of `//p4ts/main/blame/blame.txt`) confirms it: `upper` is the head change for every line.
+- **`P4Message.disposition`:** `toMessage`/`textMessage` set the default disposition, and the engine's `classify` stamps the operation's policy result.
+- **Default changelist synthesis is shared:** `readDefaultChangelist` in `src/commands/default-changelist.ts` runs one `opened -c default`, used by describe, changelists and the diff summary.
+- **`printBatch({ keepContent: false })`** leaves content to the events; `printed` always lists the files.
+- **Typed tagged commands:** `taggedOperation(schema)` makes a typed tagged op. `runTagged` stays as the untyped registry entry. The facade can expose a generic `runTagged` overload over it.
+- **Remaining allowlist:** 13 evidence captures that no operation replays: the `-ztag`/`-G` mode comparisons, `client-version`, `client-spec`, `client-unknown`, `info-unknown-user` and `info-zprog`.
 
 ### Working notes
 

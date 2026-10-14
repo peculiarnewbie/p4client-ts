@@ -112,3 +112,27 @@ export function argvTable(cases: readonly ArgvCase[]): void {
     });
   }
 }
+
+/** The JSON records a fixture printed on stdout. */
+export function fixtureRows(name: string): Array<Record<string, unknown>> {
+  return (fixtures(name)[0]!.stdout ?? '').split(/\r?\n/).filter((line) => line.startsWith('{'))
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+/**
+ * A Unix-seconds field of a fixture record as ISO 8601, so assertions follow
+ * the capture's clock rather than pinning it.
+ *
+ * @param name Fixture name.
+ * @param field Field holding seconds.
+ * @param match Picks the record; defaults to the first.
+ */
+export function fixtureTime(
+  name: string,
+  field: string,
+  match: (row: Record<string, unknown>) => boolean = () => true,
+): string {
+  const row = fixtureRows(name).find(match);
+  if (row === undefined) throw new Error(`No matching record in fixture ${name}`);
+  return new Date(Number(row[field]) * 1000).toISOString();
+}

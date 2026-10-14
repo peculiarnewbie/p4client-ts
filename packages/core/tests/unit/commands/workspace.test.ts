@@ -3,7 +3,7 @@ import { getEnvironment } from '../../../src/commands/environment.js';
 import { listOpenedFiles } from '../../../src/commands/opened.js';
 import { listWorkspaces } from '../../../src/commands/workspaces.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';
-import { argvCase, argvTable, failure, fixtures, replay, run, watch } from './support.js';
+import { argvCase, argvTable, failure, fixtureRows, fixtureTime, fixtures, replay, run, watch } from './support.js';
 
 const TAG = ['-Mj', '-z', 'tag'];
 
@@ -31,7 +31,7 @@ describe('getEnvironment', () => {
       client: 'p4ts_e2e_client',
       clientHost: 'p4ts_e2e_client',
       port: 'ssl:p4:1666',
-      serverAddress: 'DESKTOP-WORK-ARIF:64747',
+      serverAddress: String(fixtureRows('info-short-json')[0]?.serverAddress),
       serverVersion: 'P4D/NTX64/2026.1/3089746 (2026/10/07)',
       unicode: true,
       caseInsensitive: true,
@@ -63,8 +63,8 @@ describe('listWorkspaces', () => {
       host: null,
       stream: '//p4ts/main' as never,
       description: null,
-      accessedAt: new Date(1791937499 * 1000).toISOString(),
-      updatedAt: new Date(1791937500 * 1000).toISOString(),
+      accessedAt: fixtureTime('clients', 'Access'),
+      updatedAt: fixtureTime('clients', 'Update'),
     }]);
   });
 

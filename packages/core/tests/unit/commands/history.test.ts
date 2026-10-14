@@ -1,25 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import { annotateFile } from '../../../src/commands/annotate.js';
 import { followMoves, getFileHistory } from '../../../src/commands/history.js';
-import { commandArgs, scriptedExecutor } from '../../../src/testing/executor.js';
-import { fixtureStdout } from '../../../src/testing/fixture.js';
-import { argvCase, argvTable, failure, fixtures, replay, run, watch } from './support.js';
+import { scriptedExecutor } from '../../../src/testing/executor.js';
+import { argvCase, argvTable, failure, fixtureTime, fixtures, replay, run, watch } from './support.js';
 import type { P4FileRevision } from '../../../src/commands/history.js';
 import type { P4DepotPath } from '../../../src/schemas.js';
 
 const TAG = ['-Mj', '-z', 'tag'];
-
-/**
- * Serve a fixture's output to an invocation with different arguments: for
- * captures whose argument order or `-m` value the operation does not use.
- */
-function serve(name: string, args: readonly string[]) {
-  const [fixture] = fixtures(name);
-  return scriptedExecutor((invocation) => {
-    expect(commandArgs(invocation.args)).toEqual([...args]);
-    return { stdout: fixtureStdout(fixture!), stderr: fixture!.stderr, exitCode: fixture!.exitCode };
-  });
-}
 
 const rows = (...records: object[]) => records.map((record) => JSON.stringify(record)).join('\n');
 
@@ -78,7 +65,7 @@ describe('getFileHistory', () => {
       change: 4,
       action: 'add',
       type: 'text',
-      submittedAt: new Date(1791937500 * 1000).toISOString(),
+      submittedAt: fixtureTime('filelog', 'time0'),
       user: 'p4ts-e2e',
       client: 'p4ts_e2e_client',
       digest: '2094B601DAAC3D68F5AED51D3C20F7CD',
@@ -97,9 +84,7 @@ describe('getFileHistory', () => {
 
   it('decodes both sides of a move and lists the pre-rename path', async () => {
     // Captured as `filelog -i -l`; the operation puts -l first.
-    const history = await run(getFileHistory, { file: '//p4ts/main/wire/renamed.txt', followBranches: true }, serve(
-      'filelog-move', [...TAG, 'filelog', '-l', '-i', '//p4ts/main/wire/renamed.txt'],
-    ));
+    const history = await run(getFileHistory, { file: '//p4ts/main/wire/renamed.txt', followBranches: true }, replay('filelog-move'));
     expect(history.depotFile).toBe(path('//p4ts/main/wire/renamed.txt'));
     expect(ids(history.items)).toEqual([
       '//p4ts/main/wire/renamed.txt#1', '//p4ts/main/wire/text.txt#2', '//p4ts/main/wire/text.txt#1',
@@ -112,13 +97,9 @@ describe('getFileHistory', () => {
   });
 
   it('merges the files a wildcard matched, newest first, and cuts them to the limit', async () => {
-    // Captured with -m 1: one revision per file, so eight files are more than a limit of 3.
-    const history = await run(getFileHistory, { file: '//p4ts/main/wire/...', limit: 3 }, serve(
-      'filelog-wildcard-limit', [...TAG, 'filelog', '-l', '-m', '4', '//p4ts/main/wire/...'],
-    ));
-    expect(ids(history.items)).toEqual([
-      '//p4ts/main/wire/deleted.txt#2', '//p4ts/main/wire/clobber.txt#1', '//p4ts/main/wire/exclusive.uasset#1',
-    ]);
+    // Each file reports up to two revisions; across every file only the newest one is kept.
+    const history = await run(getFileHistory, { file: '//p4ts/main/wire/...', limit: 1 }, replay('filelog-wildcard-limit'));
+    expect(ids(history.items)).toEqual(['//p4ts/main/wire/deleted.txt#2']);
     expect(history.hasMore).toBe(true);
   });
 
@@ -180,9 +161,7 @@ describe('getFileHistory', () => {
 
 describe('followMoves', () => {
   it('follows a rename back to the path the file was moved from', async () => {
-    const history = await run(getFileHistory, { file: '//p4ts/main/wire/renamed.txt', followBranches: true }, serve(
-      'filelog-move', [...TAG, 'filelog', '-l', '-i', '//p4ts/main/wire/renamed.txt'],
-    ));
+    const history = await run(getFileHistory, { file: '//p4ts/main/wire/renamed.txt', followBranches: true }, replay('filelog-move'));
     const lineage = followMoves(history);
     expect(lineage.paths).toEqual([path('//p4ts/main/wire/renamed.txt'), path('//p4ts/main/wire/text.txt')]);
     expect(ids(lineage.items)).toEqual([
@@ -247,6 +226,22 @@ describe('annotateFile', () => {
     ]);
   });
 
+  it('blames each line of a three-revision file on the change that wrote it', async () => {
+    // Captured after: change 12 adds "first" and "second", 13 appends "third", 14 rewrites "second".
+    const file = '//p4ts/main/blame/blame.txt';
+    const annotation = await run(annotateFile, { file }, replay('annotate-revisions'));
+    const history = await run(getFileHistory, { file, limit: 10 }, replay('filelog-revisions'));
+    const [third, second, first] = history.items.map((revision) => revision.change);
+    expect(annotation.lines.map((line): unknown[] => [line.text, line.change])).toEqual([
+      ['first', first],
+      ['SECOND', third],
+      ['third', second],
+    ]);
+    expect(history.items.map((revision) => revision.description)).toEqual([
+      'Blame revision three', 'Blame revision two', 'Blame revision one',
+    ]);
+  });
+
   it('attributes a line to the change that introduced it, not the newest it survived', async () => {
     const annotation = await run(annotateFile, { file: '//d/a.txt' }, scriptedExecutor(() => ({
       stdout: rows(
@@ -255,7 +250,7 @@ describe('annotateFile', () => {
         { data: 'new\n', lower: '9', upper: '9' },
       ),
     })));
-    expect(annotation.lines.map((line) => [line.text, line.change])).toEqual([['kept', 4], ['new', 9]]);
+    expect(annotation.lines.map((line): unknown[] => [line.text, line.change])).toEqual([['kept', 4], ['new', 9]]);
   });
 
   it('reports lines as items', async () => {

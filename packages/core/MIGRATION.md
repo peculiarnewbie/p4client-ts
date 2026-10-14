@@ -67,6 +67,8 @@ they land; the full old-to-new method map is completed at cutover.
   `sync`, `previewSync`, `runTagged`) return `failures: { spec, reason, message }[]`, always present.
   `spec` is what the message is about, read from its arguments rather than its text, or `null`.
 - Watching reports each failure as a `failure` event carrying the message.
+- Every message carries `disposition`: `fail`, `item`, `empty` or `notice`, saying what the
+  operation did with it under its policy.
 
 ## Files and depots
 
@@ -99,9 +101,11 @@ they land; the full old-to-new method map is completed at cutover.
 - `printFile({ file, revision, keywords })` uses `-G` and returns `content` as bytes for every file
   type; decode with `printedText()`. It prints the head revision by default (was `#have`). A
   missing file or revision fails.
-- `keywords: 'raw' | 'expand'` (default `raw`, `-K`) applies to every print. `-K` needs a 2022.1 or
-  newer server.
-- New `printBatch` prints many files in one `p4 -x -` process, streaming each file.
+- `keywords: 'raw' | 'expand'` (default `raw`) applies to every print. Raw prints pass `-k`, which
+  every server accepts; 2022.1 renamed it `-K` and kept `-k` as an alias.
+- New `printBatch` prints many files in one `p4 -x -` process, streaming each file. Pass
+  `keepContent: false` when watching a large batch: content then reaches only the events, and the
+  result lists the files in `printed`.
 - `diffFile`: `diffFlags` is `string[]`; `exitCode` is removed. Workspace diffs come from `-Mj diff`,
   so `unifiedDiff` holds the hunks without `---`/`+++` header lines.
 - `getChangelistDiffSummary({ change, … })`: `patchLoadState` removed, `revision` added; the default
@@ -121,4 +125,5 @@ they land; the full old-to-new method map is completed at cutover.
   The `-I` progress request, `progress-unavailable` and the retry are removed: reconcile emits no
   progress through a pipe, so it streams candidates with a running count.
 - `runTaggedJson(args, opts)` is `runTagged({ args, schema, policy })`; `allowNonZeroExit` is
-  replaced by `policy`, and mutating commands pass through the read-only guard.
+  replaced by `policy`, and mutating commands pass through the read-only guard. For records typed
+  by a schema, run `taggedOperation(schema)` instead.

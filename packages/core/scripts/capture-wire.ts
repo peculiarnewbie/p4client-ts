@@ -274,7 +274,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
         [
           'print',
           '-q',
-          '-K',
+          '-k',
           '-o',
           join(workspace, 'printed.txt'),
           `${file}#1`,
@@ -291,13 +291,13 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     yield* capture('info-zprog', ['-zprog=p4client-ts', '-zversion=0.13.0', 'info', '-s']);
     yield* capture('print-json', ['print', '-q', file]);
     yield* capture('print-json-binary', ['print', '-q', '//p4ts/main/wire/full.uasset']);
-    yield* capture('print-marshal-text', ['print', file], 'marshal');
-    yield* capture('print-marshal-binary', ['print', '//p4ts/main/wire/full.uasset'], 'marshal');
-    yield* capture('print-marshal-utf16', ['print', '//p4ts/main/wire/wide.txt'], 'marshal');
-    yield* capture('print-marshal-missing', ['print', '//p4ts/main/missing.txt'], 'marshal');
+    yield* capture('print-marshal-text', ['print', '-k', file], 'marshal');
+    yield* capture('print-marshal-binary', ['print', '-k', '//p4ts/main/wire/full.uasset'], 'marshal');
+    yield* capture('print-marshal-utf16', ['print', '-k', '//p4ts/main/wire/wide.txt'], 'marshal');
+    yield* capture('print-marshal-missing', ['print', '-k', '//p4ts/main/missing.txt'], 'marshal');
     yield* capture(
       'print-marshal-batch',
-      ['-x', '-', 'print'],
+      ['-x', '-', 'print', '-k'],
       'marshal',
       {},
       30_000,
@@ -308,7 +308,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     yield* capture('fstat-mixed-missing', ['fstat', file, '//p4ts/main/missing.txt']);
     yield* capture('users-mixed', ['users', env.P4USER ?? '', 'missing-user']);
     yield* capture('describe-submitted-shelved-flag', ['describe', '-S', '-s', lastChange]);
-    yield* capture('filelog-wildcard-limit', ['filelog', '-l', '-m', '1', '//p4ts/main/wire/...']);
+    yield* capture('filelog-wildcard-limit', ['filelog', '-l', '-m', '2', '//p4ts/main/wire/...']);
     yield* capture('fstat-mixed-revision', ['fstat', `${file}#999999`, '//p4ts/main/docs/guide/getting-started.md']);
     yield* write(['sync', `${file}#none`]);
     yield* capture('files-unsynced-have', ['files', `${file}#have`]);
@@ -330,9 +330,9 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       ['annotate-empty', ['annotate', '-q', '-c', missing]],
       ['print-empty', ['print', '-q', missing]],
       ['opened-empty', ['opened', file]],
-      ['changes-empty', ['changes', '-m', '5', missing]],
-      ['changes-pending-empty', ['changes', '-s', 'pending', '-m', '5']],
-      ['changes-shelved-empty', ['changes', '-s', 'shelved', '-m', '5']],
+      ['changes-empty', ['changes', '-s', 'submitted', '-l', '-m', '5', missing]],
+      ['changes-pending-empty', ['changes', '-s', 'pending', '-l', '-m', '5']],
+      ['changes-shelved-empty', ['changes', '-s', 'shelved', '-l', '-m', '5']],
       ['users-unknown', ['users', 'missing-user']],
       ['client-unknown', ['client', '-o', 'missing-client']],
       ['streams-empty', ['streams', '//p4ts/missing']],
@@ -405,6 +405,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       'changes',
       '-s',
       'pending',
+      '-l',
       '-m',
       '5',
       '-u',
@@ -568,8 +569,8 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     yield* capture('describe-move', ['describe', '-s', movedChange]);
     yield* capture('filelog-move', [
       'filelog',
-      '-i',
       '-l',
+      '-i',
       '//p4ts/main/wire/renamed.txt',
     ]);
     // Windows may require symlink privilege; record the failed case rather than using production.
@@ -656,6 +657,20 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       '//p4ts/main/wire/...@4',
       '//p4ts/main/docs/...@4',
     ]);
+    // Lines added, kept and changed across three submits, so annotate attributes each line to a change.
+    const blame = join(workspace, 'blame/blame.txt');
+    mkdirSync(dirname(blame), { recursive: true });
+    writeFileSync(blame, 'first\nsecond\n');
+    yield* write(['add', blame]);
+    yield* write(['submit', '-d', 'Blame revision one']);
+    yield* write(['edit', blame]);
+    writeFileSync(blame, 'first\nsecond\nthird\n');
+    yield* write(['submit', '-d', 'Blame revision two']);
+    yield* write(['edit', blame]);
+    writeFileSync(blame, 'first\nSECOND\nthird\n');
+    yield* write(['submit', '-d', 'Blame revision three']);
+    yield* capture('annotate-revisions', ['annotate', '-q', '-c', '//p4ts/main/blame/blame.txt']);
+    yield* capture('filelog-revisions', ['filelog', '-l', '-m', '11', '//p4ts/main/blame/blame.txt']);
     // Permission failures can be errors or intentionally empty listings, depending on command.
     yield* write(
       ['user', '-f', '-i'],
