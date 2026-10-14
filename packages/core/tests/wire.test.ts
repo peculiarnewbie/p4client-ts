@@ -65,6 +65,7 @@ describe('recorded Perforce wire regressions', () => {
     for (const name of readdirSync(root).filter(
       (name) =>
         name.endsWith('.json') &&
+        !name.startsWith('_') &&
         !name.startsWith('gap-') &&
         !name.startsWith('synthetic-malformed'),
     )) {

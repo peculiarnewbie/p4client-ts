@@ -1,0 +1,161 @@
+{
+  "annotate-empty": [
+    "no_such_file (code)"
+  ],
+  "changes-not-logged-in": [
+    "not_logged_in (code)"
+  ],
+  "changes-ticket-expired": [
+    "ticket_expired (code)"
+  ],
+  "describe-unknown": [
+    "unknown_changelist (code)"
+  ],
+  "diff-not-opened": [
+    "not_opened (code)"
+  ],
+  "diff2-bad-revision": [
+    "invalid_revision (code)"
+  ],
+  "diff2-empty": [
+    "no_such_file (code)"
+  ],
+  "exclusive-edit-failure": [
+    "exclusive_open (code)",
+    "locked (text)"
+  ],
+  "filelog-empty": [
+    "no_such_file (code)"
+  ],
+  "files-at-unknown-change": [
+    "no_such_file (code)"
+  ],
+  "files-bad-revision": [
+    "invalid_revision (code)"
+  ],
+  "files-empty": [
+    "no_such_file (code)"
+  ],
+  "files-missing-revision": [
+    "unknown_revision (code)"
+  ],
+  "files-mixed": [
+    "no_such_file (code)"
+  ],
+  "files-unsynced-have": [
+    "not_on_client (code)"
+  ],
+  "fstat-empty": [
+    "no_such_file (code)"
+  ],
+  "fstat-mixed-missing": [
+    "no_such_file (code)"
+  ],
+  "fstat-mixed-revision": [
+    "unknown_revision (code)"
+  ],
+  "have-not-on-client": [
+    "not_on_client (code)"
+  ],
+  "modes-json-empty": [
+    "no_such_file (code)"
+  ],
+  "modes-marshal-empty": [
+    "no_such_file (code)"
+  ],
+  "opened-unchanged-json": [
+    "up_to_date (code)"
+  ],
+  "opened-unchanged-marshal": [
+    "up_to_date (code)"
+  ],
+  "print-empty": [
+    "no_such_file (code)"
+  ],
+  "print-marshal-batch": [
+    "no_such_file (code)"
+  ],
+  "print-marshal-missing": [
+    "no_such_file (code)"
+  ],
+  "print-permission": [
+    "permission_denied (code)"
+  ],
+  "reconcile-empty": [
+    "nothing_to_reconcile (code)"
+  ],
+  "reconcile-modtime": [
+    "nothing_to_reconcile (code)"
+  ],
+  "reconcile-writable": [
+    "nothing_to_reconcile (code)"
+  ],
+  "status-preview": [
+    "usage (code)"
+  ],
+  "streams-empty": [
+    "unknown_stream (code)"
+  ],
+  "sync-clobber": [
+    "clobber (code)"
+  ],
+  "sync-keep-preview": [
+    "up_to_date (code)"
+  ],
+  "sync-not-in-view": [
+    "not_in_view (code)"
+  ],
+  "sync-opened-new-head-marshal": [
+    "opened_unchanged (text)",
+    "resolve_required (text)"
+  ],
+  "sync-opened-new-head-preview": [
+    "opened_unchanged (text)",
+    "resolve_required (text)"
+  ],
+  "sync-opened-new-head": [
+    "opened_unchanged (text)",
+    "resolve_required (text)"
+  ],
+  "sync-os-error": [
+    "filesystem (code)"
+  ],
+  "sync-outside-stream": [
+    "not_in_view (code)"
+  ],
+  "sync-unknown-client": [
+    "unknown_client (code)"
+  ],
+  "sync-up-to-date": [
+    "up_to_date (code)"
+  ],
+  "synthetic-review-error-data": [
+    "usage (generic)"
+  ],
+  "synthetic-review-sync-permission": [
+    "fault (generic)",
+    "fault (generic)"
+  ],
+  "synthetic-review-sync-rename": [
+    "fault (generic)"
+  ],
+  "synthetic-stderr": [
+    "empty (generic)",
+    "empty (generic)"
+  ],
+  "unicode-charset-required": [
+    "charset (code)"
+  ],
+  "users-mixed": [
+    "unknown_user (code)"
+  ],
+  "users-unknown": [
+    "unknown_user (code)"
+  ],
+  "where-mixed": [
+    "not_in_view (code)"
+  ],
+  "where-not-in-view": [
+    "not_in_view (code)"
+  ]
+}

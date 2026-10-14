@@ -42,12 +42,13 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.type-tests.json && tsc -p tsconfig.scripts.json",
     "wire:capture": "bun scripts/capture-wire.ts",
-    "test": "bun test tests/*.test.ts",
+    "test": "bun test tests/*.test.ts tests/wire/*.test.ts",
     "test:e2e": "bun scripts/test-perforce-e2e.ts",
     "docs:api": "typedoc --options typedoc.json",
     "docs:api:check": "typedoc --options typedoc.json",
     "pack:check": "npm pack --dry-run",
-    "prepublishOnly": "bun run clean && bun run typecheck && bun run test && bun run build"
+    "prepublishOnly": "bun run clean && bun run typecheck && bun run test && bun run build",
+    "wire:reasons": "bun scripts/wire-reasons.ts"
   },
   "dependencies": {
     "effect": "^4.0.0-beta.37"
