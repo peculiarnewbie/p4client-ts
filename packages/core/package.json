@@ -1,6 +1,6 @@
 {
   "name": "p4client-ts",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "description": "Typed TypeScript helpers for the Perforce p4 CLI",
   "license": "MIT",
   "author": "peculiarnewbie",
@@ -42,7 +42,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.type-tests.json && tsc -p tsconfig.scripts.json",
     "wire:capture": "bun scripts/capture-wire.ts",
-    "test": "bun test tests/*.test.ts tests/wire/*.test.ts",
+    "test": "bun test tests/*.test.ts tests/unit/",
     "test:e2e": "bun scripts/test-perforce-e2e.ts",
     "docs:api": "typedoc --options typedoc.json",
     "docs:api:check": "typedoc --options typedoc.json",

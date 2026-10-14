@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { corpusReasons } from '../../scripts/wire-reasons.js';
-import { MESSAGE_CATALOG, decodeMessageCode, messageKey } from '../../src/wire/catalog.js';
-import { matchTemplate } from '../../src/wire/template.js';
-import { WIRE_ROOT, corpus, corpusRecords } from '../support/corpus.js';
+import { corpusReasons } from '../../../scripts/wire-reasons.js';
+import { MESSAGE_CATALOG, decodeMessageCode, messageKey } from '../../../src/wire/catalog.js';
+import { matchTemplate } from '../../../src/wire/template.js';
+import { WIRE_ROOT, corpus, corpusRecords } from '../../support/corpus.js';
 
 /** Codes seen in the corpus that deliberately rely on their generic code. None yet. */
 const KNOWN_GENERIC_ONLY = new Set<string>([]);
@@ -58,7 +58,7 @@ describe('message catalog against the wire corpus', () => {
 
 describe('text classification stays confined', () => {
   it('keeps English message patterns in wire/fallback.ts only', () => {
-    const source = join(import.meta.dir, '../../src');
+    const source = join(import.meta.dir, '../../../src');
     const offenders: string[] = [];
     const walk = (directory: string): void => {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test';
-import { fixtureStdout } from '../../src/testing/fixture.js';
-import { createMarshalDecoder } from '../../src/wire/marshal.js';
-import { fromMarshalRecord } from '../../src/wire/record.js';
-import { corpus } from '../support/corpus.js';
+import { fixtureStdout } from '../../../src/testing/fixture.js';
+import { createMarshalDecoder } from '../../../src/wire/marshal.js';
+import { fromMarshalRecord } from '../../../src/wire/record.js';
+import { corpus } from '../../support/corpus.js';
 
 const decodeAll = (bytes: Uint8Array, chunkSize: number) => {
   const decoder = createMarshalDecoder();

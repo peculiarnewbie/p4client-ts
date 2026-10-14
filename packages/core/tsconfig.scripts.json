@@ -12,7 +12,7 @@
     "tests/wire*.test.ts",
     "tests/prod-readonly-p4.test.ts",
     "tests/perforce-binaries.test.ts",
-    "tests/wire/**/*.ts",
+    "tests/unit/**/*.ts",
     "tests/support/**/*.ts",
     "tests/fixture-coverage.test.ts"
   ]

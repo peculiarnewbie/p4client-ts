@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { matchTemplate } from '../../src/wire/template.js';
+import { matchTemplate } from '../../../src/wire/template.js';
 
 describe('matchTemplate', () => {
   it('recovers plain arguments', () => {
