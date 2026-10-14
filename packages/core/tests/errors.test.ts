@@ -6,7 +6,7 @@ import {
   classifyP4Error,
   isP4ConnectionError
 } from "../src/public/errors.js";
-import type { P4CommandExecutor, P4ErrorCategory } from "../src/public/index.js";
+import type { P4CommandExecutor, P4ErrorCategory } from "../src/public/legacy.js";
 
 function createExecutor(resolver: P4CommandExecutor): P4CommandExecutor {
   return resolver;

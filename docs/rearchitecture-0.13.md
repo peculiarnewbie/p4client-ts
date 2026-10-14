@@ -275,3 +275,117 @@ The requirement is that every operation can report progress, not just sync.
   - Then run `bun run wire:reasons` and review the diff of `_reasons.json`.
   - Marshal captures are not path-normalized, so don't capture commands whose `-G` output contains local paths (that is why `diff-opened-marshal` was dropped).
 - **Editing:** scripted Python edits mangled `\n`/`\s` inside heredocs. Edit files directly when replacements contain escapes.
+
+### Phase 5 result (2026-10-14)
+
+- `src/P4.ts`: registry-derived `P4Service` and `P4WatchService`, `P4.layer`,
+  `P4.with(patch)` and `P4.layerTest(partialOps)`. All methods take an options
+  object, including `{}` for operations with no required options. Run and
+  watch methods call the existing operation programs. Typed `runTagged`
+  overloads preserve the schema's decoded item and result types.
+- Configuration is read at execution time when `P4Config` is in scope, with
+  the layer's captured configuration as a fallback. Thus `P4.with` also
+  patches effects and watches made from an already obtained service, while
+  ordinary service methods need no additional dependencies. The executor
+  remains bound to the service.
+- `src/node/index.ts`: `layerNode(config)` provides `P4`, `P4Config` and
+  `P4Executor`, and exports the existing Node helpers. It deliberately
+  exposes the config and executor so scoped patches and Node helpers work.
+  Build custom layers with `P4.layer.pipe(Layer.provideMerge(...))` when those
+  services must remain accessible; `Layer.provide(...)` hides them.
+- `src/promise/index.ts`: `createP4Client(config)` owns one ManagedRuntime;
+  `createP4ClientFromLayer(layer, derive, config)` supports replay/custom
+  layers. Registry-generated methods and `client.watch.<op>`; immutable
+  `with(patch)` creates an independent client/runtime. Dispose each client.
+- Promise watches start eagerly and execute once. `result` settles without
+  an event consumer; `events` is single-consumer. Abort reasons are preserved
+  on both channels, early iterator return cancels, and disposal interrupts
+  active calls and waits for cleanup. Event buffering uses the existing
+  `internal/async-queue.ts` (keep it at Phase 6). Default buffer limit is
+  10,000 events; overflow fails event iteration while the result still runs
+  to completion. `maxBuffered` can override the limit.
+- `src/testing/index.ts`: replay/recording/scripted executor and fixture
+  exports plus `layerTest`, also available as `P4.layerTest`. Missing mock
+  methods die with the operation name. Default mock watches emit `done`;
+  supply a watch override to exercise progress/items.
+- Root and `src/public/index.ts` now export the neutral 0.13 API. The old
+  barrel moved verbatim to `src/public/legacy.ts`; two legacy test imports
+  use it so the old implementation and its tests remain available until
+  Phase 6. Delete that temporary barrel during cutover too.
+- Package exports now include `.`, `./node`, `./promise`, `./testing`.
+  Effect is a peer (`^4.0.0-beta.37`) and exact dev dependency
+  (`4.0.0-beta.37`); the lockfile is updated. The Node entry exports the
+  function `layerNode`, rather than adding a Node import to root `P4` for
+  the plan's `P4.layerNode` spelling.
+- `tests/unit/facades.test.ts` ports the service behavior to the new API and
+  tests registry key equality, replay parity/one invocation, generic raw
+  schemas, errors/guard, scoped config, mocks, independent clients,
+  cancellation/disposal, heartbeat, bounded buffering and a browser bundle.
+  A real child-process test verifies early iterator return kills and joins
+  the child. `tests/types/schemas.ts` now exercises both facades and their
+  schema-backed raw command types. Legacy service tests remain for Phase 6.
+- No Phase 5 work is intentionally deferred. Phase 6 deletion, e2e/doc
+  migration and consumer trials are outside this change. No commit or push.
+- Verification: `bun run typecheck` passes (existing advisory Schema/JSON
+  diagnostics in scripts remain); `bun run test` passes all **781 tests**
+  across 41 files, including 19 facade tests. `bun run build` and
+  `bun run pack:core` pass. All four built package entry points load under
+  Node, and a Promise client constructs/disposes successfully. The browser
+  bundle test confirms no `node:child_process` import from the root. E2e
+  and documentation migration checks were not run for this phase.
+
+### Phase 5 consumer feedback
+
+1. **Typed raw commands need special treatment.** The registry's `runTagged`
+   has `unknown` items/results even when its options include a schema.
+   Derived method types alone lose inference. Both facades add overloads
+   and use `taggedOperation(schema)`; tests reject generic-only claims and
+   encoded/decoded type confusion.
+2. **Binding a service and patching config pull in different directions.**
+   Capturing config unconditionally makes `withOptions`/`P4.with` ineffective
+   on previously acquired service handles. The facade reads an optional
+   ambient `P4Config` at execution and falls back to captured config. This
+   behavior was not specified in the plan; it is covered for run and watch.
+3. **Heterogeneous registry traversal cannot retain each key's signature.**
+   Generating methods needs localized assertions to a uniform operation
+   shape and then back to the mapped facade type. `P4Operation.name` is just
+   `string`, so it does not itself prove equality with its registry key.
+   Public signatures stay precise, and type/runtime key tests guard drift.
+4. **Config patches cannot clear several inherited values.** `mergeOptions`
+   uses `??` for `cwd`, `timeoutMs` and `executable`; passing `undefined`
+   inherits rather than clears. In contrast, environment entries and
+   connection fields can explicitly be cleared with `undefined`. A derived
+   client cannot remove a parent's timeout. No merge semantics were changed.
+5. **Watch events do not uniformly expose everything in the result.**
+   `getEnvironment` ignores its sink and runs `runCommand` directly, so its
+   result's messages are not separate message events. It only gets runner
+   heartbeats and `done`. The facade preserves this operation behavior.
+6. **Failure representations differ across event/result boundaries.**
+   A `failure` event contains `P4Message`; batch result `failures` contain
+   `{ spec, reason, message }`. A streaming consumer must derive the spec
+   from message arguments or wait for `done`. The facades preserve the
+   existing shape instead of inventing a second transformation.
+7. **The initial heartbeat uses a placeholder unit.** Before an operation
+   reports its own counter, watch starts at `unit: 'records'`, even for
+   sync/print operations that later report files. Consumers should tolerate
+   that change; the registry does not describe the initial progress unit.
+8. **Node helper coverage is a separate API.** `resolveConnection`,
+   `findWorkspaceForPath`, `workspaceRootExists` and `materializeDepotFiles`
+   are not in `ops`, so they are exported from `./node`, not generated as
+   Promise client methods. Some are Effects/functions, while materialize
+   is an operation requiring `runOperation`/`watchOperation`. This follows
+   the Phase 4 handoff, but the target architecture's single-client picture
+   is broader than the implemented registry.
+9. **Isolation differs from the original plan.** `connectionEnv` sets a
+   P4CONFIG sentinel only; it does not neutralize P4ENVIRO. Explicit global
+   flags win, but inherited enviro settings can still affect omitted values.
+   This earlier-phase behavior was not changed by the facades.
+10. **Some planned convenience shapes never landed.** Brand schemas are
+    exported, but there are no named `P4DepotPath.make`-style constructors;
+    use `Schema.decodeUnknownSync(P4DepotPathSchema)`. Printed content uses
+    the separate `printedText` helper rather than a result `text()` method,
+    which also keeps envelopes cloneable. The type tests use actual exports.
+11. **Strict fixture matching exposed a stale error-test assumption.** The
+    `server-unreachable` fixture records `info`, whereas `getEnvironment`
+    runs `info -s`. The facade error-channel test uses `runTagged({ args:
+    ['info'] })` to replay it strictly instead of relaxing fixture matching.

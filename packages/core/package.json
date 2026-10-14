@@ -28,6 +28,18 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node/index.d.ts",
+      "import": "./dist/node/index.js"
+    },
+    "./promise": {
+      "types": "./dist/promise/index.d.ts",
+      "import": "./dist/promise/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
     }
   },
   "files": [
@@ -50,8 +62,11 @@
     "prepublishOnly": "bun run clean && bun run typecheck && bun run test && bun run build",
     "wire:reasons": "bun scripts/wire-reasons.ts"
   },
-  "dependencies": {
+  "peerDependencies": {
     "effect": "^4.0.0-beta.37"
+  },
+  "devDependencies": {
+    "effect": "4.0.0-beta.37"
   },
   "engines": {
     "node": ">=18"

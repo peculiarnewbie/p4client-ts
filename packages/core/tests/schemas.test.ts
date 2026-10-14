@@ -4,8 +4,8 @@ import {
   P4Client, P4ClientPathSchema, P4DepotPathSchema, P4LocalPathSchema,
   P4NonNegativeIntegerSchema, P4PositiveIntegerSchema, P4ParseError,
   P4JsonWorkspaceSchema, createP4Service, normalizeP4Change, parseP4JsonLines
-} from '../src/public/index.js';
-import type { P4ClientOptions } from '../src/public/index.js';
+} from '../src/public/legacy.js';
+import type { P4ClientOptions } from '../src/public/legacy.js';
 
 function optionsForRow(row: unknown): P4ClientOptions {
   return {
