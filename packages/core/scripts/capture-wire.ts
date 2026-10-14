@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { runCommand } from '../src/internal/command.js';
+import { captureProcess } from '../tests/support/process.js';
 import { captureSubprocess } from './prod-readonly-p4.js';
 import { startFixture } from './test-perforce-e2e.js';
 import { WireScriptError } from './wire-script-error.js';
@@ -82,31 +82,23 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     input?: string,
     overrides: NodeJS.ProcessEnv = {},
   ) =>
-    Effect.tryPromise({
+    Effect.try({
       try: () => {
         const environment = { ...env, ...overrides };
         assertLocal(fixture, args, environment);
-        return runCommand(
-          fixture.p4Executable,
-          [
-            '-p',
-            environment.P4PORT ?? '',
-            '-u',
-            environment.P4USER ?? '',
-            '-c',
-            environment.P4CLIENT ?? '',
-            ...args,
-          ],
-          {
-            cwd: workspace,
-            env: environment,
-            ...(input === undefined ? {} : { input }),
-            timeoutMs: 30_000,
-          },
-        );
+        return {
+          executable: fixture.p4Executable,
+          args: ['-p', environment.P4PORT ?? '', '-u', environment.P4USER ?? '',
+            '-c', environment.P4CLIENT ?? '', ...args],
+          cwd: workspace,
+          env: environment,
+          input,
+        };
       },
       catch: (error) => new WireScriptError(String(error), error),
-    });
+    }).pipe(Effect.flatMap((invocation) => captureProcess(invocation).pipe(
+      Effect.mapError((error) => new WireScriptError(String(error), error)),
+    )));
   const write = (
     args: string[],
     input?: string,

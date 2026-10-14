@@ -1,6 +1,6 @@
 {
   "$schema": "https://typedoc.org/schema.json",
-  "entryPoints": ["src/public/index.ts"],
+  "entryPoints": ["src/index.ts", "src/node/index.ts", "src/promise/index.ts", "src/testing/index.ts"],
   "tsconfig": "tsconfig.json",
   "plugin": ["typedoc-plugin-markdown"],
   "out": ".typedoc/api",

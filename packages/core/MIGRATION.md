@@ -1,129 +1,151 @@
-# Migrating to p4client-ts 0.13
+# Migrating 0.12 → 0.13
 
-0.13 rebuilds p4client-ts on an Effect core. This file records deliberate behaviour changes as
-they land; the full old-to-new method map is completed at cutover.
+0.13 replaces the cached `P4Client` with a stateless Effect core and an immutable
+Promise facade. Install `effect@4.0.0-beta.37` alongside `p4client-ts`.
 
-## Every operation
+```ts
+import { createP4Client } from 'p4client-ts/promise';
 
-- Each operation takes one options object. Positional arguments such as `describeChangelist(change)`
-  are now options (`{ change }`).
-- Results are plain enumerable objects. Lists are `{ items, messages }`, so `messages` survives
-  `structuredClone` and Electron IPC.
-- Every operation can be watched: it reports items, messages, per-item failures and progress while
-  it runs, then its result. Progress has `completed`, `total` (or `null` when unknown), `unit`,
-  optional byte counts and `elapsedMs`.
-- Timestamps are ISO 8601 strings. The raw Unix-seconds fields (`createdAt` as seconds,
-  `accessedAt` as seconds) are gone; `createdAt` now holds the ISO string.
+const client = createP4Client({
+  connection: { port: 'ssl:perforce:1666', user: 'alice', client: 'alice_ws', isolated: true },
+  cwd: '/work/project',
+});
+try {
+  const opened = await client.listOpenedFiles({});
+  console.log(opened.items, opened.messages);
+} finally {
+  await client.dispose();
+}
+```
 
-## Environment
+## Entry points and lifecycle
 
-- `getEnvironment` runs `p4 info -s` and reports what the server resolved: `user`, `client`
-  (`null` when unknown), `clientHost`, `serverAddress`, `serverVersion`, `unicode` and
-  `caseInsensitive`. `port` is the configured `P4PORT`.
-- Removed: the `local` mode, `resolveSettings` and the per-client cache. Use `resolveConnection`
-  from `p4client-ts/node` to read local settings.
+| Old | New |
+| --- | --- |
+| `new P4Client(options)` from root | `createP4Client(options)` from `/promise` |
+| `createP4Service`, manually duplicated service interface | `P4`, registry-derived `P4Service`, `layerNode(options)` from `/node` |
+| `executor`, `streamExecutor` callbacks | `P4Executor` layer; `createP4ClientFromLayer(layer, derive, options)` for Promise tests |
+| top-level `port`, `user`, `client`, `charset` | `connection: { port, user, client, charset }` |
+| `setClient`, `switchWorkspace` | `client.with({ connection: { client } })`; no global registry writes |
+| caches, `refresh` | Removed; each call reads current state |
+| per-call connection/timeout overrides | Derive a Promise client with `with`, or scope an Effect with `P4.with` |
+| raw cancellation handles | `signal` on Promise options; Effect interruption on streams |
 
-## Workspaces
+Dispose the original client and each derived client. A derived client owns an independent
+runtime. Omitted patch fields inherit; explicit `undefined` clears cwd/timeout or individual
+connection/environment entries, and resets executable to `p4`.
 
-- `setClient` and `switchWorkspace` are removed; they wrote `P4CLIENT` to the global registry.
-  Pass `connection.client` in the client options, or use `withOptions` for part of a program.
-- `listWorkspaces` no longer looks up the current user: without `user` it lists every workspace.
-  `host` keeps workspaces restricted to that host plus hostless ones. Checking that a hostless
-  workspace's root exists on disk moves to `p4client-ts/node`.
-- `isCurrentClient` is removed; compare `client` with your configured workspace.
-- New: `stream` filter (`clients -S`).
+Every method now takes one options object, including `{}`. Mutation is disabled unless
+`allowMutation: true` is set in configuration; it applies to sync and raw mutating commands.
+Preview operations work with the default read-only configuration.
 
-## Changelists
+## Operation map
 
-- `listPendingChangelists`, `listSubmittedChangelists`, `listShelvedChangelists` and
-  `listChangelists` are one operation, `listChangelists({ status })`, returning
-  `{ items, messages, hasMore, nextCursor }` for every status.
-- Pending changelists now read full descriptions (`changes -l`), like submitted and shelved ones.
-- `beforeChange`/`nextBeforeChange` are renamed `cursor`/`nextCursor`.
-- Shelved changelists report `status: 'shelved'`.
-- Pending changelists page like the others (default limit 50); the default changelist is
-  synthesized only on the first page.
+The table uses Promise method names. Neutral Effect service methods have the same names;
+Node helper methods are exported separately from `/node`.
 
-## Opened files
+| 0.12 call | 0.13 call / result change |
+| --- | --- |
+| `getEnvironment()` | `getEnvironment({})`; `user`, `client`, `port`, `clientHost`; no local fallback; use `resolveConnection` separately |
+| `listWorkspaces()` | `listWorkspaces({})`; `.items`; no `isCurrentClient`, compare the configured client |
+| `listPendingChangelists(opts)` | `listChangelists({ ...opts, status: 'pending' })` |
+| `listSubmittedChangelists(opts)` | `listChangelists({ ...opts, status: 'submitted' })` |
+| `listShelvedChangelists(opts)` | `listChangelists({ ...opts, status: 'shelved' })` |
+| `listChangelists(opts)` | One status per call; `cursor` replaces `beforeChange` |
+| `getOpenedFiles(opts)` | `listOpenedFiles(opts)`; `.items`; `change` replaces `changelist`, use `clientFile` instead of `localFile` |
+| `getChangelistFiles(change)` | `listOpenedFiles({ change })` |
+| `describeChangelist(change, opts)` | `describeChangelist({ ...opts, change })` |
+| `getChangelistDiffSummary(change, opts)` | `getChangelistDiffSummary({ ...opts, change })`; no `patchLoadState`, unloaded line counts are `null` |
+| `diffFile(opts)` | Same options; no process `exitCode` in the result |
+| `printFile(depotFile, opts)` | `printFile({ ...opts, file: depotFile })`; head is the default, use `revision: 'have'` explicitly; bytes replace string content |
+| `listDepots()` | `listDepots({})`; `.items` |
+| `listDepotDirs(opts)`, `listDepotFiles(opts)` | Same methods; `limit` replaces command-specific maximum fields |
+| `listDepotFilesAtChange({ maxFiles, ...opts })` | `listDepotFilesAtChange({ limit, ...opts })`; materialization retains `maxFiles` |
+| `statFiles(opts)`, `whereFiles(opts)` | `.items`, `.messages`, `.failures`; see exclusions below |
+| `getFileHistory({ depotFile, maxRevisions, ...opts })` | `getFileHistory({ file, limit, ...opts })`; `.items` replaces `.revisions`, adds `hasMore` and revision `integrations` |
+| `listUsers(opts)`, `listStreams(opts)` | Same methods; `.items`; missing requested users are item failures |
+| `annotateFile({ depotFile, ...opts })` | `annotateFile({ file, ...opts })`; lines expose `text` and `line` |
+| `previewSync(opts)`, `sync(opts)` | `.items`, `.failures` always present; no `.errors` or `.totalCount`; transfer estimates are `totalFileCount` / `totalFileSize` (nullable) |
+| `previewReconcile(opts)` | Same method; candidates retain added/edited/deleted groups; no `-I` fallback |
+| `watchSync(opts)`, `watchPreviewReconcile(opts)` | `client.watch.sync(opts)`, `client.watch.previewReconcile(opts)`; every neutral op can be watched |
+| `materializeDepotFiles(opts)` | Same Promise method; `.items.length` replaces total count; Effect export is an operation run with `runOperation` / `watchOperation` |
+| `runTaggedJson(args, opts)` | `runTagged({ ...opts, args, schema, policy })`; schema determines item type |
+| `run(args)`, raw `watch(args)` | No plain raw facade; use guarded `runTagged` / `watch.runTagged`; custom process code can use `/node` executor |
+| `resolveP4Settings*` | Promise `resolveConnection({ sources })`, or Node Effect `resolveConnection`; cwd comes from configuration; returns `{ connection, sources }` |
 
-- `getOpenedFiles` and `getChangelistFiles` are `listOpenedFiles`.
-- `changelist`/`changelistDescription`/`isDefaultChangelist` are `change`/`changeDescription`;
-  compare `change === 'default'`.
-- `localFile` is removed: it was guessed from the working directory, which is wrong unless that is
-  the workspace root. Map client paths with `where`.
-- New: `haveRevision`, `movedFile` (the other half of a move), `locked`, and `allClients` (`-a`).
+New methods include `listFiles`, `listHaveFiles`, `getStream`, `printBatch`,
+`findWorkspaceForPath`, `workspaceRootExists`. `followMoves` is a pure history helper.
+Workspace resolution accepts `{ path, altRoots: true }` and chooses the deepest
+matching root, including AltRoots when requested, with Windows case folding and realpath resolution.
 
-## Describe
+## Envelopes, errors and messages
 
-- `describeChangelist({ change, shelved })`. `status` is `shelved` when shelved files of a pending
-  changelist are requested; `contentSource` is removed.
-- A changelist that does not exist fails with `P4CommandError` reason `unknown_changelist`,
-  even though `p4` exits zero.
-- Files carry `digest` and `fileSize` when Perforce reports them.
+Messages are enumerable plain data, survive `structuredClone`, and carry `severity`
+(`empty`, `info`, `warning`, `failed`, `fatal`), `reason`, `category`, decoded `code`, `template`,
+named `args`, `text`, `reasonSource` and `disposition`. Classification prefers protocol
+codes, then generic codes, then a text fallback. Reasons are more specific: an empty
+reconcile is `nothing_to_reconcile`, an up-to-date sync is `up_to_date`, and denied
+access is `permission_denied`.
 
-## Per-item failures
+`P4CommandError` is a tagged Error with `reason`, `category`, `messages`, redacted
+`command`/`args`, and `exitCode` directly on the error; there is no old `result` property.
+Other tags include spawn, timeout, parse, read-only, invalid-argument and materialization
+errors. Use `encodeP4Error` / `decodeP4Error` for IPC; they encode only the explicit schema.
 
-- Batch operations (`listFiles`, `statFiles`, `whereFiles`, `listHaveFiles`, `listUsers`, `printBatch`,
-  `sync`, `previewSync`, `runTagged`) return `failures: { spec, reason, message }[]`, always present.
-  `spec` is what the message is about, read from its arguments rather than its text, or `null`.
-- Watching reports each failure as a `failure` event carrying the message.
-- Every message carries `disposition`: `fail`, `item`, `empty` or `notice`, saying what the
-  operation did with it under its policy.
+Item failures have `{ spec, reason, message }`; their messages live on the failure,
+not in the result's notice-only `messages`. Connection/auth/permission failures fail
+the whole operation. Mixed `files`, `fstat`, `where`, batch print and sync requests
+preserve valid items alongside failures. Sync outside-view specs now become item
+failures. `printFile` and materialize still fail for missing files or revisions.
 
-## Files and depots
+## Watches
 
-- `maxResults`/`maxFiles` are `limit` everywhere; `changelist` fields on file rows are `change`.
-- `listDepotFiles` with `deletedFiles: 'exclude'` (the default) filters on the server (`files -e`),
-  so `-m limit+1` paging is exact.
-- `statFiles`: `headTime` is ISO 8601 (`headTimeIso` removed), `openChangelist` is `openChange`;
-  new `openType` and `isUnresolved`.
-- `whereFiles` no longer throws for a spec outside the view: it is a failure, although `p4` exits 1.
-- New: `listFiles` (general multi-spec `files`, replacing `runTaggedJson(['files', …])`) and
-  `listHaveFiles`. `P4Depot` gains `createdAt`; depot files gain `submittedAt`.
+Events use `_tag`, replacing `type`: `item`, `message`, `failure`, `progress`, `done`.
+A failure event carries the same `.failure` as the result; `done` carries `.result`.
+Promise watches execute eagerly once, return `{ events, result }`, and have one event
+consumer. Leaving iteration cancels; `result` settles even without a consumer.
+The 10,000-event default buffer can be overridden with `maxBuffered`; overflow fails
+iteration while the result continues. Effect watches are lazy Streams. Heartbeat
+options are a second argument for Effect methods, part of the options object for Promise.
 
-## History and annotate
+## Printing, history and mappings
 
-- `getFileHistory({ file, limit, followBranches })`: the result is `{ depotFile, items, messages,
-  hasMore }`. Revisions use `submittedAt` (ISO) and carry `integrations[]` (`how`, `file`,
-  `startRevision`, `endRevision`). `hasMore` comes from `-m limit+1` per path. With no match,
-  `depotFile` is `null`.
-- New `followMoves(history)` follows a file back across renames.
-- `annotateFile({ file, revision, followIntegrations })`: line `data` is `text`; each line's
-  `change` is now the change that introduced it (`lower`), not the last change it survived (`upper`).
+`printFile` and `printBatch` use binary-safe Python marshal (`-G`). `content` is a
+`Uint8Array`; `printedText(result)` decodes UTF-8. Use a `TextDecoder` with the
+appropriate encoding directly for other charsets. `keywords: 'raw' | 'expand'`
+defaults to raw (`-k`, compatible with older CLI versions). Results have no methods,
+so they remain cloneable. Batch print uses stdin (`-x -`) and can omit retained content
+with `keepContent: false`; consume item events to receive those bytes.
 
-## Users and streams
+History requests ask for one extra revision per path, then merge/sort/slice globally.
+`hasMore` reports that the requested limit omitted revisions. Integrations retain
+relationships and revision ranges; moves can span multiple depot paths. Revision
+numbers alone do not identify items: pair them with `depotFile`.
 
-- `listUsers({ users, limit })`: `accessedAt` is ISO; a requested user that does not exist is a failure.
-- `listStreams({ fileSpec, limit })` adds `options`, `accessedAt`, `updatedAt`. New `getStream`.
+`whereFiles` preserves exclusion rows as `isExcluded: true`, strips the leading `-`
+from paths, and retains `.localFile`. Exclusions unmap a path; do not treat them as
+usable mappings. Unmapped specs produce `.failures` instead of discarding valid rows.
 
-## Print and diff
+Brand constructors (`P4DepotPath.make`, `P4ClientPath.make`, `P4LocalPath.make`,
+`P4FileAction.make`) validate values through Effect Schema. Do not replace decoder
+validation with casts when consuming untrusted CLI or IPC data.
 
-- `printFile({ file, revision, keywords })` uses `-G` and returns `content` as bytes for every file
-  type; decode with `printedText()`. It prints the head revision by default (was `#have`). A
-  missing file or revision fails.
-- `keywords: 'raw' | 'expand'` (default `raw`) applies to every print. Raw prints pass `-k`, which
-  every server accepts; 2022.1 renamed it `-K` and kept `-k` as an alias.
-- New `printBatch` prints many files in one `p4 -x -` process, streaming each file. Pass
-  `keepContent: false` when watching a large batch: content then reaches only the events, and the
-  result lists the files in `printed`.
-- `diffFile`: `diffFlags` is `string[]`; `exitCode` is removed. Workspace diffs come from `-Mj diff`,
-  so `unifiedDiff` holds the hunks without `---`/`+++` header lines.
-- `getChangelistDiffSummary({ change, … })`: `patchLoadState` removed, `revision` added; the default
-  changelist runs one `opened -c default`.
-- `materializeDepotFiles` moves to `p4client-ts/node`; `totalCount` is removed.
+## Other field and filtering changes
 
-## Sync and reconcile
-
-- `sync` requires `allowMutation: true` and otherwise fails with `P4ReadOnlyError`.
-- `errors` is `failures`, always present. Clobbered files, OS errors and specs outside the view are
-  failures, not thrown errors, and a non-zero exit they explain is accepted.
-- `totalCount` is replaced by Perforce's announced `totalFileCount`/`totalFileSize`, which also
-  drive determinate progress.
-- `watchSync` is `watch(sync)`: `item`/`failure`/`message`/`progress`/`done` events.
-- `previewReconcile`: `changelist` is `change`; `workspace` needs only `{ root }`; `localFile` is
-  removed (`clientFile` is the local path); `move/add`/`move/delete` group into added/deleted.
-  The `-I` progress request, `progress-unavailable` and the retry are removed: reconcile emits no
-  progress through a pipe, so it streams candidates with a running count.
-- `runTaggedJson(args, opts)` is `runTagged({ args, schema, policy })`; `allowNonZeroExit` is
-  replaced by `policy`, and mutating commands pass through the read-only guard. For records typed
-  by a schema, run `taggedOperation(schema)` instead.
+- Timestamps are ISO 8601 strings, replacing raw Unix-second fields.
+- Workspace listing without `user` now lists every workspace. `host` includes
+  hostless workspaces; root existence checking is a separate Node helper.
+- Pending changes always read full descriptions (`-l`); the default changelist is
+  synthesized only on the first page. `nextBeforeChange` becomes `nextCursor`.
+  Cursors are inclusive upper bounds; pass the returned cursor, which is already
+  one below the last returned change. Revision-bearing file specs cannot be combined with a cursor.
+- Opened `changeDescription` replaces `changelistDescription`; compare
+  `change === 'default'` instead of `isDefaultChangelist`. Use `whereFiles` to map
+  opened client paths to local paths; they are no longer guessed from cwd.
+- `describe` removes `contentSource`. Shelved pending changes have `status: 'shelved'`;
+  a submitted change remains `submitted` even when requested with the shelved flag.
+- Depot/file row `changelist` becomes `change`; `maxResults` becomes `limit`.
+- Reconcile candidates use `clientFile` instead of `localFile` and `change` instead
+  of `changelist`. Workspace options need only `{ root }`. Moves group into added/deleted.
+- Message `disposition` uses `fail | item | empty | notice`, rather than the plan's
+  proposed `fatal` spelling for a failing outcome.

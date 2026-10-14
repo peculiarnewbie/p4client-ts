@@ -75,8 +75,8 @@ export function toOpenedFile(row: Row): P4OpenedFile {
     changeDescription: description(row.desc),
     user: text(row.user),
     client: text(row.client),
-    revision: integer(row.rev, row),
-    haveRevision: integer(row.haveRev, row),
+    revision: row.rev === 'none' ? null : integer(row.rev, row),
+    haveRevision: row.haveRev === 'none' ? null : integer(row.haveRev, row),
     movedFile: optionalDepotPath(row.movedFile, row),
     locked: row.ourLock !== undefined,
   };

@@ -151,8 +151,8 @@ testing/      replayExecutor(fixtures) with strict normalized-argv matching (nea
 
 ## Progress and handoff (2026-10-14)
 
-Branch `rearch/0.13`, PR #8. Phases 0–4 are done; Phase 5 (facades) is next.
-`bun run typecheck` and `bun run test` (762 tests) pass at the Phase 4 follow-up commit.
+Branch `rearch/0.13`, PR #8. Phases 0–5 are committed; Phase 6 is implemented
+in the working tree, without a commit or push. Phase 7 (consumer trial) is next.
 
 | Phase | Commit | State |
 |---|---|---|
@@ -161,8 +161,13 @@ Branch `rearch/0.13`, PR #8. Phases 0–4 are done; Phase 5 (facades) is next.
 | 2 Exec | `b90ab0c` | Done. `src/exec/{executor,guard}.ts`, `src/node/executor.ts`, `src/connection/argv.ts`, `src/version.ts` (0.13.0). |
 | 3 Engine | `5a65d9d` | Done. `src/engine/{command,config}.ts`, `src/connection/settings.ts`, `src/node/connection.ts`, `src/testing/executor.ts`. |
 | 4 Commands | Phase 4 commits | Done. `src/engine/operation.ts`, `src/commands/*`, `src/ops.ts`, `src/node/{workspace,materialize}.ts`, `src/schemas.ts`, `MIGRATION.md`. See "Phase 4 result" below. |
+| 5 Facades | `8ed68a0`, `a6a2519` | Done, including consumer-feedback fixes. |
+| 6 Cutover | Uncommitted | Done. Legacy deletion, e2e/guide migration, migration map, changelog and CLAUDE updates. See Phase 6 notes below. |
 
-The old code in `src/public` and `src/internal`, and its tests in `tests/*.test.ts`, are untouched and still pass. They are deleted at cutover (Phase 6).
+The old public implementation and internal modules are deleted. `src/public/index.ts`
+remains the neutral barrel; `src/internal/async-queue.ts` remains for the Promise facade.
+Legacy-only tests were removed after checking the Phase 1–5 replacements. New cutover
+regressions retain the 15 fixture assertions otherwise lost by those deletions.
 
 ### What exists
 
@@ -392,7 +397,7 @@ The requirement is that every operation can report progress, not just sync.
 
 ### Phase 5 consumer-feedback fixes (2026-10-14)
 
-Feedback **4�11** is resolved with the requested shapes:
+Feedback **4–11** is resolved with the requested shapes:
 
 - **4:** Omitted config fields inherit. Explicit `undefined` clears `cwd` and
   `timeoutMs`, and resets `executable` to `p4`. This applies to Promise
@@ -446,3 +451,121 @@ diagnostics in scripts. `bun run test` passes **791 tests** across 42 files.
 both facades, environment message events, failure/result parity, pre-output
 heartbeat units, Node helper execution/cancellation/disposal, brand validation
 and public type inference.
+
+### Phase 6 result (2026-10-14)
+
+- Removed the legacy public client, service, types, helpers, command-format and
+  settings modules, plus their private errors/schemas and temporary legacy barrel.
+  Removed internal command/cancellation/diagnostics/messages/rows. Kept only the
+  neutral `public/index.ts` barrel and the Promise facade's `internal/async-queue.ts`.
+- Removed 14 legacy-only test files whose replacements landed in Phases 1–5.
+  `tests/unit/cutover.test.ts` retains assertions for the 15 captures that would
+  otherwise become unreferenced, including mixed stderr, plain warnings, malformed
+  rows, Unicode paths, cursor syntax and protocol failures. The 13-entry fixture
+  allowlist did not grow. The regex-location check now walks public/internal too.
+- Migrated all 10 live scenario files to one-object calls, result envelopes,
+  unified changelist listing, bytes, failure envelopes and `_tag` watch events.
+  Outside-view sync is now asserted as an item failure; explicit `revision: 'have'`
+  replaces the old print default. History asserts `hasMore` across renamed paths.
+- Rebuilt the e2e harness with a checked `P4Executor` and a custom Promise layer.
+  It verifies exactly one `-p` equals the runner's isolated localhost port, rejects
+  argument-file input, and allows `-x -` only immediately before `print`. It does
+  not inject a port after the fact. Tests cover a rejected derived port and a real
+  stdin print batch containing one missing revision. Harness-owned clients are disposed.
+- Fixture administration uses a small Effect-based byte collector over
+  `runNodeProcess`, outside the consumer facade; its commands still pass the same
+  localhost check. `capture-wire.ts` uses that collector too, removing its final
+  import of the legacy runner without reintroducing a second production executor.
+  The collector joins bytes before UTF-8 decoding, preserving split characters.
+- **Live bug fixed:** newly added files can have `rev: 'none'` or
+  `haveRev: 'none'` in `opened`. Both now decode as `null` instead of failing the
+  entire listing. Unit regressions retain rejection of invalid numeric revisions.
+- Rewrote index/getting-started/effect-service/testing-and-fixtures, both READMEs,
+  the complete package migration map and changelogs. Added a root migration link
+  and included the package migration guide in npm's file list. Updated CLAUDE's
+  layout, stateless conventions and pinned-beta ServiceMap guidance.
+- TypeDoc and Starlight now document all four package entries rather than only
+  the root. Guide snippets have matching `tests/types/guide-*.ts` sources;
+  unit tests enforce snippet/source equality so future edits are typechecked.
+- Fixed one existing Windows-1252 en-dash byte in this file to valid UTF-8.
+- No Phase 6 work remains intentionally unfinished. Phase 7 app trials, actual
+  tarball packing/installation in consumers, release, commit and push were not done.
+
+Verification on the cutover tree:
+
+- `bun run typecheck`: passes, including e2e files newly added to the scripts
+  tsconfig and all guide examples. Seven existing advisory Schema/JSON diagnostics
+  remain in scripts; they are not TypeScript errors.
+- `bun run test`: **474 pass**, 30 files. The count is smaller than Phase 5 because
+  the legacy duplicate suites are gone, not because tests were skipped. Corpus,
+  golden reasons, fixture coverage, regex guard, run/watch parity, IPC codec and
+  browser root-bundle checks pass within this suite.
+- `bun run test:e2e`: **24 pass**, 10 files, against a hash-verified disposable
+  localhost p4d; runner cleanup succeeds.
+- `bun run docs:check`: passes; Astro reports no errors/warnings/hints and builds
+  280 pages. TypeDoc reports eight unresolved-reference warnings for private mapped
+  type helpers and engine types referenced by exports. The existing missing-404
+  content notice remains nonfatal.
+- Fresh `bun run build` after deleting generated `dist` and
+  `tsconfig.tsbuildinfo`: passes. All four built entries import under Node.
+  `dist/public` contains only index; `dist/internal` only async-queue.
+- `bun run pack:core`: passes; complete dry-run lists **209 files**, including
+  all four entries/declarations and MIGRATION.md. This is not an actual tarball.
+- `git diff --check`: passes. No surviving source/script/test imports reference
+  the deleted legacy modules.
+
+### Phase 6 consumer feedback and plan corrections
+
+1. **Fixed: real opened rows exceeded the corpus assumptions.** `none` revisions
+   on adds were rejected by the new decoder. The live consumer workflow caught it;
+   it is now accepted as `null` with regression coverage.
+2. **File option names still vary.** Printing, annotation and history use `file`,
+   diff uses `depotFile`, and metadata/sync use `fileSpec`. Some distinction is
+   useful, but migrating similarly shaped calls needs method-by-method attention.
+   No new alias API was introduced at cutover; the migration map names the actual options.
+3. **A result's messages are not all its diagnostics.** Item failures live in
+   `failures[].message`, not `messages`. A mixed fstat result's `messages` can be
+   empty despite a missing revision. This is consistent with the event split but
+   surprising when migrating old notice-only UI code. Guides now explain both arrays.
+4. **Counters and cursor names can mislead.** Sync's `totalFileCount` is a nullable
+   server transfer estimate, not a replacement for the old result `totalCount`;
+   use `items.length` for decoded items. Changelist `cursor` is an inclusive bound
+   even though its JSDoc says "below"; `nextCursor` already subtracts one. History
+   has a limit/hasMore but no resumable cursor. Documented without changing behavior.
+5. **Opened paths need an explicit mapping step.** The guessed local path is gone;
+   `clientFile` can be client syntax. For filesystem work, call `whereFiles` and
+   inspect `localFile` while excluding `isExcluded` rows. A `diffFile.localFile`
+   option should be a mapped local path, not a renamed opened field.
+6. **Text decoding is UTF-8 only in the convenience helper.** `printedText` has
+   no charset argument or automatic charset selection. Other encodings require
+   `TextDecoder` directly. UTF-16/binary marshal tests pass, but applications must
+   choose how to interpret the preserved bytes. No helper expansion was made.
+7. **Lifecycle and watch settings differ by facade.** Promise clients and each
+   derived client must be disposed. Promise watch settings live in the options
+   object; Effect watches take a second settings object. `keepContent: false`
+   omits bytes from results, but buffered watch events still retain bytes; the
+   buffer limit counts events, not bytes. Guides document these constraints.
+8. **API documentation exposes some incomplete type references.** Registry-derived
+   mapped signatures reference private aliases, and exported engine helpers reference
+   unexported engine types. Including all four entries makes the facade visible,
+   but eight TypeDoc warnings remain. Consumers still get precise TypeScript types;
+   improving generated signature presentation remains a possible follow-up.
+9. **The architecture sketch is not the implemented naming contract.** Use
+   `layerNode`, not `P4.layerNode`; `findWorkspaceForPath({ path, altRoots: true })`,
+   not `resolveWorkspaceForPath(dir)`; connection resolution uses configured cwd;
+   `printedText`, not an envelope method; `fail` disposition, not `fatal`. The
+   Phase 0/5 notes already corrected several of these. Phase 6 docs use actual exports.
+   The Phase 6 deletion list also omitted the legacy errors/schemas/barrel, which
+   had to be deleted with their dependencies. Both README copies and all package
+   entry points needed documentation updates beyond the four named guides.
+10. **Pack dry-run alone does not prove package completeness.** npm successfully
+    listed a partial package after deleting dist while retaining the incremental
+    TypeScript cache. Clearing both regenerated every entry. Before Phase 7, do a
+    full clean build, then pack and trial-install the actual tarball. Do not assume
+    `pack:core` builds or validates entry-point existence; it currently only runs
+    `npm pack --dry-run`.
+
+The first broad deletion script was rejected by automatic approval review. It was
+replaced with a verified explicit file list after checking Phase 6 authorization,
+replacement tests and remaining imports; that narrower deletion was approved.
+No approval-related work remains blocked.

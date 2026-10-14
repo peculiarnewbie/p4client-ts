@@ -4,6 +4,34 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
+## 0.13.0 - Unreleased
+
+### Breaking
+
+- Replace cached `P4Client` and `createP4Service` with a stateless Effect core,
+  registry-derived `P4` service and `createP4Client` Promise facade. Effect is a peer dependency.
+- Split platform-neutral root exports from `/node`, `/promise` and `/testing`.
+- Every operation takes one options object; lists return enumerable envelopes.
+  Batch failures use `{ spec, reason, message }`; sync failures are always present.
+- Remove global workspace setting writes and caches. Use immutable `with` clients
+  or scoped `P4.with`. Mutation requires `allowMutation: true`.
+- Replace watch-specific methods with `client.watch.<operation>`, discriminated
+  events and heartbeat progress. Add cancellation, bounded buffering and disposal.
+- Print binary-safe bytes using marshal; head revision and raw keywords are defaults.
+- Classify protocol message codes centrally; expose tagged, IPC-serializable errors.
+
+### Added
+
+- Typed raw commands, connection source resolution and isolated settings,
+  workspace root/AltRoots matching, batch printing, history pagination and integrations.
+- Strict replay, recording and mock layers. Live e2e scenarios now exercise the new API.
+
+### Fixed
+
+- Decode `opened` revision/have-revision `none` as `null` for newly added files.
+
+See [MIGRATION.md](./MIGRATION.md) for the full operation map and behavior changes.
+
 ## 0.12.1 - 2026-10-14
 
 ### Fixed

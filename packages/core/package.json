@@ -46,6 +46,7 @@
     "dist",
     "README.md",
     "CHANGELOG.md",
+    "MIGRATION.md",
     "LICENSE"
   ],
   "sideEffects": false,

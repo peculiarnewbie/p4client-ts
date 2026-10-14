@@ -64,8 +64,7 @@ describe('text classification stays confined', () => {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {
         const path = join(directory, entry.name);
         if (entry.isDirectory()) {
-          // The pre-0.13 modules are deleted at cutover.
-          if (!['public', 'internal'].includes(entry.name)) walk(path);
+          walk(path);
         } else if (path.endsWith('.ts') && !path.endsWith(join('wire', 'fallback.ts'))) {
           // Comments may quote the templates they document; code may not match on them.
           const code = readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '');

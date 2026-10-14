@@ -5,6 +5,21 @@ description: Release notes for p4client-ts.
 
 All notable changes to `p4client-ts` are documented here.
 
+## 0.13.0 - Unreleased
+
+- Effect core, immutable Promise facade and platform-neutral root exports, with
+  separate `/node`, `/promise` and `/testing` entries. Effect is a peer dependency.
+- One options object per operation, enumerable envelopes and tagged errors with an IPC codec.
+- Shared protocol classification and run/watch programs, per-item batch failures,
+  heartbeat progress, cancellation, bounded buffering and client disposal.
+- Remove caches and global workspace-setting writes; mutation requires explicit configuration.
+- Binary-safe printing, batch print, history pagination/integrations, connection
+  discovery/isolation and workspace matching. Live tests and guides use the new API.
+- Fix `opened` revision `none` decoding for newly added files.
+
+See the [migration guide](https://github.com/peculiarnewbie/p4client-ts/blob/rearch/0.13/packages/core/MIGRATION.md)
+for the complete old → new operation map.
+
 ## 0.12.1 - 2026-10-14
 
 ### Fixed

@@ -1,9 +1,9 @@
 ---
 title: p4-ts
-description: Typed TypeScript helpers for the Perforce p4 CLI.
+description: Typed Perforce CLI operations for Effect and Promise applications.
 template: splash
 hero:
-  tagline: Preview-first Perforce helpers for TypeScript tooling, with opt-in sync support.
+  tagline: Typed Perforce inspection, binary printing, previews and opt-in sync.
   actions:
     - text: Getting Started
       link: /guides/getting-started/
@@ -13,55 +13,30 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from "@astrojs/starlight/components";
+Install `p4client-ts` and its Effect peer dependency:
 
-`p4-ts` wraps the Perforce `p4` CLI with typed TypeScript primitives for inspection, preview, opt-in sync, and service-oriented workflows. Install snippets and imports use the published package name, `p4client-ts`.
-
-```bash
-npm install p4client-ts
+```sh
+bun add p4client-ts effect@4.0.0-beta.37
 ```
 
+The Effect core and Promise facade run the same operations. Results carry enumerable
+`messages`; lists use `items`, and batch failures identify the failed spec.
+
 ```ts
-import { P4Client } from "p4client-ts";
+import { createP4Client } from 'p4client-ts/promise';
 
-const p4 = new P4Client();
-const environment = await p4.getEnvironment();
-const workspaces = await p4.listWorkspaces();
-const pending = await p4.listPendingChangelists();
-const shelved = await p4.listShelvedChangelists();
-const syncPreview = await p4.previewSync({ fileSpec: "//Project/main/..." });
-
-if (syncPreview.totalCount > 0) {
-  await p4.sync({ fileSpec: "//Project/main/..." });
+const client = createP4Client({
+  connection: { port: 'ssl:perforce:1666', user: 'alice', client: 'alice_ws' },
+});
+try {
+  const pending = await client.listChangelists({ status: 'pending' });
+  console.log(pending.items, pending.messages);
+} finally {
+  await client.dispose();
 }
 ```
 
-## Scope
-
-In scope:
-
-- Inspect current environment and workspace state
-- List relevant workspaces for the local machine
-- Inspect pending, submitted, and shelved changelists
-- Inspect opened files and lazy-load changelist diffs
-- Preview reconcile operations
-- Preview sync operations and apply sync explicitly
-- Compose the same operations through an Effect service wrapper
-
-Out of scope:
-
-- Submit, shelve, unshelve, revert, or resolve workflows
-- Changelist, stream, or server mutation (local `P4CLIENT` switching via `setClient()` / `switchWorkspace()` is supported)
-- Server administration tasks
-
-<CardGrid stagger>
-  <Card title="Start With Guides" icon="open-book">
-    Walk through installation, the core client API, and Effect-based usage.
-  </Card>
-  <Card title="Browse Typed API" icon="seti:typescript">
-    Generated API docs come directly from the public TypeScript entrypoint.
-  </Card>
-  <Card title="Testable by Design" icon="lightbulb">
-    The client exposes injectable command and path hooks to support deterministic tests.
-  </Card>
-</CardGrid>
+Use [Getting Started](/guides/getting-started/) for Promise workflows,
+[Effect Service](/guides/effect-service/) for layers and scoped configuration, and
+[Testing and Fixtures](/guides/testing-and-fixtures/) for mocks and strict replay.
+The root entry is platform neutral; process execution lives in `/node` and `/promise`.

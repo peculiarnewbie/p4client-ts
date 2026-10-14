@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { P4CommandError } from '../../src/public/errors.js';
+import { P4CommandError } from '../../src/errors.js';
 import { loadE2EConfig } from './config.js';
 import { loadFixture } from './fixture.js';
 import { P4E2EHarness } from './harness.js';
@@ -17,9 +17,8 @@ describe('real Perforce message and pagination regressions', () => {
         `${config.stream}/docs/guide/getting-started.md`,
       ],
     });
-    expect(result).toHaveLength(1);
-    expect(result.messages?.[0]).toMatchObject({
-      severity: 2,
+    expect(result.items).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({
       reason: 'unknown_revision',
     });
   });
@@ -30,15 +29,15 @@ describe('real Perforce message and pagination regressions', () => {
     writeFileSync(local, '');
     await harness.run(['add', local]);
     await harness.run(['submit', '-d', 'Protocol empty text fixture']);
-    expect((await harness.client.printFile(depot)).content).toBe('');
+    expect((await harness.client.printFile({ file: depot })).content).toHaveLength(0);
     await harness.run(['sync', `${depot}#none`]);
     try {
-      await expect(harness.client.printFile(depot)).rejects.toBeInstanceOf(
+      await expect(harness.client.printFile({ file: depot, revision: 'have' })).rejects.toBeInstanceOf(
         P4CommandError,
       );
       expect(
-        (await harness.client.printFile(depot, { revision: 'head' })).content,
-      ).toBe('');
+        (await harness.client.printFile({ file: depot, revision: 'head' })).content,
+      ).toHaveLength(0);
     } finally {
       await harness.run(['sync', depot]);
     }
@@ -51,7 +50,7 @@ describe('real Perforce message and pagination regressions', () => {
     await harness.run(['add', local]);
     await harness.run(['submit', '-d', 'Protocol revision one']);
     const baseline = (
-      await harness.client.listSubmittedChangelists({
+      await harness.client.listChangelists({ status: 'submitted',
         fileSpec: depot,
         limit: 1,
       })
@@ -61,9 +60,9 @@ describe('real Perforce message and pagination regressions', () => {
     await harness.run(['edit', local]);
     writeFileSync(local, 'revision two\n');
     await harness.run(['submit', '-d', 'Protocol revision two']);
-    const page = await harness.client.listSubmittedChangelists({
+    const page = await harness.client.listChangelists({ status: 'submitted',
       fileSpec: depot,
-      beforeChange: baseline,
+      cursor: Number(baseline),
       limit: 5,
     });
     expect(page.items.map((item) => item.change)).toEqual([baseline]);
@@ -71,20 +70,20 @@ describe('real Perforce message and pagination regressions', () => {
     await harness.run(['edit', local]);
     try {
       const preview = await harness.client.previewSync({ fileSpec: depot });
-      expect(preview.totalCount).toBe(0);
+      expect(preview.items.length).toBe(0);
       expect(preview.messages?.map((message) => message.reason)).toContain(
         'opened_unchanged',
       );
       expect(
-        preview.messages?.every((message) => message.severity === null),
+        preview.messages?.every((message) => message.severity === 'info'),
       ).toBe(true);
-      const watched = harness.client.watchSync({ fileSpec: depot });
+      const watched = harness.client.watch.sync({ fileSpec: depot });
       const messages: string[] = [];
       for await (const event of watched.events) {
-        if (event.type === 'message') messages.push(event.message.reason);
+        if (event._tag === 'message') messages.push(event.message.reason);
       }
       expect(messages).toContain('opened_unchanged');
-      expect((await watched.result).totalCount).toBe(0);
+      expect((await watched.result).items.length).toBe(0);
     } finally {
       await harness.run(['revert', local]);
       await harness.run(['sync', depot]);
@@ -92,13 +91,13 @@ describe('real Perforce message and pagination regressions', () => {
   });
   it('turns a zero-exit unknown changelist into a typed failure', async () => {
     await expect(
-      harness.client.describeChangelist(999999),
+      harness.client.describeChangelist({ change: 999999 }),
     ).rejects.toBeInstanceOf(P4CommandError);
     await expect(
-      harness.client.describeChangelist(999999),
+      harness.client.describeChangelist({ change: 999999 }),
     ).rejects.toMatchObject({
       reason: 'unknown_changelist',
-      result: { exitCode: 0 },
+      exitCode: 0,
     });
   });
 });

@@ -1,41 +1,75 @@
 ---
 title: Effect Service
-description: Use createP4Service() when your application is already Effect-oriented.
+description: Compose P4 operations with Effect layers, scoped options and streams.
 ---
 
-## Why Use the Service Wrapper
-
-`createP4Service()` exposes the same operations as `P4Client`, but returns `Effect` values instead of raw promises. This keeps Perforce calls easy to compose in Effect-based applications without writing your own bridge layer.
-
-## Example
+Effect is the source of truth. The library pins development to
+`4.0.0-beta.37`, which uses `ServiceMap.Service` rather than `Context.Service`.
 
 ```ts
-import { Effect } from "effect";
-import { createP4Service } from "p4client-ts";
-
-const p4 = createP4Service({
-  cwd: "C:/work/project"
-});
+import { Effect } from 'effect';
+import { P4 } from 'p4client-ts';
+import { layerNode } from 'p4client-ts/node';
 
 const program = Effect.gen(function* () {
-  const environment = yield* p4.getP4Environment();
-  const workspaces = yield* p4.listP4Workspaces();
-  const opened = yield* p4.getOpenedFiles({ change: "default" });
-
-  return {
-    environment,
-    workspaceCount: workspaces.length,
-    openedCount: opened.length
-  };
+  const p4 = yield* P4.asEffect();
+  const environment = yield* p4.getEnvironment({});
+  const pending = yield* p4.listChangelists({ status: 'pending' });
+  return { environment, pending };
 });
 
-const summary = await Effect.runPromise(program);
+const result = await Effect.runPromise(program.pipe(Effect.provide(layerNode({
+  connection: { port: 'ssl:perforce:1666', user: 'alice', client: 'alice_ws' },
+}))));
 ```
 
-## Relationship to `P4Client`
+The service methods are inferred from the operation registry and fail through
+the typed `P4Error` channel. Use Effect composition within the application and
+`Effect.runPromise` at its boundary.
 
-- `P4Client` is the direct Promise-based API.
-- `createP4Service()` instantiates a `P4Client` under the hood.
-- Exported helper functions such as `getP4Environment()`, `previewSync()`, and `sync()` use a shared default service instance.
+### Scoped configuration
 
-Use the [API Reference](/api/) when you need the exact input and output types for the service methods.
+```ts
+const inOtherWorkspace = program.pipe(
+  P4.with({ connection: { client: 'review_ws' } }),
+  Effect.provide(layerNode({ connection: { port: 'ssl:perforce:1666' } })),
+);
+```
+
+Apply `P4.with` inside the providing layer, as above. It patches configuration
+at execution, including calls made through a previously acquired service.
+Omitted values inherit; explicit `undefined` clears `cwd` or `timeoutMs`, resets
+`executable` to `p4`, and clears individual connection or environment entries.
+
+### Watch an operation
+
+```ts
+import { Stream } from 'effect';
+
+const watched = Effect.gen(function* () {
+  const p4 = yield* P4.asEffect();
+  return yield* p4.watch.previewReconcile({ fileSpec: '...' }, {
+    progressIntervalMs: 250,
+  }).pipe(Stream.runCollect);
+});
+```
+
+Run this with `layerNode` as for the first example. Effect watches are lazy
+streams. Their final event is `{ _tag: 'done', result }`; interruption releases
+the running command. Buffered and watched methods execute the same program.
+Progress can be indeterminate (`total: null`); heartbeat snapshots update
+elapsed time even while Perforce prints nothing.
+
+### Node helpers and custom executors
+
+The root entry imports no child-process implementation. Node-only exports
+include `resolveConnection`, `findWorkspaceForPath`, `workspaceRootExists` and
+`materializeDepotFiles`. Workspace finding and materialization run via
+`runOperation` / `watchOperation`; connection resolution
+is an Effect, and root existence is a synchronous helper. Promise clients
+expose these helpers as methods too.
+
+`layerNode` exposes `P4`, `P4Config` and `P4Executor`. To use a custom executor,
+compose `P4.layer` with `configLayer` and that executor using
+`Layer.provideMerge`. `Layer.provide` hides supplied services, preventing scoped
+patches and executor-backed Node helpers from finding them.

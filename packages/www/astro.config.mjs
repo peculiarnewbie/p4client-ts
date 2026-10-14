@@ -33,7 +33,7 @@ export default defineConfig({
       ],
       plugins: [
         starlightTypeDoc({
-          entryPoints: ["../core/src/public/index.ts"],
+          entryPoints: ["../core/src/index.ts", "../core/src/node/index.ts", "../core/src/promise/index.ts", "../core/src/testing/index.ts"],
           tsconfig: "../core/tsconfig.json",
           output: "api",
           sidebar: {

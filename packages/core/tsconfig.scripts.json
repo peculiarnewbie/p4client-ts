@@ -9,7 +9,7 @@
   },
   "include": [
     "scripts/**/*.ts",
-    "tests/wire*.test.ts",
+    "tests/e2e/**/*.ts",
     "tests/prod-readonly-p4.test.ts",
     "tests/perforce-binaries.test.ts",
     "tests/unit/**/*.ts",

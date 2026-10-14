@@ -1,42 +1,79 @@
 ---
 title: Testing and Fixtures
-description: Test p4client-ts by injecting command runners locally and using the fixture stream for e2e scenarios.
+description: Mock the P4 service or replay strict captured CLI output.
 ---
 
-## Unit Testing With Injection
+Use Bun's test runner. Service mocks exercise application logic without starting
+Perforce; replay layers exercise command construction and wire decoding.
 
-`P4Client` is designed to be testable without shelling out to a real Perforce server on every test run.
-
-You can inject:
-
-- `executor` to stub command execution
-- `env`, `cwd`, and `hostName` to pin process-dependent behavior
+### Mock operations
 
 ```ts
-import { P4Client } from "p4client-ts";
+import { Effect } from 'effect';
+import { P4 } from 'p4client-ts';
+import { layerTest } from 'p4client-ts/testing';
 
-const p4 = new P4Client({
-  hostName: "build-host",
-  executor: async () => ({
-    command: "p4",
-    args: ["info"],
-    stdout: "Client host: build-host\nUser name: p4ts-e2e\n",
-    stderr: "",
-    exitCode: 0
-  })
+const program = Effect.gen(function* () {
+  const p4 = yield* P4.asEffect();
+  return yield* p4.listOpenedFiles({});
 });
-
-const environment = await p4.getEnvironment();
+const result = await Effect.runPromise(program.pipe(Effect.provide(layerTest({
+  listOpenedFiles: () => Effect.succeed({ items: [], messages: [] }),
+}))));
 ```
 
-## End-to-End Tests
+Unspecified methods fail as defects naming the unexpected operation. A mocked
+watch emits a single `done` event by default; provide `watch` overrides to test
+items, messages, failures or progress.
 
-This repository includes `packages/test-stream`, which contains the canonical stream seed used by the E2E harness. Run the canonical E2E command from the repository root:
+### Strict replay
 
-```bash
+```ts
+import { Layer } from 'effect';
+import { configLayer } from 'p4client-ts';
+import { readWireFixture, replayExecutor } from 'p4client-ts/testing';
+
+const fixture = readWireFixture('./tests/fixtures/opened-empty.json');
+const replayLayer = P4.layer.pipe(Layer.provideMerge(Layer.merge(
+  configLayer({}),
+  replayExecutor([fixture], { chunkSize: 7 }),
+)));
+const replayed = await Effect.runPromise(program.pipe(Effect.provide(replayLayer)));
+```
+
+Replay compares normalized argv, including subcommand flags and stdin, and
+reports the nearest fixture on a miss. Only global connection/program flags
+are stripped. Use individual fixtures when several captures share argv
+(for example successful, stopped-server and timeout `info`).
+
+For Promise tests, use `createP4ClientFromLayer(replayLayer, derive, config)`
+from `p4client-ts/promise`, where `derive` rebuilds the layer for new configuration.
+Dispose the client in `finally`. A `P4`-only mock supports neutral methods;
+Node helpers need exposed `P4Config` and `P4Executor`.
+
+### Recording and live tests
+
+`recordingExecutor(executor)` returns an executor layer and recorded invocations.
+`scriptedExecutor` responds to invocations with synthetic stdout/stderr/exit
+data. Use Effect Schema for runtime validation; use strict replays for real
+Perforce protocol behavior.
+
+From the repository root:
+
+```sh
+bun run typecheck
+bun run test
 bun run test:e2e
+bun run docs:check
+bun run build
+bun run pack:core
 ```
 
-The runner downloads or reuses hash-verified Perforce `p4`/`p4d` binaries, creates a disposable localhost server and workspace, provisions the stream, seeds the fixture, runs all E2E scenarios, and cleans up. The first run requires network access.
+The e2e runner starts a disposable localhost p4d, seeds a stream and workspace,
+and cleans up afterward. The harness checks the explicit `-p` against that
+isolated port and permits `-x -` only immediately before `print`.
 
-Use the [API Reference](/api/) for exact shapes while building tests around the client.
+To refresh wire captures, run `bun run wire:capture`, then
+`bun run --cwd packages/core wire:reasons`. Review the golden reason diff.
+Every capture must be referenced by a test; the evidence-only allowlist may
+only shrink. Chunk-split tests cover both JSON and Python marshal input.

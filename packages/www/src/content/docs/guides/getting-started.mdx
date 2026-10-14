@@ -1,74 +1,116 @@
 ---
 title: Getting Started
-description: Install p4client-ts and start querying Perforce state from TypeScript.
+description: Use the immutable Promise client, envelopes, binary printing and watches.
 ---
 
-## Install
-
-```bash
-npm install p4client-ts
-```
-
-## Create a Client
-
-`P4Client` wraps the `p4` executable and exposes typed helper methods for common inspection, preview, and explicit sync workflows.
+Install `p4client-ts` with `effect@4.0.0-beta.37`. Node 18 or newer and a local
+`p4` executable are required for live commands.
 
 ```ts
-import { P4Client } from "p4client-ts";
+import { createP4Client } from 'p4client-ts/promise';
+import { printedText } from 'p4client-ts';
 
-const p4 = new P4Client({
-  executable: "p4",
-  cwd: "C:/work/project"
+const client = createP4Client({
+  cwd: '/work/project',
+  connection: {
+    port: 'ssl:perforce:1666',
+    user: 'alice',
+    client: 'alice_ws',
+    isolated: true,
+  },
+  timeoutMs: 30_000,
 });
-```
-
-## Inspect Environment and Workspaces
-
-```ts
-const environment = await p4.getEnvironment();
-const workspaces = await p4.listWorkspaces();
-const pending = await p4.listPendingChangelists();
-const opened = await p4.getOpenedFiles({ change: "default" });
-```
-
-`getEnvironment()` and `listWorkspaces()` cache results on the client instance until you call them with `refresh: true`.
-
-## Preview and Sync Operations
-
-The recommended workflow is still preview first, then opt into `sync()` only when you want to apply the same file spec.
-
-```ts
-const reconcilePreview = await p4.previewReconcile({
-  fileSpec: "C:/work/project/...",
-  includeWritable: true
-});
-
-const syncPreview = await p4.previewSync({
-  fileSpec: "//Project/main/...",
-  force: true
-});
-
-if (syncPreview.totalCount > 0) {
-  const syncResult = await p4.sync({
-    fileSpec: "//Project/main/...",
-    force: true
-  });
+try {
+  const environment = await client.getEnvironment({});
+  const opened = await client.listOpenedFiles({});
+  const printed = await client.printFile({ file: '//depot/main/README.md' });
+  console.log(environment.client, opened.items, printedText(printed));
+} finally {
+  await client.dispose();
 }
 ```
 
-Command mapping:
+Every method takes one options object, including `{}`. No data is cached, so
+there is no `refresh` option. Lists return `{ items, messages }`; paged lists add
+`hasMore` and `nextCursor`. Use `listChangelists({ status: 'submitted', cursor })`
+with the previous page's numeric `nextCursor`.
 
-- `previewReconcile()` runs `p4 reconcile -n`
-- `previewSync()` runs `p4 sync -n`
-- `sync()` runs `p4 sync`
-- `setClient()` / `switchWorkspace()` persist `P4CLIENT` via `p4 set` and also
-  apply an instance-local override so later commands on that `P4Client` use the
-  new client even when constructor `env` or `P4CONFIG` would otherwise win over
-  `p4 set` alone.
+Explicit connection fields become global CLI flags. `isolated: true` ignores
+P4CONFIG and P4ENVIRO files; provide the server, user and client explicitly.
+Without isolation, omitted fields follow Perforce's normal settings resolution.
+`client.resolveConnection({})` returns discovered settings and their sources;
+it does not apply them to the client. Derive another client with `with({ connection })`
+and dispose both clients. `with` never writes `p4 set`.
 
-`previewReconcile()` remains preview-only in this version of the library.
+### Preview and sync
 
-## Next
+Place the following examples inside the client's `try` block, before disposal.
 
-- Use the [API Reference](/api/) for detailed method and type signatures.
-- Continue with the [Effect Service](/guides/effect-service/) guide if your codebase already uses `effect`.
+Mutation is disabled by default. Preview first, then opt in for a separate client:
+
+```ts
+const writable = client.with({ allowMutation: true });
+try {
+  const preview = await client.previewSync({ fileSpec: '//depot/main/...' });
+  if (preview.items.length > 0) {
+    const synced = await writable.sync({ fileSpec: '//depot/main/...' });
+    console.log(synced.items, synced.failures);
+  }
+} finally {
+  await writable.dispose();
+}
+```
+
+Clobbers, filesystem errors and outside-view specs are per-item `failures`.
+Connection, authentication and permission failures reject with tagged errors.
+`messages` contains notices and empty outcomes; failures carry their own message.
+
+### Progress and cancellation
+
+```ts
+const controller = new AbortController();
+const handle = client.watch.previewSync({
+  fileSpec: '//depot/main/...',
+  progressIntervalMs: 250,
+  signal: controller.signal,
+});
+for await (const event of handle.events) {
+  if (event._tag === 'progress') console.log(event.progress);
+  if (event._tag === 'failure') console.log(event.failure);
+}
+const result = await handle.result;
+console.log(result.items);
+```
+
+Every neutral operation has a `client.watch.<operation>` method. Events are
+`item | message | failure | progress | done`, discriminated by `_tag`.
+A watch starts eagerly, executes once, and resolves `result` even without an
+event consumer. Consume `events` only once. Leaving iteration early cancels;
+an aborted signal rejects both channels with its reason. Dispose clients to
+interrupt active work and join process cleanup.
+
+The default event buffer holds 10,000 events. `maxBuffered` changes the limit.
+Overflow fails iteration while the result continues. Drain events promptly;
+`printBatch({ keepContent: false })` keeps bytes out of the final result, but
+queued events still hold content.
+
+### Binary content and raw commands
+
+`printFile({ file })` prints the head revision by default; request
+`revision: 'have'` to read the workspace's recorded revision. Content is a
+`Uint8Array`; `printedText(result)` decodes UTF-8. Use `TextDecoder` with the
+appropriate encoding directly for other charsets. `keywords: 'raw' | 'expand'` defaults to raw.
+
+```ts
+import { Schema } from 'effect';
+
+const rows = await client.runTagged({
+  args: ['files', '//depot/main/...'],
+  schema: Schema.Struct({ depotFile: Schema.String }),
+});
+console.log(rows.items.map((row) => row.depotFile));
+```
+
+The schema determines the decoded row type. Raw commands use the same
+classification and mutation guard. For IPC, clone result envelopes directly
+and use `encodeP4Error` / `decodeP4Error` for tagged errors.
