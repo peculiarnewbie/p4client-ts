@@ -124,11 +124,17 @@ function syncCommand(options: SyncOptions, preview: boolean): P4CommandSpec<Sync
   };
 }
 
+/** The totals `sync` reports with its first file, once known. */
+interface SyncTotals {
+  readonly files: number | null;
+  readonly bytes: number | null;
+}
+
 function runSync(options: SyncOptions, preview: boolean, sink: P4Sink<P4SyncItem>) {
   return Effect.gen(function* () {
     const counter = progressCounter(sink, 'files');
     let bytes: number | undefined;
-    let totals: { files: number | null; bytes: number | null } = { files: null, bytes: null };
+    let totals: SyncTotals = { files: null, bytes: null };
     // Each file advances the count by one and the bytes by its size.
     const perFile: P4ProgressCounter = { ...counter, advance: () => counter.advance(1, bytes) };
 

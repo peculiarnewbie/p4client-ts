@@ -1,4 +1,4 @@
-import { Effect, Stream } from 'effect';
+import { Effect, Predicate, Stream } from 'effect';
 import { streamCommand } from '../engine/command.js';
 import { drain, operation, progressCounter } from '../engine/operation.js';
 import {
@@ -16,7 +16,7 @@ import {
 import type { P4CommandSpec } from '../engine/command.js';
 import type { P4DepotPath, P4FileAction } from '../schemas.js';
 import type { P4Message } from '../wire/message.js';
-import type { Row } from './shared.js';
+import type { Field, Row } from './shared.js';
 
 /** Options for {@link getFileHistory}. */
 export interface GetFileHistoryOptions {
@@ -97,7 +97,7 @@ export interface P4FileHistory {
 }
 
 /** `#3` as 3 and `#none` as 0. */
-function revisionNumber(value: unknown, row: Row): number {
+function revisionNumber(value: Field, row: Row): number {
   const raw = text(value);
 
   if (raw === '#none') return 0;
@@ -217,7 +217,7 @@ export const getFileHistory = operation<GetFileHistoryOptions, P4FileRevision, P
     const counter = progressCounter(sink, 'revisions');
 
     const events = streamCommand(filelogCommand(options, limit === undefined ? undefined : limit + 1)).pipe(
-      Stream.tap((event) => (event._tag === 'data' ? counter.advance(event.value.length) : Effect.void)),
+      Stream.tap((event) => (Predicate.isTagged(event, 'data') ? counter.advance(event.value.length) : Effect.void)),
     );
 
     const output = yield* drain(sink, events);

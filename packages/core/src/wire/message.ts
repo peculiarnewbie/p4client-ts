@@ -10,7 +10,9 @@ import {
 } from './reasons.js';
 import { P4DispositionSchema, dispose } from './policy.js';
 import { matchTemplate } from './template.js';
+import { isWireNumber, isWireString } from './value.js';
 import type { P4MessageCode } from './catalog.js';
+import type { P4WireFields, P4WireValue } from './value.js';
 import type { P4Reason } from './reasons.js';
 
 /** Unpacked `code0` fields of a message. */
@@ -66,24 +68,24 @@ const MESSAGE_CODES = new Set(['error', 'warning', 'info']);
  * @param fields One decoded output record.
  * @returns `true` for a message record.
  */
-export function isMessageRecord(fields: Readonly<Record<string, unknown>>): boolean {
+export function isMessageRecord(fields: P4WireFields): boolean {
   return (
     fields.code0 !== undefined ||
     fields.severity !== undefined ||
     fields.level !== undefined ||
-    (typeof fields.code === 'string' && MESSAGE_CODES.has(fields.code))
+    (isWireString(fields.code) && MESSAGE_CODES.has(fields.code))
   );
 }
 
-function numberField(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
+function numberField(value: P4WireValue | undefined): number | null {
+  if (isWireNumber(value)) return value;
 
-  if (typeof value === 'string' && /^\d+$/.test(value)) return Number(value);
+  if (isWireString(value) && /^\d+$/.test(value)) return Number(value);
 
   return null;
 }
 
-function numericSeverity(fields: Readonly<Record<string, unknown>>, code: P4MessageCode | null): number {
+function numericSeverity(fields: P4WireFields, code: P4MessageCode | null): number {
   const explicit = numberField(fields.severity);
 
   if (explicit !== null) return explicit;
@@ -97,12 +99,18 @@ function numericSeverity(fields: Readonly<Record<string, unknown>>, code: P4Mess
   return 1;
 }
 
+/** A message's reason, and what it was read from. */
+interface ResolvedReason {
+  readonly reason: P4Reason;
+  readonly reasonSource: P4Message['reasonSource'];
+}
+
 function resolveReason(
   code: P4MessageCode | null,
   generic: number | null,
   args: Readonly<Record<string, string>>,
   text: string,
-): { reason: P4Reason; reasonSource: P4Message['reasonSource'] } {
+): ResolvedReason {
   const cataloged = code === null ? null : catalogReason(code, args);
 
   if (cataloged !== null) return { reason: cataloged, reasonSource: 'code' };
@@ -142,11 +150,11 @@ function matchPrimaryPart(template: string, text: string): Readonly<Record<strin
  * @param fields A record for which {@link isMessageRecord} is true.
  * @returns The classified message.
  */
-export function toMessage(fields: Readonly<Record<string, unknown>>): P4Message {
+export function toMessage(fields: P4WireFields): P4Message {
   const code0 = numberField(fields.code0);
   const code = code0 === null ? null : decodeMessageCode(code0);
-  const text = String(fields.data ?? '').trimEnd();
-  const template = typeof fields.fmt0 === 'string' ? fields.fmt0 : null;
+  const text = isWireString(fields.data) ? fields.data.trimEnd() : '';
+  const template = isWireString(fields.fmt0) ? fields.fmt0 : null;
   const args = template === null ? textSubject(text) : matchPrimaryPart(template, text);
   const generic = numberField(fields.generic) ?? code?.generic ?? null;
   const { reason, reasonSource } = resolveReason(code, generic, args, text);

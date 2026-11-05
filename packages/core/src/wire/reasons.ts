@@ -72,7 +72,7 @@ export const P4CategorySchema = Schema.Literals([
 /** Coarse grouping of {@link P4Reason}, stable enough for UI and retry decisions. */
 export type P4Category = typeof P4CategorySchema.Type;
 
-const CATEGORIES: { readonly [Reason in P4Reason]: P4Category } = {
+const CATEGORIES = {
   server_unreachable: 'connection',
   server_config: 'configuration',
   not_logged_in: 'authentication',
@@ -112,7 +112,7 @@ const CATEGORIES: { readonly [Reason in P4Reason]: P4Category } = {
   usage: 'usage',
   invalid_revision: 'usage',
   unknown: 'unknown',
-};
+} satisfies { readonly [Reason in P4Reason]: P4Category };
 
 /**
  * The category a reason belongs to. Categories are derived, never classified

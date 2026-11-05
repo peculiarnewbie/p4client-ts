@@ -1,4 +1,4 @@
-import { Duration, Effect, Schedule, Schema, Stream } from 'effect';
+import { Data, Duration, Effect, Predicate, Schedule, Schema, Stream } from 'effect';
 import { randomUUID } from 'node:crypto';
 import { chmod, copyFile, mkdir, mkdtemp, open, rename, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep, join } from 'node:path';
@@ -8,6 +8,7 @@ import { operation, progressCounter } from '../engine/operation.js';
 import { P4MaterializationError } from '../errors.js';
 import { P4LocalPathSchema } from '../schemas.js';
 import { requirePositive } from '../commands/shared.js';
+import { isWireString } from '../wire/value.js';
 import type { FileHandle } from 'node:fs/promises';
 import type { P4Operation, P4Sink, P4Context } from '../engine/operation.js';
 import type { P4Error } from '../errors.js';
@@ -15,6 +16,7 @@ import type { P4KeywordMode } from '../commands/print.js';
 import type { P4LocalPath } from '../schemas.js';
 import type { P4Message } from '../wire/message.js';
 import type { P4MessagePolicy } from '../wire/policy.js';
+import type { P4WireFields, P4WireValue } from '../wire/value.js';
 
 /** An exact depot revision to write to disk. */
 export interface P4MaterializeSpec {
@@ -287,26 +289,34 @@ type BatchStat = { readonly _tag: 'stat'; readonly key: string; readonly type: s
 
 type BatchRecord = BatchStat | { readonly _tag: 'chunk'; readonly data: Uint8Array };
 
-function toBatchRecord(row: Readonly<Record<string, unknown>>): BatchRecord | null {
+const BatchRecord = Data.taggedEnum<BatchRecord>();
+
+/** A string field of a batch `stat` record, or `''`. */
+const statText = (value: P4WireValue | undefined): string => (isWireString(value) ? value : '');
+
+function toBatchRecord(row: P4WireFields): BatchRecord | null {
   if (row.code === 'stat') {
-    return {
-      _tag: 'stat',
-      key: `${String(row.depotFile)}#${String(row.rev)}`,
-      type: typeof row.type === 'string' ? row.type : '',
-      action: typeof row.action === 'string' ? row.action : '',
-      fileSize: typeof row.fileSize === 'string' && /^\d+$/.test(row.fileSize) ? Number(row.fileSize) : null,
-    };
+    const fileSize = statText(row.fileSize);
+
+    return BatchRecord.stat({
+      key: `${statText(row.depotFile)}#${statText(row.rev)}`,
+      type: statText(row.type),
+      action: statText(row.action),
+      fileSize: /^\d+$/.test(fileSize) ? Number(fileSize) : null,
+    });
   }
 
-  if ((row.code === 'binary' || row.code === 'text') && row.data instanceof Uint8Array) return { _tag: 'chunk', data: row.data };
+  if ((row.code === 'binary' || row.code === 'text') && row.data instanceof Uint8Array) {
+    return BatchRecord.chunk({ data: row.data });
+  }
 
   return null;
 }
 
 /** Failures after which a batch's unwritten revisions are printed per file, rather than failing the call. */
 function isCommandFailure(error: P4Error): boolean {
-  return error._tag === 'P4CommandError' || error._tag === 'P4ParseError'
-    || error._tag === 'P4TimeoutError' || error._tag === 'P4SpawnError';
+  return Predicate.isTagged(error, 'P4CommandError') || Predicate.isTagged(error, 'P4ParseError')
+    || Predicate.isTagged(error, 'P4TimeoutError') || Predicate.isTagged(error, 'P4SpawnError');
 }
 
 /**
@@ -404,9 +414,9 @@ function printBatch(
     }).pipe(
       Stream.runForEach((event): Effect.Effect<void, P4MaterializationError> => {
         // A message may concern the file being written, so that file is not trusted.
-        if (event._tag !== 'data') return discard;
+        if (!Predicate.isTagged(event, 'data')) return discard;
 
-        return event.value._tag === 'stat' ? Effect.andThen(finish, start(event.value)) : write(event.value.data);
+        return Predicate.isTagged(event.value, 'stat') ? Effect.andThen(finish, start(event.value)) : write(event.value.data);
       }),
       Effect.andThen(finish),
       Effect.catchIf(isCommandFailure, () => Effect.annotateCurrentSpan('p4.failed', true)),
@@ -419,9 +429,9 @@ function printBatch(
 
 /** Failures worth another attempt: the connection or the process, not the request. */
 function isTransient(error: P4Error): boolean {
-  if (error._tag === 'P4SpawnError' || error._tag === 'P4TimeoutError') return true;
+  if (Predicate.isTagged(error, 'P4SpawnError') || Predicate.isTagged(error, 'P4TimeoutError')) return true;
 
-  return error._tag === 'P4CommandError'
+  return Predicate.isTagged(error, 'P4CommandError')
     && (error.category === 'connection' || error.category === 'fault' || error.category === 'unknown');
 }
 
@@ -484,7 +494,10 @@ function printOne(group: Group, keywordArgs: readonly string[], writable: boolea
  * depot or output path is invalid or two resolve to one output path, the directory is unusable, or print produces no file.
  * @throws {P4InvalidArgumentError} When `maxFiles`, `concurrency`, `attempts`, a batch size or a revision is not a positive integer.
  */
-export const materializeDepotFiles = operation<
+export const materializeDepotFiles =
+  // SAFETY: every item's `file` is one of options.fileSpec, passed through unchanged, so a caller's
+  // spec type F comes back on each item and on the result.
+  operation<
   MaterializeDepotFilesOptions,
   P4MaterializedFile,
   P4MaterializeResult

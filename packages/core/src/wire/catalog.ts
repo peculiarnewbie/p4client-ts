@@ -48,12 +48,12 @@ interface CatalogEntry {
   readonly refine?: (args: Readonly<Record<string, string>>) => P4Reason;
 }
 
-const UNKNOWN_SPEC: Readonly<Record<string, P4Reason>> = {
-  client: 'unknown_client',
-  user: 'unknown_user',
-  change: 'unknown_changelist',
-  stream: 'unknown_stream',
-};
+const UNKNOWN_SPEC = new Map<string, P4Reason>([
+  ['client', 'unknown_client'],
+  ['user', 'unknown_user'],
+  ['change', 'unknown_changelist'],
+  ['stream', 'unknown_stream'],
+]);
 
 /**
  * Messages recognized by their unique code, keyed by `subsystem:subcode`.
@@ -73,7 +73,7 @@ export const MESSAGE_CATALOG: ReadonlyMap<string, CatalogEntry> = new Map<string
   // %type% '%name%' unknown - use '%command%' command to create it.
   ['6:35', {
     reason: 'unknown_object',
-    refine: (args) => UNKNOWN_SPEC[(args.type ?? '').toLowerCase()] ?? 'unknown_object',
+    refine: (args) => UNKNOWN_SPEC.get((args.type ?? '').toLowerCase()) ?? 'unknown_object',
   }],
   // You don't have permission for this operation.
   ['6:41', { reason: 'permission_denied' }],

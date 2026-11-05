@@ -1,10 +1,12 @@
-import { Cause, Effect, Layer, Queue, Stream } from 'effect';
+import { Cause, Effect, Layer, Option, Predicate, Queue, Schema, Stream } from 'effect';
 import { spawn } from 'node:child_process';
 import { P4SpawnError } from '../errors.js';
-import { P4Executor } from '../exec/executor.js';
+import { P4Executor, P4ProcessEvent } from '../exec/executor.js';
 import { redactArgs } from '../connection/argv.js';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
-import type { P4Invocation, P4ProcessEvent } from '../exec/executor.js';
+import type { P4Invocation } from '../exec/executor.js';
+
+const { stdout: stdoutEvent, stderr: stderrEvent, exit: exitEvent } = P4ProcessEvent;
 
 function environment(overrides: P4Invocation['env']): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
@@ -17,11 +19,11 @@ function environment(overrides: P4Invocation['env']): NodeJS.ProcessEnv {
   return env;
 }
 
-function spawnError(invocation: P4Invocation, message: string, cause: unknown): P4SpawnError {
-  const code = typeof cause === 'object' && cause !== null && 'code' in cause && typeof cause.code === 'string'
-    ? cause.code
-    : null;
+/** A Node system error's `code`, such as `ENOENT`. */
+const decodeSystemErrorCode = Schema.decodeUnknownOption(Schema.Struct({ code: Schema.String }));
 
+function spawnError(invocation: P4Invocation, message: string, cause: unknown): P4SpawnError {
+  const code = Option.match(decodeSystemErrorCode(cause), { onNone: () => null, onSome: (error) => error.code });
   const detail = cause instanceof Error ? cause.message : String(cause);
 
   return new P4SpawnError({
@@ -77,7 +79,7 @@ export function runNodeProcess(invocation: P4Invocation): Stream.Stream<P4Proces
         (child) => terminate(child, closed),
       );
 
-      let stdinFailure: unknown = null;
+      let stdinFailure: Error | null = null;
 
       const fail = (error: P4SpawnError) => {
         Queue.failCauseUnsafe(queue, Cause.fail(error));
@@ -92,10 +94,10 @@ export function runNodeProcess(invocation: P4Invocation): Stream.Stream<P4Proces
         stdinFailure = cause;
       });
       child.stdout.on('data', (bytes: Buffer) => {
-        Queue.offerUnsafe(queue, { _tag: 'stdout', bytes });
+        Queue.offerUnsafe(queue, stdoutEvent({ bytes }));
       });
       child.stderr.on('data', (bytes: Buffer) => {
-        Queue.offerUnsafe(queue, { _tag: 'stderr', bytes });
+        Queue.offerUnsafe(queue, stderrEvent({ bytes }));
       });
       child.on('close', (code) => {
         resolveClosed();
@@ -106,7 +108,7 @@ export function runNodeProcess(invocation: P4Invocation): Stream.Stream<P4Proces
           return;
         }
 
-        Queue.offerUnsafe(queue, { _tag: 'exit', code });
+        Queue.offerUnsafe(queue, exitEvent({ code }));
         Queue.endUnsafe(queue);
       });
       child.stdin.end(invocation.input);
@@ -142,8 +144,8 @@ export function runNodeProcessPromise(
     const stderr: Uint8Array[] = [];
     let exitCode: number | null = null;
     yield* runNodeProcess(invocation).pipe(Stream.runForEach((event) => Effect.sync(() => {
-      if (event._tag === 'stdout') stdout.push(event.bytes);
-      else if (event._tag === 'stderr') stderr.push(event.bytes);
+      if (Predicate.isTagged(event, 'stdout')) stdout.push(event.bytes);
+      else if (Predicate.isTagged(event, 'stderr')) stderr.push(event.bytes);
       else exitCode = event.code;
     })));
 
@@ -154,7 +156,7 @@ export function runNodeProcessPromise(
     };
   });
 
-  return Effect.runPromise(output, options).catch((error: unknown) => {
-    throw options.signal?.aborted ? options.signal.reason : error;
+  return Effect.runPromise(output, options).catch((cause: unknown) => {
+    throw options.signal?.aborted ? options.signal.reason : cause;
   });
 }

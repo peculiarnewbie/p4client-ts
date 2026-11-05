@@ -1,16 +1,22 @@
-import { Exit, Schema } from 'effect';
+import { Data, Exit, Schema } from 'effect';
 import { isMessageRecord, toMessage } from './message.js';
 import type { MarshalRecord } from './marshal.js';
 import type { P4Message } from './message.js';
+import type { P4WireFields, P4WireValue } from './value.js';
+
+export type { P4WireFields, P4WireValue } from './value.js';
 
 /** One structured output record: data, or a message about the command. */
 export type WireRecord =
-  | { readonly _tag: 'data'; readonly fields: Readonly<Record<string, unknown>> }
+  | { readonly _tag: 'data'; readonly fields: P4WireFields }
   | { readonly _tag: 'message'; readonly message: P4Message };
+
+/** Constructors and guards for {@link WireRecord}. */
+export const WireRecord = Data.taggedEnum<WireRecord>();
 
 /** Result of reading one `-Mj` output line. */
 export type JsonLineResult =
-  | { readonly ok: true; readonly fields: Record<string, unknown> }
+  | { readonly ok: true; readonly fields: P4WireFields }
   | { readonly ok: false; readonly detail: string };
 
 const decodeObject = Schema.decodeUnknownExit(
@@ -31,9 +37,12 @@ const CONTENT_CODES = new Set(['text', 'binary']);
 export function readJsonLine(line: string): JsonLineResult {
   const exit = decodeObject(line);
 
-  return Exit.isSuccess(exit)
-    ? { ok: true, fields: exit.value }
-    : { ok: false, detail: 'Expected one JSON object per line.' };
+  if (!Exit.isSuccess(exit)) return { ok: false, detail: 'Expected one JSON object per line.' };
+
+  // SAFETY: the schema parsed the line with JSON.parse and checked it is an object, and JSON.parse
+  // only produces strings, numbers, booleans, null, arrays and objects, all of them P4WireValues.
+  // Validating every value again would cost a pass over each row for nothing.
+  return { ok: true, fields: exit.value as P4WireFields };
 }
 
 /**
@@ -42,10 +51,10 @@ export function readJsonLine(line: string): JsonLineResult {
  * @param fields The record's fields.
  * @returns A data record, or a message record with its classification.
  */
-export function toWireRecord(fields: Readonly<Record<string, unknown>>): WireRecord {
+export function toWireRecord(fields: P4WireFields): WireRecord {
   return isMessageRecord(fields)
-    ? { _tag: 'message', message: toMessage(fields) }
-    : { _tag: 'data', fields };
+    ? WireRecord.message({ message: toMessage(fields) })
+    : WireRecord.data({ fields });
 }
 
 /**
@@ -58,7 +67,7 @@ export function toWireRecord(fields: Readonly<Record<string, unknown>>): WireRec
 export function fromMarshalRecord(record: MarshalRecord): WireRecord {
   const code = record.code instanceof Uint8Array ? textDecoder.decode(record.code) : null;
   const keepBytes = code !== null && CONTENT_CODES.has(code);
-  const fields: Record<string, unknown> = {};
+  const fields: Record<string, P4WireValue> = {};
 
   for (const [key, value] of Object.entries(record)) {
     fields[key] = value instanceof Uint8Array && !(keepBytes && key === 'data')

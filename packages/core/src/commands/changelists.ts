@@ -129,7 +129,10 @@ function scopedSpecs(specs: string[], cursor: number | undefined) {
  *
  * @returns One page, with the cursor for the next.
  */
-export const listChangelists = operation<ListChangelistsOptions, P4Changelist, P4ChangelistPage>('listChangelists', (options, sink) =>
+export const listChangelists =
+  // SAFETY: the program asks `changes -s` for options.status and decodes every row with that status
+  // (toChangelist(options.status)), so each item, and the page, has the status S the caller passed.
+  operation<ListChangelistsOptions, P4Changelist, P4ChangelistPage>('listChangelists', (options, sink) =>
   Effect.gen(function* () {
     const limit = options.limit === 'all' ? null : yield* requirePositive(options.limit ?? DEFAULT_LIMIT, 'limit');
     const cursor = options.cursor === undefined ? undefined : yield* requireNonNegative(options.cursor, 'cursor');

@@ -1,4 +1,4 @@
-import { Effect, Stream } from 'effect';
+import { Data, Effect, Predicate, Stream } from 'effect';
 import {
   P4CommandError,
   P4ParseError,
@@ -13,6 +13,7 @@ import { createMarshalDecoder } from '../wire/marshal.js';
 import { textMessage } from '../wire/message.js';
 import { dispose } from '../wire/policy.js';
 import { fromMarshalRecord, readJsonLine, toWireRecord } from '../wire/record.js';
+import type { P4WireFields } from '../wire/value.js';
 import { P4Config } from './config.js';
 import type { P4Error } from '../errors.js';
 import type { P4Invocation, P4ProcessEvent } from '../exec/executor.js';
@@ -46,7 +47,7 @@ export interface P4CommandSpec<A> {
    * Convert a data record. Return `null` to skip it. Throw `P4ParseError` for
    * a record without the expected shape.
    */
-  readonly decode: (fields: Readonly<Record<string, unknown>>) => A | null;
+  readonly decode: (fields: P4WireFields) => A | null;
 }
 
 /** Something a structured command produced, in output order. */
@@ -57,6 +58,13 @@ export type P4CommandEvent<A> =
   | { readonly _tag: 'message'; readonly message: P4Message }
   /** A per-item failure that does not fail the command. */
   | { readonly _tag: 'failure'; readonly message: P4Message };
+
+interface P4CommandEventDefinition extends Data.TaggedEnum.WithGenerics<1> {
+  readonly taggedEnum: P4CommandEvent<this['A']>;
+}
+
+/** Constructors for {@link P4CommandEvent}. */
+export const P4CommandEvent = Data.taggedEnum<P4CommandEventDefinition>();
 
 /** Everything a structured command produced. */
 export interface P4CommandOutput<A> {
@@ -124,6 +132,12 @@ function groupDiagnostics(text: string): string[] {
 }
 
 /** Accumulates one process's output and turns it into records, messages and a final verdict. */
+/** What {@link OutputReader.finish} recovers once the process exits. */
+interface FinishedOutput {
+  readonly records: WireRecord[];
+  readonly stderrMessages: P4Message[];
+}
+
 class OutputReader {
   readonly messages: P4Message[] = [];
   readonly failures: P4Message[] = [];
@@ -167,12 +181,12 @@ class OutputReader {
     if (disposition === 'item') {
       this.failures.push(message);
 
-      return { _tag: 'failure', message };
+      return P4CommandEvent.failure({ message });
     }
 
     this.messages.push(message);
 
-    return { _tag: 'message', message };
+    return P4CommandEvent.message({ message });
   }
 
   /** Structured records completed by a stdout chunk. */
@@ -205,7 +219,7 @@ class OutputReader {
    * short. That unfinished output is not parsed, so `verdict` reports the
    * termination rather than a parse error; stderr keeps the raw text.
    */
-  finish(exitCode: number | null): { records: WireRecord[]; stderrMessages: P4Message[] } {
+  finish(exitCode: number | null): FinishedOutput {
     const records: WireRecord[] = [];
 
     if (exitCode !== null) {
@@ -231,7 +245,7 @@ class OutputReader {
 
       const record = toWireRecord(parsed.fields);
 
-      if (record._tag !== 'message') throw this.parseError('Unexpected data on stderr.', line, 'Expected a message.');
+      if (!Predicate.isTagged(record, 'message')) throw this.parseError('Unexpected data on stderr.', line, 'Expected a message.');
 
       return [record.message];
     });
@@ -348,7 +362,7 @@ function processStream<A>(
 
     const events = executor.run(run).pipe(
       Stream.mapEffect((event: P4ProcessEvent): Effect.Effect<Array<P4CommandEvent<A>>, P4Error> => {
-        if (event._tag === 'stderr') {
+        if (Predicate.isTagged(event, 'stderr')) {
           return Effect.sync((): Array<P4CommandEvent<A>> => {
             reader.stderr(event.bytes);
 
@@ -356,7 +370,7 @@ function processStream<A>(
           });
         }
 
-        if (event._tag === 'stdout') {
+        if (Predicate.isTagged(event, 'stdout')) {
           return attempt(reader, () => reader.stdout(event.bytes)).pipe(
             Effect.flatMap((records) => onRecords(reader, records)),
           );
@@ -390,7 +404,7 @@ function processStream<A>(
 export function streamCommand<A>(spec: P4CommandSpec<A>): Stream.Stream<P4CommandEvent<A>, P4Error, Context> {
   const toEvents = (reader: OutputReader, records: WireRecord[]) =>
     attempt(reader, () => records.flatMap((record): Array<P4CommandEvent<A>> => {
-      if (record._tag === 'message') {
+      if (Predicate.isTagged(record, 'message')) {
         const event = reader.classify(record.message);
 
         return event === null ? [] : [event];
@@ -398,7 +412,7 @@ export function streamCommand<A>(spec: P4CommandSpec<A>): Stream.Stream<P4Comman
 
       const value = spec.decode(record.fields);
 
-      return value === null ? [] : [{ _tag: 'data', value }];
+      return value === null ? [] : [P4CommandEvent.data({ value })];
     }));
 
   return processStream<A>(
@@ -438,8 +452,8 @@ export function runCommand<A>(spec: P4CommandSpec<A>): Effect.Effect<P4CommandOu
     streamCommand(spec),
     (): P4CommandOutput<A> => ({ items: [], messages: [], failures: [] }),
     (output, event) => {
-      if (event._tag === 'data') output.items.push(event.value);
-      else if (event._tag === 'message') output.messages.push(event.message);
+      if (Predicate.isTagged(event, 'data')) output.items.push(event.value);
+      else if (Predicate.isTagged(event, 'message')) output.messages.push(event.message);
       else output.failures.push(event.message);
 
       return output;
@@ -470,12 +484,12 @@ export function runPlainCommand(spec: P4PlainCommandSpec): Effect.Effect<P4Plain
       if (error !== null) return yield* error;
       const output: P4PlainOutput = { stdout, exitCode: code ?? 0, messages: reader.messages, failures: reader.failures };
 
-      return [{ _tag: 'data', value: output }];
+      return [P4CommandEvent.data({ value: output })];
     }),
   ).pipe(
     Stream.runFold(
       (): P4PlainOutput => ({ stdout: new Uint8Array(0), exitCode: 0, messages: [], failures: [] }),
-      (output, event) => (event._tag === 'data' ? event.value : output),
+      (output, event) => (Predicate.isTagged(event, 'data') ? event.value : output),
     ),
   );
 }

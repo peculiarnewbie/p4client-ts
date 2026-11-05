@@ -44,6 +44,12 @@ export function isBinaryP4Type(type: string | null | undefined): boolean {
   return NON_TEXT_BASE_TYPES.has(base) || base.includes('binary') || base.includes('xb');
 }
 
+/** Line counts of a unified diff. */
+export interface P4UnifiedDiffCounts {
+  readonly additions: number;
+  readonly deletions: number;
+}
+
 /**
  * Count the added and deleted lines of a unified diff.
  *
@@ -52,7 +58,7 @@ export function isBinaryP4Type(type: string | null | undefined): boolean {
  * @param diff Unified diff text.
  * @returns Added and deleted line counts.
  */
-export function summarizeUnifiedDiff(diff: string): { additions: number; deletions: number } {
+export function summarizeUnifiedDiff(diff: string): P4UnifiedDiffCounts {
   let additions = 0;
   let deletions = 0;
   let oldRemaining = 0;

@@ -1,4 +1,4 @@
-import { Effect, Stream } from 'effect';
+import { Data, Effect, Predicate, Stream } from 'effect';
 import { streamCommand } from '../engine/command.js';
 import { operation, progressCounter } from '../engine/operation.js';
 import { fileAtRevision, isBinaryP4Type } from './diff-text.js';
@@ -111,10 +111,11 @@ type PrintRecord =
   | { readonly _tag: 'stat'; readonly info: P4PrintedFileInfo }
   | { readonly _tag: 'chunk'; readonly data: Uint8Array };
 
+const PrintRecord = Data.taggedEnum<PrintRecord>();
+
 function toPrintRecord(row: Row): PrintRecord | null {
   if (row.code === 'stat') {
-    return {
-      _tag: 'stat',
+    return PrintRecord.stat({
       info: {
         depotFile: depotPath(row.depotFile, row),
         revision: integer(row.rev, row),
@@ -124,13 +125,13 @@ function toPrintRecord(row: Row): PrintRecord | null {
         time: isoFromSeconds(row.time),
         fileSize: integer(row.fileSize, row),
       },
-    };
+    });
   }
 
   if (row.code === 'text' || row.code === 'binary') {
     if (!(row.data instanceof Uint8Array)) throw malformed('print content is not bytes.', { code: row.code });
 
-    return { _tag: 'chunk', data: row.data };
+    return PrintRecord.chunk({ data: row.data });
   }
 
   return null;
@@ -184,12 +185,12 @@ function printFiles(spec: P4CommandSpec<PrintRecord>, handlers: PrintHandlers): 
 
     return streamCommand(spec).pipe(
       Stream.runForEach((event): Effect.Effect<void, P4Error> => {
-        if (event._tag === 'message') return handlers.message(event.message);
+        if (Predicate.isTagged(event, 'message')) return handlers.message(event.message);
 
-        if (event._tag === 'failure') return Effect.andThen(flush, handlers.failure(event.message));
+        if (Predicate.isTagged(event, 'failure')) return Effect.andThen(flush, handlers.failure(event.message));
         const record = event.value;
 
-        if (record._tag === 'stat') {
+        if (Predicate.isTagged(record, 'stat')) {
           return Effect.andThen(flush, Effect.sync(() => {
             current = { info: record.info, chunks: [] };
           }));

@@ -61,6 +61,8 @@ export interface P4ReconcilePreview {
 
 const ACTIONS: ReadonlySet<string> = new Set<P4ReconcileAction>(['add', 'edit', 'delete', 'move/add', 'move/delete']);
 
+const isReconcileAction = (action: string): action is P4ReconcileAction => ACTIONS.has(action);
+
 /**
  * Convert a `reconcile -n` record.
  *
@@ -70,12 +72,12 @@ const ACTIONS: ReadonlySet<string> = new Set<P4ReconcileAction>(['add', 'edit', 
 export function toReconcileCandidate(row: Row): P4ReconcileCandidate {
   const decoded: P4FileAction = action(row.action, row);
 
-  if (!ACTIONS.has(decoded)) throw malformed(`Unsupported reconcile action "${decoded}".`, row);
+  if (!isReconcileAction(decoded)) throw malformed(`Unsupported reconcile action "${decoded}".`, row);
 
   return {
     depotFile: optionalDepotPath(row.depotFile, row),
     clientFile: clientFile(row.clientFile, row),
-    action: decoded as P4ReconcileAction,
+    action: decoded,
     type: text(row.type),
     change: row.change === undefined ? null : change(row.change, row),
     workRevision: integer(row.workRev, row),

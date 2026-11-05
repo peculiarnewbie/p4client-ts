@@ -1,4 +1,4 @@
-import { Context } from 'effect';
+import { Context, Data } from 'effect';
 import type { Stream } from 'effect';
 import type { P4SpawnError } from '../errors.js';
 
@@ -25,6 +25,9 @@ export type P4ProcessEvent =
   | { readonly _tag: 'stderr'; readonly bytes: Uint8Array }
   /** Always the last event. `code` is `null` when the process was killed by a signal. */
   | { readonly _tag: 'exit'; readonly code: number | null };
+
+/** Constructors for {@link P4ProcessEvent}, for executors and test doubles. */
+export const P4ProcessEvent = Data.taggedEnum<P4ProcessEvent>();
 
 /**
  * Runs `p4` processes.

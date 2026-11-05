@@ -8,7 +8,7 @@
 export type AsyncEventQueue<T> = {
   iterable: AsyncIterable<T>;
   push: (event: T) => void;
-  fail: (error: unknown) => void;
+  fail: (cause: unknown) => void;
   finish: () => void;
 };
 
@@ -33,7 +33,7 @@ export function createAsyncEventQueue<T>(
 
   const waiters: Array<{
     resolve: (result: IteratorResult<T>) => void;
-    reject: (error: unknown) => void;
+    reject: (cause: unknown) => void;
   }> = [];
 
   let failure: { error: unknown } | undefined;
@@ -119,12 +119,12 @@ export function createAsyncEventQueue<T>(
 
       values.push(event);
     },
-    fail(nextError: unknown) {
+    fail(cause: unknown) {
       if (done || failure !== undefined) return;
-      failure = { error: nextError };
+      failure = { error: cause };
 
       while (waiters.length > 0) {
-        waiters.shift()!.reject(nextError);
+        waiters.shift()!.reject(cause);
       }
     },
     finish() {

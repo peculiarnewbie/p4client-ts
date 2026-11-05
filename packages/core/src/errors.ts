@@ -117,7 +117,11 @@ export function encodeP4Error(error: P4Error): P4EncodedError {
  * @returns The error instance, usable with `instanceof` and `Effect.catchTag`.
  * @throws {Error} When the data is not an encoded p4client-ts error.
  */
-export function decodeP4Error(encoded: unknown): P4Error {
+export function decodeP4Error(
+  // This is the boundary decoder: it takes whatever arrived over IPC or storage and parses it here.
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- input from IPC is unknown until parsed here
+  encoded: unknown,
+): P4Error {
   return Schema.decodeUnknownSync(P4ErrorSchema)(encoded);
 }
 

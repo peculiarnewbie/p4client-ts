@@ -25,7 +25,7 @@ import type { P4DrainOptions, P4ProgressCounter, P4Sink } from '../engine/operat
 import type { P4ClientPath, P4DepotPath, P4FileAction, P4LocalPath } from '../schemas.js';
 import type { P4Message } from '../wire/message.js';
 import type { P4MessagePolicy } from '../wire/policy.js';
-import type { FileSpecs, P4ItemFailure, Row } from './shared.js';
+import type { Field, FileSpecs, P4ItemFailure, Row } from './shared.js';
 
 /**
  * Policy of the commands that take several file specs (`files`, `fstat`,
@@ -608,7 +608,7 @@ export interface P4WhereMappingList {
   readonly failures: P4ItemFailure[];
 }
 
-function unexcluded(value: unknown): string | null {
+function unexcluded(value: Field): string | null {
   const trimmed = text(value);
 
   return trimmed === null ? null : trimmed.replace(/^-/, '');

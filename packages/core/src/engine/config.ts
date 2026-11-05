@@ -106,10 +106,18 @@ export function resolveOptions(options: P4ClientOptions = {}): P4ResolvedOptions
  * @returns A layer that fails with `P4InvalidArgumentError` for invalid options.
  */
 export function configLayer(options: P4ClientOptions = {}): Layer.Layer<P4Config, P4InvalidArgumentError> {
-  return Layer.effect(P4Config, Effect.try({
-    try: () => resolveOptions(options),
-    catch: (error) => error as P4InvalidArgumentError,
-  }));
+  return Layer.effect(P4Config, validated(() => resolveOptions(options)));
+}
+
+/** Run an option check that throws `P4InvalidArgumentError`; anything else it throws is a defect. */
+function validated<A>(check: () => A): Effect.Effect<A, P4InvalidArgumentError> {
+  return Effect.suspend(() => {
+    try {
+      return Effect.succeed(check());
+    } catch (cause) {
+      return cause instanceof P4InvalidArgumentError ? Effect.fail(cause) : Effect.die(cause);
+    }
+  });
 }
 
 /**
@@ -120,9 +128,6 @@ export function configLayer(options: P4ClientOptions = {}): Layer.Layer<P4Config
  */
 export function withOptions(patch: P4ClientOptions) {
   return <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | P4InvalidArgumentError, R | P4Config> =>
-    Effect.flatMap(P4Config, (base) =>
-      Effect.try({
-        try: () => mergeOptions(base, patch),
-        catch: (error) => error as P4InvalidArgumentError,
-      })).pipe(Effect.flatMap((options) => Effect.provideService(effect, P4Config, options)));
+    Effect.flatMap(P4Config, (base) => validated(() => mergeOptions(base, patch)))
+      .pipe(Effect.flatMap((options) => Effect.provideService(effect, P4Config, options)));
 }

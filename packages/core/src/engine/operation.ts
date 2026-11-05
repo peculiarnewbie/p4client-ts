@@ -1,4 +1,4 @@
-import { Clock, Effect, Queue, Stream } from 'effect';
+import { Clock, Data, Effect, Predicate, Queue, Stream } from 'effect';
 import type {
   P4MaterializeOperation, P4MaterializeSpec, MaterializeDepotFilesOptions, P4MaterializedFile, P4MaterializeResult,
 } from '../node/materialize.js';
@@ -47,6 +47,13 @@ export type P4OperationEvent<I, R> =
   | { readonly _tag: 'progress'; readonly progress: P4Progress }
   /** The operation's result; always the last event. */
   | { readonly _tag: 'done'; readonly result: R };
+
+interface P4OperationEventDefinition extends Data.TaggedEnum.WithGenerics<2> {
+  readonly taggedEnum: P4OperationEvent<this['A'], this['B']>;
+}
+
+/** Constructors for {@link P4OperationEvent}, for test doubles that emit operation events. */
+export const P4OperationEvent = Data.taggedEnum<P4OperationEventDefinition>();
 
 /** Where an operation reports what it finds while it runs. */
 export interface P4Sink<I> {
@@ -169,13 +176,13 @@ export function watchOperation<O, I, R>(
       latest = update;
       reportedAt = now;
 
-      return emit({ _tag: 'progress', progress: { ...update, elapsedMs: now - started } });
+      return emit(P4OperationEvent.progress({ progress: { ...update, elapsedMs: now - started } }));
     });
 
     const sink: P4Sink<I> = {
-      item: (item) => emit({ _tag: 'item', item }),
-      message: (message) => emit({ _tag: 'message', message }),
-      failure: (failure) => emit({ _tag: 'failure', failure }),
+      item: (item) => emit(P4OperationEvent.item({ item })),
+      message: (message) => emit(P4OperationEvent.message({ message })),
+      failure: (failure) => emit(P4OperationEvent.failure({ failure })),
       progress: report,
     };
 
@@ -190,7 +197,7 @@ export function watchOperation<O, I, R>(
 
     // A failure must reach the queue explicitly: left in the callback's effect, it hangs the stream.
     yield* op.program(options, sink).pipe(
-      Effect.flatMap((result) => emit({ _tag: 'done', result })),
+      Effect.flatMap((result) => emit(P4OperationEvent.done({ result }))),
       Effect.matchCauseEffect({
         onFailure: (cause) => Effect.sync(() => Queue.failCauseUnsafe(queue, cause)),
         onSuccess: () => Effect.sync(() => Queue.endUnsafe(queue)),
@@ -270,13 +277,13 @@ export function drain<A, I>(
 
     return events.pipe(
       Stream.runForEach((event): Effect.Effect<void> => {
-        if (event._tag === 'message') {
+        if (Predicate.isTagged(event, 'message')) {
           output.messages.push(event.message);
 
           return sink.message(event.message);
         }
 
-        if (event._tag === 'failure') {
+        if (Predicate.isTagged(event, 'failure')) {
           output.failures.push(event.message);
 
           return sink.failure(itemFailure(event.message));

@@ -13,7 +13,7 @@ import {
 } from './shared.js';
 import type { P4DepotPath } from '../schemas.js';
 import type { P4Message } from '../wire/message.js';
-import type { FileSpecs, Row } from './shared.js';
+import type { Field, FileSpecs, Row } from './shared.js';
 
 /** Options for {@link listStreams}. */
 export interface ListStreamsOptions {
@@ -49,13 +49,13 @@ export interface P4StreamList {
   readonly messages: P4Message[];
 }
 
-function parentStream(value: unknown, row: Row): P4DepotPath | null {
+function parentStream(value: Field, row: Row): P4DepotPath | null {
   const parent = text(value);
 
   return parent === null || parent === 'none' ? null : depotPath(parent, row);
 }
 
-function words(value: unknown): string[] {
+function words(value: Field): string[] {
   return text(value)?.split(/\s+/) ?? [];
 }
 

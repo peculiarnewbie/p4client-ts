@@ -1,4 +1,4 @@
-import { Effect, Schema } from 'effect';
+import { Data, Effect, Predicate, Schema } from 'effect';
 import { runCommand, runPlainCommand } from '../engine/command.js';
 import { operation, progressCounter, runOperation } from '../engine/operation.js';
 import { P4InvalidArgumentError } from '../errors.js';
@@ -7,6 +7,7 @@ import { readDefaultChangelist } from './default-changelist.js';
 import { describeChangelist } from './describe.js';
 import { hasUnifiedHunk, isBinaryP4Type, resolveDiffPlan, summarizeUnifiedDiff } from './diff-text.js';
 import { openedCommand } from './opened.js';
+import { isWireString } from '../wire/value.js';
 import { invalid, localPath, requirePositive, text } from './shared.js';
 import type { P4Context } from '../engine/operation.js';
 import type { P4Error } from '../errors.js';
@@ -76,10 +77,14 @@ type WorkspaceDiffRow =
   | { readonly _tag: 'header'; readonly localFile: P4LocalPath | null; readonly type: string | null }
   | { readonly _tag: 'body'; readonly text: string };
 
-function toWorkspaceDiffRow(row: Row): WorkspaceDiffRow | null {
-  if (typeof row.data === 'string') return { _tag: 'body', text: row.data };
+const WorkspaceDiffRow = Data.taggedEnum<WorkspaceDiffRow>();
 
-  if (row.depotFile !== undefined) return { _tag: 'header', localFile: localPath(row.clientFile, row), type: text(row.type) };
+function toWorkspaceDiffRow(row: Row): WorkspaceDiffRow | null {
+  if (isWireString(row.data)) return WorkspaceDiffRow.body({ text: row.data });
+
+  if (row.depotFile !== undefined) {
+    return WorkspaceDiffRow.header({ localFile: localPath(row.clientFile, row), type: text(row.type) });
+  }
 
   return null;
 }
@@ -109,8 +114,8 @@ function runDiff(
     if (plan.command === 'diff') {
       // `-Mj diff` sends the file as a data row, then the hunks (without ---/+++ headers) as `data` rows.
       const output = yield* runCommand({ args: ['diff', ...plan.args], format: 'json', decode: toWorkspaceDiffRow });
-      unifiedDiff = output.items.map((row) => (row._tag === 'body' ? row.text : '')).join('');
-      reportedLocal = output.items.find((row) => row._tag === 'header')?.localFile ?? null;
+      unifiedDiff = output.items.map((row) => (Predicate.isTagged(row, 'body') ? row.text : '')).join('');
+      reportedLocal = output.items.find((row) => Predicate.isTagged(row, 'header'))?.localFile ?? null;
       messages = [...output.messages, ...output.failures];
     } else {
       // `-Mj`/`-G diff2` send only a header, so the hunks come from plain output.
@@ -275,7 +280,7 @@ export const getChangelistDiffSummary = operation<
     const byDepotFile = new Map(opened.flatMap((file) => file.depotFile === null ? [] : [[file.depotFile, file] as const]));
     const counter = progressCounter(sink, 'files', changelist.files.length);
     const status = shelved ? 'shelved' : changelist.status === 'submitted' ? 'submitted' : 'pending';
-    const shelvedChange = typeof changelist.change === 'number' ? changelist.change : undefined;
+    const shelvedChange = changelist.change === 'default' ? undefined : changelist.change;
 
     const files = yield* Effect.forEach(changelist.files, (file) => Effect.gen(function* () {
       let summary = summarize(file, byDepotFile.get(file.depotFile));

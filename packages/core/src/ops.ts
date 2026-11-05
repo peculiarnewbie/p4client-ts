@@ -79,6 +79,11 @@ export const ops = {
 /** The operation registry's type. */
 export type P4Ops = typeof ops;
 
+/** @internal The registry's operation names. */
+export const OPERATION_NAMES: ReadonlyArray<keyof P4Ops> =
+  // SAFETY: ops is a frozen-shape object literal declared above, so Object.keys returns exactly its keys.
+  Object.keys(ops) as Array<keyof P4Ops>;
+
 /** Options of an operation in the registry. */
 export type OpOptions<K extends keyof P4Ops> = K extends 'listChangelists' ? ListChangelistsOptions : Parameters<P4Ops[K]['program']>[0];
 

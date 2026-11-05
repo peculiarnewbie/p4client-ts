@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Effect, Match } from 'effect';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -80,11 +80,12 @@ export function resolveConnection(
     const sources: Partial<Record<P4SettingField, P4SettingsSource>> = {};
 
     for (const source of options.sources ?? DEFAULT_SOURCES) {
-      const found = source === 'p4'
-        ? yield* p4Settings
-        : source === 'p4v-app-settings'
-          ? yield* readP4vFile('ApplicationSettings.xml', parseP4vApplicationSettingsXml)
-          : yield* readP4vFile('connectionmap.xml', parseP4vConnectionMapXml);
+      const found = yield* Match.value(source).pipe(
+        Match.when('p4', () => p4Settings),
+        Match.when('p4v-app-settings', () => readP4vFile('ApplicationSettings.xml', parseP4vApplicationSettingsXml)),
+        Match.when('p4v-connection-map', () => readP4vFile('connectionmap.xml', parseP4vConnectionMapXml)),
+        Match.exhaustive,
+      );
 
       const merged = fillMissing(settings, found);
       settings = merged.settings;

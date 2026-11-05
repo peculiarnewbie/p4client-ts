@@ -1,7 +1,7 @@
 import { Effect, Layer, Stream } from 'effect';
-import { P4Executor } from '../exec/executor.js';
+import { P4Executor, P4ProcessEvent } from '../exec/executor.js';
 import { fixtureStdout } from './fixture.js';
-import type { P4Invocation, P4ProcessEvent } from '../exec/executor.js';
+import type { P4Invocation } from '../exec/executor.js';
 import type { P4WireFixture } from './fixture.js';
 
 /** Output a scripted executor returns for one invocation. */
@@ -22,8 +22,15 @@ export interface P4TestExecutorOptions {
 
 const encoder = new TextEncoder();
 
-const bytes = (value: string | Uint8Array | undefined): Uint8Array =>
-  typeof value === 'string' ? encoder.encode(value) : value ?? new Uint8Array(0);
+const bytes = (value: string | Uint8Array | undefined): Uint8Array => {
+  if (value === undefined) return new Uint8Array(0);
+
+  return value instanceof Uint8Array ? value : encoder.encode(value);
+};
+
+const isFixtureMap = (
+  fixtures: Iterable<P4WireFixture> | ReadonlyMap<string, P4WireFixture>,
+): fixtures is ReadonlyMap<string, P4WireFixture> => fixtures instanceof Map;
 
 function chunks(data: Uint8Array, size: number | undefined): Uint8Array[] {
   if (data.length === 0) return [];
@@ -38,9 +45,9 @@ function chunks(data: Uint8Array, size: number | undefined): Uint8Array[] {
 
 function emit(output: P4ScriptedOutput, options: P4TestExecutorOptions): Stream.Stream<P4ProcessEvent> {
   const events: P4ProcessEvent[] = [
-    ...chunks(bytes(output.stdout), options.chunkSize).map((chunk) => ({ _tag: 'stdout' as const, bytes: chunk })),
-    ...chunks(bytes(output.stderr), undefined).map((chunk) => ({ _tag: 'stderr' as const, bytes: chunk })),
-    { _tag: 'exit', code: output.exitCode === undefined ? 0 : output.exitCode },
+    ...chunks(bytes(output.stdout), options.chunkSize).map((chunk) => P4ProcessEvent.stdout({ bytes: chunk })),
+    ...chunks(bytes(output.stderr), undefined).map((chunk) => P4ProcessEvent.stderr({ bytes: chunk })),
+    P4ProcessEvent.exit({ code: output.exitCode === undefined ? 0 : output.exitCode }),
   ];
 
   return Stream.fromIterable(events);
@@ -113,7 +120,7 @@ export function replayExecutor(
   fixtures: Iterable<P4WireFixture> | ReadonlyMap<string, P4WireFixture>,
   options: P4TestExecutorOptions = {},
 ): Layer.Layer<P4Executor> {
-  const list = fixtures instanceof Map ? [...fixtures.values()] : [...fixtures as Iterable<P4WireFixture>];
+  const list = isFixtureMap(fixtures) ? [...fixtures.values()] : [...fixtures];
   const byKey = new Map(list.map((fixture) => [key(fixture.args, fixture.input), fixture]));
 
   return Layer.succeed(P4Executor, {
@@ -138,16 +145,20 @@ export function replayExecutor(
   });
 }
 
+/** An executor layer that records its invocations, from {@link recordingExecutor}. */
+export interface P4RecordingExecutor {
+  readonly layer: Layer.Layer<P4Executor>;
+  /** Every invocation so far, in order. */
+  readonly invocations: P4Invocation[];
+}
+
 /**
  * Wrap an executor layer so every invocation is recorded.
  *
  * @param inner The executor that runs the invocations.
  * @returns The recording layer and the list it appends to.
  */
-export function recordingExecutor(inner: Layer.Layer<P4Executor>): {
-  readonly layer: Layer.Layer<P4Executor>;
-  readonly invocations: P4Invocation[];
-} {
+export function recordingExecutor(inner: Layer.Layer<P4Executor>): P4RecordingExecutor {
   const invocations: P4Invocation[] = [];
 
   const layer = Layer.effect(P4Executor, Effect.gen(function* () {

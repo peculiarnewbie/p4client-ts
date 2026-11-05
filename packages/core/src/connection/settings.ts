@@ -6,12 +6,13 @@ export type P4SettingField = 'port' | 'user' | 'client' | 'charset';
 /** Connection values found in one settings source. */
 export type P4Settings = Partial<Record<P4SettingField, string>>;
 
-const VARIABLES: Readonly<Record<string, P4SettingField>> = {
-  P4PORT: 'port',
-  P4USER: 'user',
-  P4CLIENT: 'client',
-  P4CHARSET: 'charset',
-};
+/** The connection field each `p4 set` variable supplies. */
+const VARIABLES = new Map<string, P4SettingField>([
+  ['P4PORT', 'port'],
+  ['P4USER', 'user'],
+  ['P4CLIENT', 'client'],
+  ['P4CHARSET', 'charset'],
+]);
 
 /** Connection fields in resolution order. */
 export const SETTING_FIELDS: readonly P4SettingField[] = ['port', 'user', 'client', 'charset'];
@@ -35,7 +36,7 @@ export function parseP4SetOutput(output: string): P4Settings {
     const separator = line.indexOf('=');
 
     if (separator <= 0) continue;
-    const field = VARIABLES[line.slice(0, separator).trim()];
+    const field = VARIABLES.get(line.slice(0, separator).trim());
 
     if (field !== undefined) set(settings, field, line.slice(separator + 1));
   }
@@ -112,6 +113,12 @@ export function parseP4vConnectionMapXml(xml: string): P4Settings {
   return settings;
 }
 
+/** Settings after {@link fillMissing}, and which fields the fallback supplied. */
+export interface P4FilledSettings {
+  readonly settings: P4Settings;
+  readonly contributed: P4SettingField[];
+}
+
 /**
  * Fill fields missing from `primary` with values from `fallback`.
  *
@@ -119,10 +126,7 @@ export function parseP4vConnectionMapXml(xml: string): P4Settings {
  * @param fallback Values used only where `primary` has none.
  * @returns The fields `fallback` contributed, and the merged settings.
  */
-export function fillMissing(
-  primary: P4Settings,
-  fallback: P4Settings,
-): { readonly settings: P4Settings; readonly contributed: P4SettingField[] } {
+export function fillMissing(primary: P4Settings, fallback: P4Settings): P4FilledSettings {
   const settings: P4Settings = { ...primary };
   const contributed: P4SettingField[] = [];
 
@@ -145,10 +149,14 @@ export function fillMissing(
  * @returns A connection to pass to a client.
  */
 export function toConnection(settings: P4Settings): P4Connection {
-  return {
-    ...(settings.port === undefined ? {} : { port: settings.port }),
-    ...(settings.user === undefined ? {} : { user: settings.user }),
-    ...(settings.client === undefined ? {} : { client: settings.client }),
-    ...(settings.charset === undefined ? {} : { charset: settings.charset }),
-  };
+  // Only the fields that are set: an absent field and an `undefined` one differ to callers that spread it.
+  const connection: P4Settings = {};
+
+  for (const field of SETTING_FIELDS) {
+    const value = settings[field];
+
+    if (value !== undefined) connection[field] = value;
+  }
+
+  return connection;
 }
