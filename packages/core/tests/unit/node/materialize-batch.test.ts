@@ -126,7 +126,10 @@ describe('materializeDepotFiles batches', () => {
     expect(readFileSync(join(directory, 'p4ts/main/wire/exclusive.uasset'), 'utf8')).toBe('synthetic asset\0data');
     expect(result.stats).toEqual({ files: 4, bytes: result.items.reduce((sum, item) => sum + item.bytes, 0),
       batched: 2, printed: 2, batches: 1, retries: 0 });
-    expect(run.argv.map((args) => args.at(-1))).toEqual(['-k', '//p4ts/main/wire/text.txt#1', '//p4ts/main/missing.txt#1']);
+    // One batch first, then the per-file prints, which run concurrently in any order.
+    const [batch, ...perFile] = run.argv.map((args) => args.at(-1));
+    expect(batch).toBe('-k');
+    expect(perFile.toSorted()).toEqual(['//p4ts/main/missing.txt#1', '//p4ts/main/wire/text.txt#1']);
     expect(leftovers(directory)).toEqual([]);
   });
 
