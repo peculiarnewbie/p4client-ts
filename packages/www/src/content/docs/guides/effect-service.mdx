@@ -22,6 +22,8 @@ const program = Effect.gen(function* () {
 const result = await Effect.runPromise(program.pipe(Effect.provide(layerNode({
   connection: { port: 'ssl:perforce:1666', user: 'alice', client: 'alice_ws' },
 }))));
+
+console.log(result.environment.client, result.pending.items.length);
 ```
 
 The service methods are inferred from the operation registry and fail through
@@ -31,10 +33,12 @@ the typed `P4Error` channel. Use Effect composition within the application and
 ### Scoped configuration
 
 ```ts
-const inOtherWorkspace = program.pipe(
+const inOtherWorkspace = await Effect.runPromise(program.pipe(
   P4.with({ connection: { client: 'review_ws' } }),
   Effect.provide(layerNode({ connection: { port: 'ssl:perforce:1666' } })),
-);
+));
+
+console.log(inOtherWorkspace.pending.items);
 ```
 
 Apply `P4.with` inside the providing layer, as above. It patches configuration
@@ -54,6 +58,12 @@ const watched = Effect.gen(function* () {
     progressIntervalMs: 250,
   }).pipe(Stream.runCollect);
 });
+
+const events = await Effect.runPromise(watched.pipe(Effect.provide(layerNode({
+  connection: { port: 'ssl:perforce:1666', user: 'alice', client: 'alice_ws' },
+}))));
+
+console.log(events.map((event) => event._tag));
 ```
 
 Run this with `layerNode` as for the first example. Effect watches are lazy

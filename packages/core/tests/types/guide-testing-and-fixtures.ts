@@ -13,6 +13,8 @@ const result = await Effect.runPromise(program.pipe(Effect.provide(layerTest({
   listOpenedFiles: () => Effect.succeed({ items: [], messages: [] }),
 }))));
 
+console.log(result.items.length);
+
 import { Layer } from 'effect';
 import { configLayer } from '../../src/index.js';
 import { readWireFixture, replayExecutor } from '../../src/testing/index.js';
@@ -25,6 +27,8 @@ const replayLayer = P4.layer.pipe(Layer.provideMerge(Layer.merge(
 )));
 
 const replayed = await Effect.runPromise(program.pipe(Effect.provide(replayLayer)));
+
+console.log(replayed.items, replayed.messages);
 
 import { createP4ClientFromLayer } from '../../src/promise/index.js';
 import type { P4ClientOptions } from '../../src/index.js';
@@ -45,3 +49,5 @@ import { withP4Client } from '../../src/promise/index.js';
 const scopedOpened = await withP4Client({
   connection: { port: 'ssl:perforce:1666', user: 'alice', client: 'alice_ws' },
 }, (scoped) => scoped.listOpenedFiles({}));
+
+console.log(scopedOpened.items);

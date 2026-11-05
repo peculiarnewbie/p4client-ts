@@ -42,6 +42,9 @@ This project follows semantic versioning.
 - Raw rows are typed. `Row` and the record a `P4CommandSpec.decode` receives are
   `P4WireFields` (strings, numbers, booleans, null, bytes, arrays and nested fields)
   instead of `Record<string, unknown>`.
+- Every error class is branded, so a plain object with the same fields no longer
+  type-checks as a `P4CommandError` or any other p4client-ts error. Build them with
+  `new`, or rebuild sent errors with `decodeP4Error`.
 - Number fields in schemas, errors and messages accept only finite numbers
   (`Schema.Finite`); `NaN` and infinities fail to decode.
 - The getting-started guide matches events with `Predicate.isTagged`.

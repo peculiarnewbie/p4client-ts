@@ -23,6 +23,8 @@ const program = Effect.gen(function* () {
 const result = await Effect.runPromise(program.pipe(Effect.provide(layerTest({
   listOpenedFiles: () => Effect.succeed({ items: [], messages: [] }),
 }))));
+
+console.log(result.items.length);
 ```
 
 Unspecified methods fail as defects naming the unexpected operation. A mocked
@@ -44,6 +46,8 @@ const replayLayer = P4.layer.pipe(Layer.provideMerge(Layer.merge(
 )));
 
 const replayed = await Effect.runPromise(program.pipe(Effect.provide(replayLayer)));
+
+console.log(replayed.items, replayed.messages);
 ```
 
 Replay compares normalized argv, including subcommand flags and stdin, and
@@ -117,6 +121,8 @@ import { withP4Client } from 'p4client-ts/promise';
 const scopedOpened = await withP4Client({
   connection: { port: 'ssl:perforce:1666', user: 'alice', client: 'alice_ws' },
 }, (scoped) => scoped.listOpenedFiles({}));
+
+console.log(scopedOpened.items);
 ```
 
 The callback owns clients it derives with `with`; dispose those separately. An app

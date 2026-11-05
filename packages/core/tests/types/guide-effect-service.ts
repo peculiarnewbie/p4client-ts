@@ -15,10 +15,14 @@ const result = await Effect.runPromise(program.pipe(Effect.provide(layerNode({
   connection: { port: 'ssl:perforce:1666', user: 'alice', client: 'alice_ws' },
 }))));
 
-const inOtherWorkspace = program.pipe(
+console.log(result.environment.client, result.pending.items.length);
+
+const inOtherWorkspace = await Effect.runPromise(program.pipe(
   P4.with({ connection: { client: 'review_ws' } }),
   Effect.provide(layerNode({ connection: { port: 'ssl:perforce:1666' } })),
-);
+));
+
+console.log(inOtherWorkspace.pending.items);
 
 import { Stream } from 'effect';
 
@@ -29,3 +33,9 @@ const watched = Effect.gen(function* () {
     progressIntervalMs: 250,
   }).pipe(Stream.runCollect);
 });
+
+const events = await Effect.runPromise(watched.pipe(Effect.provide(layerNode({
+  connection: { port: 'ssl:perforce:1666', user: 'alice', client: 'alice_ws' },
+}))));
+
+console.log(events.map((event) => event._tag));
