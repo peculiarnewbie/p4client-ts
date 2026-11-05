@@ -57,8 +57,6 @@
     "wire:capture": "bun scripts/capture-wire.ts",
     "test": "bun test tests/*.test.ts tests/unit/",
     "test:e2e": "bun scripts/test-perforce-e2e.ts",
-    "docs:api": "typedoc --options typedoc.json",
-    "docs:api:check": "typedoc --options typedoc.json",
     "pack:check": "bun scripts/pack-check.ts",
     "prepublishOnly": "bun run clean && bun run typecheck && bun run test && bun run build",
     "wire:reasons": "bun scripts/wire-reasons.ts"

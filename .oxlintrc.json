@@ -16,10 +16,8 @@
     "**/node_modules/**",
     "**/dist/**",
     "packages/core/.captures/**",
-    "packages/core/.typedoc/**",
     "packages/www/.astro/**",
     "packages/www/dist/**",
-    "packages/www/src/content/docs/api/**",
     "tools/oxlint/anti-slop/**",
     "tools/oxlint/t3code/**"
   ],

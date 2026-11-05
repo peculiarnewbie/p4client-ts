@@ -18,7 +18,7 @@
     "wire:capture": "bun run --cwd packages/core wire:capture",
     "docs:dev": "bun run --cwd packages/www dev",
     "docs:build": "bun run --cwd packages/www build",
-    "docs:check": "bun run --cwd packages/core docs:api:check && bun run --cwd packages/www check && bun run --cwd packages/www build",
+    "docs:check": "bun run --cwd packages/www check && bun run --cwd packages/www build",
     "clean": "bun run --cwd packages/core clean",
     "pack:core": "bun run --cwd packages/core pack:check",
     "effect:solutions": "bun scripts/effect-solutions.ts",
@@ -37,10 +37,7 @@
     "effect-solutions": "0.5.3",
     "oxlint": "1.90.0",
     "oxlint-tsgolint": "7.0.2005",
-    "starlight-typedoc": "^0.21.5",
     "tsrs": "0.20.1-ts7.1.0-beta",
-    "typedoc": "^0.28.20",
-    "typedoc-plugin-markdown": "^4.14.1",
     "typescript": "^6.0.3"
   }
 }

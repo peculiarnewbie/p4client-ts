@@ -36,7 +36,7 @@ bun test packages/core/tests/helpers.test.ts
 # Run e2e tests
 bun run test:e2e
 
-# Full documentation check (builds docs + typechecks API)
+# Documentation check (checks and builds the guides)
 bun run docs:check
 
 # Clean build artifacts
@@ -88,7 +88,7 @@ for the installed `@effect/tsgo` version; upgrade them together, never one alone
 - Prefix private class members with underscore (e.g., `_privateMethod`)
 - Avoid `any`; use `unknown` when type is uncertain
 - Use explicit return types on public API methods
-- Document public APIs with JSDoc comments
+- No JSDoc tags (`@param`, `@returns`, `@throws`): types and Effect Schemas are the reference
 
 ### Error Handling
 - Create custom error classes extending `Error` for domain-specific failures
@@ -164,6 +164,8 @@ Never guess at Effect patterns - check the guide first.
 <!-- effect-solutions:end -->
 
 ### Documentation
-- JSDoc comments required for all public exports
-- Include `@param`, `@returns`, and `@throws` where applicable
-- Keep examples practical and relevant to Perforce workflows
+- There is no generated API reference. The types and Effect Schemas are the reference, and
+  the guides in `packages/www` explain how to use them.
+- Comments say what the code can't: a constraint, a reason or a failure condition, in 4 lines
+  or fewer (`t3code/no-low-value-comments`). No JSDoc tags.
+- Keep guide examples practical and relevant to Perforce workflows

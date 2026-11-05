@@ -46,6 +46,6 @@ See the [guides](https://p4client-ts.peculiarnewbie.com/guides/getting-started/)
 and [migration guide](./MIGRATION.md) for upgrading from 0.13 and the breaking 0.13 changes.
 
 The Bun monorepo contains `packages/core` (library), `packages/test-stream`
-(live fixtures) and `packages/www` (Astro guides and generated API).
+(live fixtures) and `packages/www` (Astro guides).
 Run `bun run typecheck`, `bun run test`, `bun run test:e2e`, `bun run docs:check`,
 `bun run build` and `bun run pack:core` from this directory.
