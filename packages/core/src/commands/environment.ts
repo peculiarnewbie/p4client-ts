@@ -58,8 +58,6 @@ function toEnvironment(row: Row, port: string | null, messages: P4Message[]): P4
 /**
  * Read the connection as the server sees it, with `p4 info -s`, which skips
  * the slow server-side lookups `info` makes.
- *
- * @returns User, workspace, server identity and modes.
  */
 export const getEnvironment = operation<GetEnvironmentOptions, never, P4Environment>('getEnvironment', (_options, sink) =>
   Effect.gen(function* () {

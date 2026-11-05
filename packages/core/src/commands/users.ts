@@ -51,8 +51,6 @@ function toUser(row: Row): P4User {
  * List users (`p4 users`), for example to turn the user names on changelists
  * and revisions into full names and emails. A requested user that does not
  * exist is reported in `failures` rather than failing the operation.
- *
- * @returns The users, in the order Perforce lists them.
  */
 export const listUsers = operation<ListUsersOptions, P4User, P4UserList>('listUsers', (options, sink) =>
   Effect.gen(function* () {

@@ -17,12 +17,9 @@ import type { P4OpenedFile } from './opened.js';
 import type { Row } from './shared.js';
 
 /**
- * Options for {@link diffFile}.
- *
- * Give `fromRevision` and `toRevision` to compare two depot revisions;
- * otherwise `changelistStatus` decides: `submitted` and `shelved` compare
- * depot revisions inferred from `action` and `revision`, and `pending` (the
- * default) compares the workspace file with the revision it was opened at.
+ * Options for {@link diffFile}. `fromRevision` and `toRevision` compare two depot revisions.
+ * Otherwise `submitted` and `shelved` compare revisions inferred from `action` and `revision`,
+ * and `pending` (the default) compares the workspace file with the revision it was opened at.
  */
 export interface DiffFileOptions extends P4DiffPlanOptions {
   /** Local path reported in the result when Perforce does not report one. Not passed to Perforce. */
@@ -140,15 +137,9 @@ const runDiff = Effect.fn('p4client-ts.diff.file')(function* (
 });
 
 /**
- * Diff one file as a unified diff.
- *
- * A workspace diff runs `p4 -Mj diff -du <file>`; a file that is not
- * opened gives an empty diff with a `not_opened` message. A depot diff runs
- * plain `p4 diff2 -du <from> <to>`, because the structured forms of `diff2`
- * omit the hunks.
- *
- * @returns The diff with its line counts.
- * @throws {P4InvalidArgumentError} When the paths are invalid or the revisions cannot be inferred.
+ * Diff one file as a unified diff. A workspace diff runs `p4 -Mj diff -du`; an unopened file gives
+ * an empty diff and a `not_opened` message. A depot diff runs plain `p4 diff2 -du`, because the
+ * structured forms of `diff2` omit the hunks.
  */
 export const diffFile = operation<DiffFileOptions, never, P4FileDiff>('diffFile', (options, sink) =>
   Effect.gen(function* () {
@@ -228,20 +219,10 @@ function summarize(file: P4DescribedFile, opened: P4OpenedFile | undefined): P4C
 }
 
 /**
- * Summarize a changelist's files for a diff view, without patch bodies.
- *
- * Numbered changelists are read with `describe -s` (`-S` for shelved files),
- * plus `opened -c <change>` for a pending changelist's workspace paths. The
- * default changelist is read from a single `opened -c default`, which serves
- * as both its description and its opened files. With `includeLineCounts`,
- * each text file is diffed as {@link diffFile} would: workspace diffs for
- * pending files, depot diffs for submitted and shelved ones.
- *
- * Progress counts files against the changelist's file count; each file is
- * reported as an item when its summary is complete.
- *
- * @returns The changelist, its file summaries and every message.
- * @throws {P4InvalidArgumentError} For `shelved` with the default changelist, or an invalid `concurrency`.
+ * Summarize a changelist's files for a diff view, without patches: `describe -s` (`-S` shelved)
+ * plus `opened -c` for pending paths, or one `opened -c default` for the default changelist.
+ * `includeLineCounts` diffs each text file as {@link diffFile} would. Each file is an item as soon
+ * as its summary is complete.
  */
 export const getChangelistDiffSummary = operation<
   GetChangelistDiffSummaryOptions,

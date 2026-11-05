@@ -80,8 +80,6 @@ function alternateRoots(client: string) {
  * Find the workspace whose root contains a local path, as a tool started in
  * that directory would need to. When several roots contain it, the deepest
  * one wins.
- *
- * @returns The match, if any, and every candidate.
  */
 export const findWorkspaceForPath = operation<FindWorkspaceForPathOptions, never, P4WorkspaceForPath>('findWorkspaceForPath', (options, sink) =>
   Effect.gen(function* () {
@@ -126,9 +124,6 @@ export const findWorkspaceForPath = operation<FindWorkspaceForPathOptions, never
  * Whether a workspace's root exists on this machine. A workspace without a
  * host restriction can be used anywhere, so this is how to tell whether one
  * is set up here.
- *
- * @param workspace A listed workspace.
- * @returns `true` when the root directory exists.
  */
 export function workspaceRootExists(workspace: Pick<P4Workspace, 'root'>): boolean {
   try {

@@ -397,9 +397,6 @@ function processStream<A>(
  * Messages are classified by the spec's policy. A message that fails the
  * command, or a non-zero exit nothing explains, fails the stream after the
  * process has exited, so every earlier event has already been emitted.
- *
- * @param spec The command and how to read its data.
- * @returns Events in output order.
  */
 export function streamCommand<A>(spec: P4CommandSpec<A>): Stream.Stream<P4CommandEvent<A>, P4Error, Context> {
   const toEvents = (reader: OutputReader, records: WireRecord[]) =>
@@ -443,9 +440,6 @@ export function streamCommand<A>(spec: P4CommandSpec<A>): Stream.Stream<P4Comman
  *
  * This is {@link streamCommand} folded, so both report the same items,
  * messages and failures.
- *
- * @param spec The command and how to read its data.
- * @returns Decoded items with the messages and per-item failures.
  */
 export function runCommand<A>(spec: P4CommandSpec<A>): Effect.Effect<P4CommandOutput<A>, P4Error, Context> {
   return Stream.runFold(
@@ -465,9 +459,6 @@ export function runCommand<A>(spec: P4CommandSpec<A>): Effect.Effect<P4CommandOu
  * Run a plain-text command, such as `diff2`, whose stdout is content rather than records.
  *
  * Diagnostics on stderr are classified like structured messages.
- *
- * @param spec The command.
- * @returns Its stdout bytes, exit code, messages and per-item failures.
  */
 export function runPlainCommand(spec: P4PlainCommandSpec): Effect.Effect<P4PlainOutput, P4Error, Context> {
   return processStream<P4PlainOutput>(

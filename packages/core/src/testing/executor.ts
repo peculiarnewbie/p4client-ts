@@ -53,13 +53,7 @@ function emit(output: P4ScriptedOutput, options: P4TestExecutorOptions): Stream.
   return Stream.fromIterable(events);
 }
 
-/**
- * An executor that answers each invocation with output computed by a function.
- *
- * @param respond Output for an invocation. Throwing fails the test as a defect.
- * @param options Delivery options.
- * @returns A layer providing `P4Executor`.
- */
+/** An executor that answers each invocation with output computed by a function. */
 export function scriptedExecutor(
   respond: (invocation: P4Invocation) => P4ScriptedOutput,
   options: P4TestExecutorOptions = {},
@@ -80,9 +74,6 @@ const VALUE_OPTIONS = new Set(['-z', '-x', '-d', '-r', '-v', '-P', '-L', '-Q']);
  * program identification, so recordings from any server compare equal.
  * Only global options, before the subcommand, are removed: a subcommand's
  * own `-u` or `-c` is part of the command.
- *
- * @param args Complete argument vector.
- * @returns Arguments without global `-p`, `-u`, `-c`, `-C`, `-H` and `-zprog`/`-zversion`.
  */
 export function commandArgs(args: readonly string[]): string[] {
   const result: string[] = [];
@@ -111,10 +102,6 @@ const key = (args: readonly string[], input: string | undefined) =>
  * An executor that replays recorded fixtures. Each invocation must match a
  * fixture's command arguments and stdin exactly, ignoring connection options;
  * an unmatched invocation fails as a defect naming the closest fixture.
- *
- * @param fixtures Recorded invocations, for example from `readWireFixtures`.
- * @param options Delivery options.
- * @returns A layer providing `P4Executor`.
  */
 export function replayExecutor(
   fixtures: Iterable<P4WireFixture> | ReadonlyMap<string, P4WireFixture>,
@@ -152,12 +139,7 @@ export interface P4RecordingExecutor {
   readonly invocations: P4Invocation[];
 }
 
-/**
- * Wrap an executor layer so every invocation is recorded.
- *
- * @param inner The executor that runs the invocations.
- * @returns The recording layer and the list it appends to.
- */
+/** Wrap an executor layer so every invocation is recorded. */
 export function recordingExecutor(inner: Layer.Layer<P4Executor>): P4RecordingExecutor {
   const invocations: P4Invocation[] = [];
 

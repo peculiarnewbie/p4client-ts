@@ -14,12 +14,7 @@ export interface P4MessageCode {
   readonly subcode: number;
 }
 
-/**
- * Unpack `code0`: `severity << 28 | argc << 24 | generic << 16 | subsystem << 10 | subcode`.
- *
- * @param code0 The message's unique code as sent by `p4 -Mj` or `p4 -G`.
- * @returns The packed fields.
- */
+/** Unpack `code0`: `severity << 28 | argc << 24 | generic << 16 | subsystem << 10 | subcode`. */
 export function decodeMessageCode(code0: number): P4MessageCode {
   const code = code0 >>> 0;
 
@@ -32,12 +27,7 @@ export function decodeMessageCode(code0: number): P4MessageCode {
   };
 }
 
-/**
- * Identify a message independently of its severity and argument count.
- *
- * @param code Unpacked message code.
- * @returns `subsystem:subcode`, the key used by {@link MESSAGE_CATALOG}.
- */
+/** Identify a message independently of its severity and argument count. */
 export function messageKey(code: P4MessageCode): string {
   return `${code.subsystem}:${code.subcode}`;
 }
@@ -132,13 +122,7 @@ export const GENERIC_REASONS: ReadonlyMap<number, P4Reason> = new Map<number, P4
   [0x27, 'too_big'], // EV_TOOBIG
 ]);
 
-/**
- * Look up a cataloged message.
- *
- * @param code Unpacked message code.
- * @param args Named arguments recovered from the message template.
- * @returns The specific reason, or `null` when the code is not cataloged.
- */
+/** Look up a cataloged message. */
 export function catalogReason(code: P4MessageCode, args: Readonly<Record<string, string>>): P4Reason | null {
   const entry = MESSAGE_CATALOG.get(messageKey(code));
 

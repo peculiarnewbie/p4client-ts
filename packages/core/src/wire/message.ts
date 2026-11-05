@@ -64,9 +64,6 @@ const MESSAGE_CODES = new Set(['error', 'warning', 'info']);
  * `-Mj` messages carry `code0`, `severity` or `level`; `-G` messages carry
  * `code: 'error' | 'info'`. Data rows, including `-G` `stat`/`text`/`binary`
  * records and annotate's `data` rows, carry none of these.
- *
- * @param fields One decoded output record.
- * @returns `true` for a message record.
  */
 export function isMessageRecord(fields: P4WireFields): boolean {
   return (
@@ -144,12 +141,7 @@ function matchPrimaryPart(template: string, text: string): Readonly<Record<strin
   return {};
 }
 
-/**
- * Build a typed message from a structured message record.
- *
- * @param fields A record for which {@link isMessageRecord} is true.
- * @returns The classified message.
- */
+/** Build a typed message from a structured message record. */
 export function toMessage(fields: P4WireFields): P4Message {
   const code0 = numberField(fields.code0);
   const code = code0 === null ? null : decodeMessageCode(code0);
@@ -179,10 +171,6 @@ export function toMessage(fields: P4WireFields): P4Message {
  *
  * Plain text carries no severity: recognized empty-result notices are warnings,
  * and anything else is a failure when the command exited non-zero.
- *
- * @param text One diagnostic line.
- * @param exitCode Exit code of the command that printed it.
- * @returns The classified message.
  */
 export function textMessage(text: string, exitCode: number): P4Message {
   const trimmed = text.trimEnd();

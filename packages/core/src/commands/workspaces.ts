@@ -61,11 +61,7 @@ function toWorkspace(row: Row): P4Workspace {
   };
 }
 
-/**
- * List workspaces, sorted by root and then name.
- *
- * @returns Matching workspaces.
- */
+/** List workspaces, sorted by root and then name. */
 export const listWorkspaces = operation<ListWorkspacesOptions, P4Workspace, P4WorkspaceList>('listWorkspaces', (options, sink) =>
   Effect.gen(function* () {
     const args = ['clients'];

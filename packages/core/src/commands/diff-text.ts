@@ -32,9 +32,6 @@ const NON_TEXT_BASE_TYPES = new Set(['binary', 'apple', 'resource', 'xb', 'xbina
  *
  * Recognizes the base types `binary`, `apple` and `resource`, the historical
  * `xb`/`xbinary` spellings, and `+` modifiers (for example `binary+F`).
- *
- * @param type A file type, such as `text+k` or `binary+F`.
- * @returns `true` for non-text types; `false` for text types and a missing type.
  */
 export function isBinaryP4Type(type: string | null | undefined): boolean {
   if (!type) return false;
@@ -54,9 +51,6 @@ export interface P4UnifiedDiffCounts {
  * Count the added and deleted lines of a unified diff.
  *
  * Only lines inside a hunk count, so `---`/`+++` file headers do not.
- *
- * @param diff Unified diff text.
- * @returns Added and deleted line counts.
  */
 export function summarizeUnifiedDiff(diff: string): P4UnifiedDiffCounts {
   let additions = 0;
@@ -85,12 +79,7 @@ export function summarizeUnifiedDiff(diff: string): P4UnifiedDiffCounts {
   return { additions, deletions };
 }
 
-/**
- * Split a unified diff into hunks. Text before the first hunk is ignored.
- *
- * @param diff Unified diff text.
- * @returns The hunks in order.
- */
+/** Split a unified diff into hunks. Text before the first hunk is ignored. */
 export function parseUnifiedDiff(diff: string): P4DiffHunk[] {
   const hunks: P4DiffHunk[] = [];
   let current: P4DiffHunk | null = null;
@@ -117,23 +106,12 @@ export function parseUnifiedDiff(diff: string): P4DiffHunk[] {
   return hunks;
 }
 
-/**
- * Whether text contains at least one unified diff hunk.
- *
- * @param diff Diff output.
- * @returns `true` when a hunk header is present.
- */
+/** Whether text contains at least one unified diff hunk. */
 export function hasUnifiedHunk(diff: string): boolean {
   return /^@@ -\d/m.test(diff);
 }
 
-/**
- * A file spec at a revision.
- *
- * @param file Depot path, without a revision.
- * @param revision A number, `none`, `have`, `head`, or a specifier starting with `#` or `@`.
- * @returns For example `//d/a.txt#3`, `//d/a.txt#none` or `//d/a.txt@=7`.
- */
+/** A file spec at a revision. */
 export function fileAtRevision(file: string, revision: P4RevisionSpec): string {
   const text = String(revision);
 
@@ -150,12 +128,7 @@ export interface P4DiffRevisions {
   readonly toRevision: P4RevisionSpec;
 }
 
-/**
- * Infer the revisions to compare for a file of a submitted changelist.
- *
- * @param file The file's action and submitted revision.
- * @returns The revisions, or `null` when the action does not imply a comparison.
- */
+/** Infer the revisions to compare for a file of a submitted changelist. */
 export function submittedDiffRevisions(file: {
   readonly action: string;
   readonly revision: number | null;
@@ -181,10 +154,6 @@ export function submittedDiffRevisions(file: {
  *
  * `describe -S` reports the depot revision a shelved file is based on; the
  * shelved content is addressed as `@=change`.
- *
- * @param file The file and the shelving changelist.
- * @returns The revisions.
- * @throws {P4InvalidArgumentError} When the action or base revision does not allow a comparison.
  */
 export function shelvedDiffRevisions(file: {
   readonly depotFile: string;
@@ -276,11 +245,6 @@ function depotPlan(options: P4DiffPlanOptions, revisions: P4DiffRevisions, flags
 /**
  * Decide whether a file diff compares the workspace (`p4 diff`) or two depot
  * revisions (`p4 diff2`).
- *
- * @param options The file and what to compare.
- * @returns The command and the revisions it compares.
- * @throws {P4InvalidArgumentError} When only one revision is given, a shelved
- * diff has no `shelvedChange`, or the revisions cannot be inferred.
  */
 export function resolveDiffPlan(options: P4DiffPlanOptions): P4DiffPlan {
   const flags = options.diffFlags ?? ['-du'];

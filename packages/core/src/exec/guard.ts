@@ -68,10 +68,6 @@ function argumentFile(args: readonly string[], end: number): string | null {
  *
  * Arguments read from stdin with `-x -` are inspected too; an argument file
  * cannot be, so `-x <file>` is treated as mutating.
- *
- * @param args Complete argument vector, including global options.
- * @param input Text written to stdin, when the invocation uses `-x -`.
- * @returns The subcommand and whether it mutates.
  */
 export function checkCommand(args: readonly string[], input?: string): P4CommandCheck {
   const index = subcommandIndex(args);

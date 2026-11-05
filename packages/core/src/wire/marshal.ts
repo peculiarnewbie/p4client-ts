@@ -8,17 +8,9 @@ export type MarshalRecord = Readonly<Record<string, MarshalValue>>;
 
 /** Incremental decoder for the stream of marshal dictionaries `p4 -G` writes. */
 export interface MarshalDecoder {
-  /**
-   * Decode every record completed by this chunk. Partial records are kept for the next chunk.
-   *
-   * @throws {P4ParseError} When the bytes are not marshal dictionaries.
-   */
+  /** Decode every record completed by this chunk. Partial records are kept for the next chunk. */
   push(chunk: Uint8Array): MarshalRecord[];
-  /**
-   * Confirm the stream ended on a record boundary.
-   *
-   * @throws {P4ParseError} When a partial record remains.
-   */
+  /** Confirm the stream ended on a record boundary. */
   end(): void;
 }
 
@@ -36,11 +28,7 @@ function parseError(detail: string, bytes: Uint8Array): P4ParseError {
   });
 }
 
-/**
- * Create a decoder for `p4 -G` output.
- *
- * @returns A decoder that accepts output chunks in order.
- */
+/** Create a decoder for `p4 -G` output. */
 export function createMarshalDecoder(): MarshalDecoder {
   let pending = new Uint8Array(0);
 

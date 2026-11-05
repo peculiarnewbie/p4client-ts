@@ -45,9 +45,17 @@ This project follows semantic versioning.
 - Number fields in schemas, errors and messages accept only finite numbers
   (`Schema.Finite`); `NaN` and infinities fail to decode.
 - The getting-started guide matches events with `Predicate.isTagged`.
+- Every operation runs in a `p4client-ts.<operation>` span (`Effect.fn`), and
+  `resolveConnection` in `p4client-ts.resolveConnection`. Workspace diffs add one
+  `p4client-ts.diff.file` span per file.
+- The generated TypeDoc API reference is gone. The types and Effect Schemas are the
+  reference, and source comments no longer carry `@param`, `@returns` or `@throws`.
 - Development: anti-slop's Oxlint rules are vendored under `tools/oxlint/anti-slop/`
   and enforced as errors, and tests and scripts are linted and typechecked with their
   own `tsconfig.json`.
+- Development: four t3code lint rules (`prefer-effect-fn`, `no-inline-schema-compile`,
+  `require-suppression-reason`, `no-low-value-comments`) are vendored under
+  `tools/oxlint/t3code/` and enforced as errors.
 - `materializeDepotFiles` items carry `bytes` and `method`, and the result carries
   `stats`. Results compared with `toEqual` need the new fields.
 - The README rule that clients never write `p4 set` is now that they never do so

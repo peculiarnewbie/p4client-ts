@@ -140,8 +140,6 @@ function toDepot(row: Row): P4Depot {
 /**
  * List the depots on the server, the roots that {@link listDepotDirs} and
  * {@link listDepotFiles} expand.
- *
- * @returns Depots, in the order Perforce lists them.
  */
 export const listDepots = operation<ListDepotsOptions, P4Depot, P4DepotList>('listDepots', (_, sink) =>
   Effect.map(
@@ -188,8 +186,6 @@ function toDepotDir(row: Row): P4DepotDir {
 /**
  * List the immediate subdirectories of a depot directory, for lazy tree
  * expansion. An empty or missing directory lists nothing.
- *
- * @returns Subdirectories, in the order Perforce lists them.
  */
 export const listDepotDirs = operation<ListDepotDirsOptions, P4DepotDir, P4DepotDirList>('listDepotDirs', (options, sink) =>
   Effect.gen(function* () {
@@ -285,8 +281,6 @@ export interface ListDepotFilesOptions {
 /**
  * List the immediate files of a depot directory at their head revision (or at
  * `atChange`). An empty or missing directory lists nothing.
- *
- * @returns Files, in the order Perforce lists them.
  */
 export const listDepotFiles = operation<ListDepotFilesOptions, P4DepotFile, P4DepotFileList>('listDepotFiles', (options, sink) =>
   Effect.gen(function* () {
@@ -331,8 +325,6 @@ export interface ListFilesOptions {
  * List the files matching several specs with `p4 files`. A spec that matches
  * nothing (no such file, no such revision, not in the view) is reported in
  * `failures` and does not fail the others.
- *
- * @returns Files, with one failure per spec that matched nothing.
  */
 export const listFiles = operation<ListFilesOptions, P4DepotFile, P4FileList>('listFiles', (options, sink) =>
   Effect.gen(function* () {
@@ -407,8 +399,6 @@ function toDepotFileRevision(row: Row): P4DepotFileRevision {
  * List the exact revisions under a depot path when a submitted changelist was
  * created, with `p4 files -e`, so deleted, purged and archived revisions are
  * left out. A path with no files at that changelist lists nothing.
- *
- * @returns Revisions, bounded by `limit`.
  */
 export const listDepotFilesAtChange = operation<
   ListDepotFilesAtChangeOptions, P4DepotFileRevision, P4DepotFileRevisionList
@@ -547,8 +537,6 @@ function toFileStat(row: Row): P4FileStat {
 /**
  * Read depot, workspace and open state of files with one `p4 fstat`. A spec
  * that matches nothing is reported in `failures` and does not fail the others.
- *
- * @returns File state, with one failure per spec that matched nothing.
  */
 export const statFiles = operation<StatFilesOptions, P4FileStat, P4FileStatList>('statFiles', (options, sink) =>
   Effect.gen(function* () {
@@ -629,8 +617,6 @@ function toWhereMapping(row: Row): P4WhereMapping {
  * Map file specs between depot, client and local syntax with `p4 where`. A
  * view with overlapping or exclusion lines can map a spec to several rows. A
  * spec outside the workspace view is reported in `failures`.
- *
- * @returns Mappings, with one failure per spec outside the view.
  */
 export const whereFiles = operation<WhereFilesOptions, P4WhereMapping, P4WhereMappingList>('whereFiles', (options, sink) =>
   Effect.gen(function* () {
@@ -687,8 +673,6 @@ function toHaveFile(row: Row): P4HaveFile {
  * List the file revisions the workspace has, with `p4 have`. A given spec the
  * workspace has nothing for is reported in `failures`; with no specs, an empty
  * workspace lists nothing.
- *
- * @returns Files the workspace has.
  */
 export const listHaveFiles = operation<ListHaveFilesOptions, P4HaveFile, P4HaveFileList>('listHaveFiles', (options, sink) =>
   Effect.gen(function* () {

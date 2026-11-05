@@ -33,25 +33,14 @@ export type P4WireFixture = typeof P4WireFixtureSchema.Type;
 const decodeFixture = Schema.decodeUnknownSync(Schema.fromJsonString(P4WireFixtureSchema));
 const readMode = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({ mode: Schema.String })));
 
-/**
- * The exact bytes a fixture's command wrote to stdout.
- *
- * @param fixture A recorded invocation.
- * @returns Its stdout bytes.
- */
+/** The exact bytes a fixture's command wrote to stdout. */
 export function fixtureStdout(fixture: P4WireFixture): Uint8Array {
   if (fixture.stdoutBase64) return new Uint8Array(Buffer.from(fixture.stdoutBase64, 'base64'));
 
   return new TextEncoder().encode(fixture.stdout ?? '');
 }
 
-/**
- * Read one fixture file.
- *
- * @param path Path to a fixture `.json` file.
- * @returns The decoded fixture.
- * @throws {Error} When the file is not a command capture.
- */
+/** Read one fixture file. */
 export function readWireFixture(path: string): P4WireFixture {
   return decodeFixture(readFileSync(path, 'utf8'));
 }
@@ -59,9 +48,6 @@ export function readWireFixture(path: string): P4WireFixture {
 /**
  * Read every command capture in a directory, keyed by file name without `.json`.
  * Files that are not command captures, such as golden outputs, are skipped.
- *
- * @param directory Directory of fixture files.
- * @returns Fixtures by name.
  */
 export function readWireFixtures(directory: string): ReadonlyMap<string, P4WireFixture> {
   const fixtures = new Map<string, P4WireFixture>();

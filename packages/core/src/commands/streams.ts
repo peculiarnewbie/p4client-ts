@@ -83,8 +83,6 @@ function toStream(row: Row): P4Stream {
  * List streams (`p4 streams`). Each carries its parent, so the hierarchy of
  * a stream depot needs no further queries. A path that matches no stream
  * gives no items and an `empty` message.
- *
- * @returns The streams, in the order Perforce lists them.
  */
 export const listStreams = operation<ListStreamsOptions, P4Stream, P4StreamList>('listStreams', (options, sink) =>
   Effect.gen(function* () {
@@ -152,8 +150,6 @@ function toStreamSpec(row: Row): Omit<P4StreamSpec, 'messages'> {
 /**
  * Read a stream's spec (`p4 stream -o`), including its `Paths` view.
  * Perforce prints a default spec for a stream that does not exist yet.
- *
- * @returns The stream spec.
  */
 export const getStream = operation<GetStreamOptions, never, P4StreamSpec>('getStream', (options, sink) =>
   Effect.gen(function* () {

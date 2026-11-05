@@ -14,11 +14,7 @@ export * from './workspace.js';
 
 export * from './materialize.js';
 
-/**
- * Provide the P4 service, configuration and Node executor.
- * @param options Immutable command configuration.
- * @returns A layer usable by P4 operations and the Node-only helpers.
- */
+/** Provide the P4 service, configuration and Node executor. */
 export function layerNode(options: P4ClientOptions = {}):
   Layer.Layer<P4 | P4Config | P4Executor, P4InvalidArgumentError> {
   return P4.layer.pipe(Layer.provideMerge(Layer.merge(configLayer(options), NodeP4Executor)));

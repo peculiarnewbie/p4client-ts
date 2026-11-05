@@ -118,11 +118,7 @@ export class P4 extends Context.Service<P4, P4Service>()('p4client-ts/P4') {
       return makeP4Service(yield* P4Config, yield* P4Executor);
     }));
 
-  /**
-   * Provide only the operations a test expects; an unspecified call dies with its name.
-   * @param partialOps Effect methods and optional watch overrides.
-   * @returns A layer without CLI dependencies. Default watches emit the mock's result as done.
-   */
+  /** Provide only the operations a test expects; an unspecified call dies with its name. */
   static layerTest(partialOps: P4TestOps): Layer.Layer<P4> {
     return Layer.sync(P4, () => {
       const { watch: watchOverrides = {}, ...methodOverrides } = partialOps;
@@ -143,10 +139,6 @@ export class P4 extends Context.Service<P4, P4Service>()('p4client-ts/P4') {
     });
   }
 
-  /**
-   * Run a program with patched configuration, including calls on an already obtained P4 service.
-   * @param patch Connection fields and environment entries merge individually.
-   * @returns A transformation scoped to this program; siblings keep their original configuration.
-   */
+  /** Run a program with patched configuration, including calls on an already obtained P4 service. */
   static readonly with = withOptions;
 }

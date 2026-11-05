@@ -30,13 +30,9 @@ import type { Effect } from 'effect';
 import type { P4Sink } from './engine/operation.js';
 
 /**
- * Every platform-neutral operation, by method name.
- *
- * The `P4` service and the Promise client are derived from this registry, so
- * an operation added here is available in both. Operations that need Node,
- * such as `materializeDepotFiles`, `findWorkspaceForPath` and
- * `setPersistentWorkspace`, live in
- * `p4client-ts/node`.
+ * Every platform-neutral operation, by method name. The `P4` service and the Promise client are
+ * derived from it, so an operation added here is in both. Node-only operations, such as
+ * `materializeDepotFiles`, live in `p4client-ts/node`.
  */
 export const ops = {
   getEnvironment,

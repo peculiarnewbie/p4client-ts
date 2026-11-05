@@ -102,8 +102,6 @@ function revisionSpec(file: string, revision: string | number | undefined): stri
  * (`p4 annotate -q -c`). Join `change` with `getFileHistory` or
  * `describeChangelist` for authors and descriptions. A file that does not
  * exist gives no lines and an `empty` message.
- *
- * @returns The annotated file.
  */
 export const annotateFile = operation<AnnotateFileOptions, P4AnnotatedLine, P4Annotation>('annotateFile', (options, sink) =>
   Effect.gen(function* () {

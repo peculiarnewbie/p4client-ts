@@ -39,13 +39,7 @@ const MAX_TIMEOUT_MS = 2_147_483_647;
 /** The options commands run with. Change them for part of a program with {@link withOptions}. */
 export class P4Config extends Context.Service<P4Config, P4ResolvedOptions>()('p4client-ts/P4Config') {}
 
-/**
- * Validate a timeout.
- *
- * @param timeoutMs Timeout in milliseconds, or `undefined` for none.
- * @returns The timeout.
- * @throws {P4InvalidArgumentError} When it is not a positive number within the timer limit.
- */
+/** Validate a timeout. */
 export function requireTimeout(timeoutMs: number | undefined): number | undefined {
   if (timeoutMs === undefined) return undefined;
 
@@ -62,11 +56,6 @@ export function requireTimeout(timeoutMs: number | undefined): number | undefine
 /**
  * Apply options on top of resolved ones. Omitted fields inherit; explicit `undefined`
  * clears cwd and timeoutMs, and resets executable to `p4`. Connection fields merge individually.
- *
- * @param base Options in effect.
- * @param patch Options to change.
- * @returns The combined options.
- * @throws {P4InvalidArgumentError} When the timeout is invalid.
  */
 export function mergeOptions(base: P4ResolvedOptions, patch: P4ClientOptions): P4ResolvedOptions {
   return {
@@ -88,23 +77,12 @@ const DEFAULTS: P4ResolvedOptions = {
   allowMutation: false,
 };
 
-/**
- * Resolve client options.
- *
- * @param options Options to resolve.
- * @returns The options with defaults applied.
- * @throws {P4InvalidArgumentError} When the timeout is invalid.
- */
+/** Resolve client options. */
 export function resolveOptions(options: P4ClientOptions = {}): P4ResolvedOptions {
   return mergeOptions(DEFAULTS, options);
 }
 
-/**
- * A layer providing client options.
- *
- * @param options Options for every command run with this layer.
- * @returns A layer that fails with `P4InvalidArgumentError` for invalid options.
- */
+/** A layer providing client options. */
 export function configLayer(options: P4ClientOptions = {}): Layer.Layer<P4Config, P4InvalidArgumentError> {
   return Layer.effect(P4Config, validated(() => resolveOptions(options)));
 }
@@ -120,12 +98,7 @@ function validated<A>(check: () => A): Effect.Effect<A, P4InvalidArgumentError> 
   });
 }
 
-/**
- * Run part of a program with changed options, for example another workspace.
- *
- * @param patch Options to change; connection fields merge individually.
- * @returns A function applying the change to an effect.
- */
+/** Run part of a program with changed options, for example another workspace. */
 export function withOptions(patch: P4ClientOptions) {
   return <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | P4InvalidArgumentError, R | P4Config> =>
     Effect.flatMap(P4Config, (base) => validated(() => mergeOptions(base, patch)))

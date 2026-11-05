@@ -162,15 +162,7 @@ function inside(directory: string, outputPath: string, error: () => P4Materializ
   return outputPath;
 }
 
-/**
- * Where a depot file is written beneath a directory: `<directory>/<depot>/<path…>`.
- *
- * @param directory Absolute destination directory.
- * @param depotFile Depot path without a revision.
- * @returns The absolute output path.
- * @throws {P4MaterializationError} With reason `invalid_depot_path` for a path
- * that is not depot syntax, has empty, `.` or `..` segments, or escapes the directory.
- */
+/** Where a depot file is written beneath a directory: `<directory>/<depot>/<path…>`. */
 export function materializedFilePath(directory: string, depotFile: string): string {
   const invalidPath = (message: string) =>
     new P4MaterializationError({ message, reason: 'invalid_depot_path', path: depotFile });
@@ -321,13 +313,10 @@ function isCommandFailure(error: P4Error): boolean {
 }
 
 /**
- * One `p4 -G -x - print -k` over a batch, writing each binary revision from
- * the marshalled stream to a staging file beside its output.
- *
- * A file is accepted only when its records ended cleanly (the next file's
- * `stat`, or a successful exit) and its byte count equals the stat record's
- * `fileSize`. A message mid-file, a non-binary type, a broken stream or a
- * failed command leaves the revision unwritten, for the per-file print.
+ * One `p4 -G -x - print -k` over a batch, staging each binary revision beside its output.
+ * A file is accepted only if its records ended cleanly and its bytes match the stat's `fileSize`;
+ * anything else (a message mid-file, a non-binary type, a broken stream, a failed command) is
+ * left for the per-file print.
  */
 function printBatch(
   groups: readonly Group[],
@@ -471,30 +460,10 @@ function printOne(group: Group, keywordArgs: readonly string[], writable: boolea
 }
 
 /**
- * Write exact depot revisions beneath an existing directory, without holding
- * their content in memory. Nothing is synced and the workspace is untouched.
- *
- * Each revision lands at its `outputPath`, or `<directory>/<depot>/<path…>`.
- * By default every revision is one `p4 print -q -o` (`-k` unless keywords
- * are expanded), `concurrency` at a time. With `batch`, binary revisions are
- * streamed from batched `p4 -G -x - print` processes instead, and only what a
- * batch did not deliver intact is printed per file. A revision requested for
- * several output paths is printed once and copied.
- *
- * A revision that does not exist fails the call with `P4CommandError`; a
- * deleted revision fails with `P4MaterializationError` (`missing_output`).
- * Existing destination files are replaced only after a verified print to a
- * staging file beside them.
- *
- * Progress counts files written against the number requested. The call runs
- * in a `p4client-ts.materializeDepotFiles` span, with one
- * `p4client-ts.materialize.batch` span per batch and one
- * `p4client-ts.materialize.printEach` span for every per-file print together.
- *
- * @returns The destination directory, each file's local path and the counts.
- * @throws {P4MaterializationError} When the file count exceeds `maxFiles`, a
- * depot or output path is invalid or two resolve to one output path, the directory is unusable, or print produces no file.
- * @throws {P4InvalidArgumentError} When `maxFiles`, `concurrency`, `attempts`, a batch size or a revision is not a positive integer.
+ * Write exact depot revisions to `outputPath` or `<directory>/<depot path>`, streaming, without
+ * syncing. Each is a `p4 print -o`; with `batch`, binary ones come from batched `-G` prints.
+ * A missing revision fails with `P4CommandError`, a deleted one with `P4MaterializationError`.
+ * Files are replaced only after a verified staging print. Batches and per-file prints have spans.
  */
 export const materializeDepotFiles =
   // SAFETY: every item's `file` is one of options.fileSpec, passed through unchanged, so a caller's

@@ -21,12 +21,7 @@ const decodeManifest = Schema.decodeSync(Schema.fromJsonString(Manifest));
 
 const decodePackReport = Schema.decodeSync(Schema.fromJsonString(PackReport));
 
-/**
- * Validate npm's actual file list against every declared runtime and type entry.
- * @param directory Package directory; defaults to the core package.
- * @returns Number of files npm would pack.
- * @throws When npm fails or a declared entry is absent from its package file list.
- */
+/** Validate npm's actual file list against every declared runtime and type entry. */
 export function checkPackage(directory = fileURLToPath(new URL('..', import.meta.url))): number {
   const manifest = decodeManifest(readFileSync(join(directory, 'package.json'), 'utf8'));
 

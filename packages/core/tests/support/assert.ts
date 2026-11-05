@@ -1,12 +1,6 @@
 import { expect } from 'bun:test';
 
-/**
- * Assert that a failure is an instance of `type` carrying `fields`.
- *
- * @param cause The failure: a caught error, an Effect failure or a rejection.
- * @param type The error class it must be.
- * @param fields Fields it must have, compared as by `toMatchObject`.
- */
+/** Assert that a failure is an instance of `type` carrying `fields`. */
 export function expectFailure<E extends Error>(
   cause: unknown,
   type: abstract new (...args: never[]) => E,
@@ -16,12 +10,7 @@ export function expectFailure<E extends Error>(
   expect(cause).toMatchObject(fields);
 }
 
-/**
- * Wait for a promise that must reject, and return why.
- *
- * @param promise The promise.
- * @returns The rejection reason; a fulfilled promise fails the test.
- */
+/** Wait for a promise that must reject, and return why. */
 export async function rejectionOf<A>(promise: PromiseLike<A>): Promise<Error> {
   try {
     await promise;

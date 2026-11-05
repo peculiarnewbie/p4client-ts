@@ -124,11 +124,7 @@ function scopedSpecs(specs: string[], cursor: number | undefined) {
   return Effect.succeed(scopes.map((spec) => `${spec}@${cursor}`));
 }
 
-/**
- * List pending, submitted or shelved changelists, newest first, a page at a time.
- *
- * @returns One page, with the cursor for the next.
- */
+/** List pending, submitted or shelved changelists, newest first, a page at a time. */
 export const listChangelists =
   // SAFETY: the program asks `changes -s` for options.status and decodes every row with that status
   // (toChangelist(options.status)), so each item, and the page, has the status S the caller passed.

@@ -78,14 +78,7 @@ export interface P4Operation<O, I, R> {
   readonly program: (options: O, sink: P4Sink<I>) => Effect.Effect<R, P4Error, P4Context>;
 }
 
-/**
- * Define an operation. Its program runs in a `p4client-ts.<name>` span.
- *
- * @param name Operation name.
- * @param program The program; report through the sink, return the result.
- * @param progressUnit Unit used before the first program progress update. Defaults to records.
- * @returns The operation.
- */
+/** Define an operation. Its program runs in a `p4client-ts.<name>` span. */
 export function operation<O, I, R>(
   name: string,
   program: (options: O, sink: P4Sink<I>) => Effect.Effect<R, P4Error, P4Context>,
@@ -105,13 +98,7 @@ const SILENT: P4Sink<unknown> = {
   progress: () => Effect.void,
 };
 
-/**
- * Run an operation for its result.
- *
- * @param op The operation.
- * @param options Its options.
- * @returns The result.
- */
+/** Run an operation for its result. */
 export function runOperation<F extends P4MaterializeSpec>(
   op: P4MaterializeOperation,
   options: MaterializeDepotFilesOptions<F>,
@@ -138,14 +125,7 @@ export interface P4WatchOptions {
   readonly progressIntervalMs?: number | undefined;
 }
 
-/**
- * Run an operation as a stream of what it reports, ending with its result.
- *
- * @param op The operation.
- * @param options Its options.
- * @param watch Heartbeat options.
- * @returns Items, messages, failures and progress in the order they happen, then `done`.
- */
+/** Run an operation as a stream of what it reports, ending with its result. */
 export function watchOperation<F extends P4MaterializeSpec>(
   op: P4MaterializeOperation,
   options: MaterializeDepotFilesOptions<F>,
@@ -220,14 +200,7 @@ export interface P4ProgressCounter {
   readonly snapshot: () => P4ProgressUpdate;
 }
 
-/**
- * Create a progress counter.
- *
- * @param sink Where progress is reported.
- * @param unit What is counted.
- * @param total Units expected, when known.
- * @returns The counter.
- */
+/** Count units toward an optional total, reporting each advance through the sink. */
 export function progressCounter(
   sink: Pick<P4Sink<never>, 'progress'>,
   unit: P4ProgressUnit,
@@ -265,11 +238,6 @@ export interface P4DrainOptions<A, I> {
 /**
  * Run a command's events to completion, reporting messages, failures and
  * items to a sink, and collect its output.
- *
- * @param sink Where the operation reports.
- * @param events A command stream, such as `streamCommand(spec)`.
- * @param options How data is reported.
- * @returns The collected output.
  */
 export function drain<A, I>(
   sink: P4Sink<I>,

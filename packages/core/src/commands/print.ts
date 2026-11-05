@@ -140,9 +140,6 @@ function toPrintRecord(row: Row): PrintRecord | null {
 /**
  * Print arguments for a keyword mode. 2022.1 renamed `-k` to `-K` and kept
  * `-k` as an alias; servers before 2022.1 reject `-K`, so `-k` works everywhere.
- *
- * @param keywords The keyword mode.
- * @returns `print`, with `-k` for raw content.
  */
 export function printArgs(keywords: P4KeywordMode | undefined): string[] {
   return (keywords ?? 'raw') === 'raw' ? ['print', '-k'] : ['print'];
@@ -216,9 +213,6 @@ function advance(counter: P4ProgressCounter, item: P4PrintedBatchItem): Effect.E
  * Unlike `-Mj print`, `-G` keeps binary content intact. A file or revision
  * that does not exist (`no_such_file`, `unknown_revision`, `not_on_client`
  * for `#have`) fails with `P4CommandError`.
- *
- * @returns The revision's metadata and content.
- * @throws {P4InvalidArgumentError} When `file` matches more than one file.
  */
 export const printFile = operation<PrintFileOptions, never, P4PrintedFile>('printFile', (options, sink) =>
   Effect.gen(function* () {
@@ -258,17 +252,9 @@ export const printFile = operation<PrintFileOptions, never, P4PrintedFile>('prin
   }), 'files');
 
 /**
- * Print several file revisions as bytes with one `p4 -G -x - print`, the
- * specs passed on stdin.
- *
- * Each file is reported as soon as its content is complete. A spec that
- * matches no file or revision is a per-item failure, not an error.
- *
- * Progress counts files against the number of specs (a wildcard spec can
- * print more, which clears the total) and bytes from each file's size.
- *
- * @returns The printed files, messages and failures.
- * @throws {P4InvalidArgumentError} When `files` is empty or a spec contains a line break.
+ * Print several revisions as bytes with one `p4 -G -x - print`, specs on stdin. Each file is
+ * reported once complete; a spec matching nothing is a per-item failure. Progress counts files
+ * against the specs (a wildcard can print more, which clears the total) and bytes.
  */
 export const printBatch = operation<PrintBatchOptions, P4PrintedBatchItem, P4PrintBatchResult>('printBatch', (options, sink) =>
   Effect.gen(function* () {
@@ -318,15 +304,8 @@ export const printBatch = operation<PrintBatchOptions, P4PrintedBatchItem, P4Pri
   }), 'files');
 
 /**
- * Decode printed content as text.
- *
- * `p4 -G print` already translates `utf16` and `unicode` files to the
- * connection's charset (UTF-8 here), so content decodes as UTF-8; a leading
- * byte-order mark is dropped, and content that starts with a UTF-16 mark is
- * decoded as UTF-16.
- *
- * @param printed A {@link printFile} result or a {@link printBatch} item.
- * @returns The content as a string. Binary content is decoded too; check `isBinary` or the type first.
+ * Decode printed content as UTF-8, which `p4 -G print` already converts `utf16` and `unicode`
+ * files to. A leading byte-order mark is dropped; content with a UTF-16 mark decodes as UTF-16.
  */
 export function printedText(printed: { readonly content: Uint8Array }): string {
   const bytes = printed.content;

@@ -80,12 +80,7 @@ interface SyncRecord {
   readonly totalFileSize: number | null;
 }
 
-/**
- * Convert a `sync` record.
- *
- * @param row One data record.
- * @returns The synced file.
- */
+/** Convert a `sync` record. */
 export function toSyncItem(row: Row): P4SyncItem {
   const item: P4SyncItem = {
     depotFile: optionalDepotPath(row.depotFile, row),
@@ -171,23 +166,14 @@ const runSync = Effect.fnUntraced(function* (
  *
  * Progress is determinate: Perforce announces the file count and size with
  * the first file. Files that could not be synced are `failures`, not errors.
- *
- * @returns The files a sync would update, and those it could not.
  */
 export const previewSync = operation<SyncOptions, P4SyncItem, P4SyncResult>('previewSync', (options, sink) =>
   runSync(options, true, sink), 'files');
 
 /**
- * Sync workspace files with `p4 sync`.
- *
- * This changes the workspace, so the client must be created with
- * `allowMutation: true`; otherwise it fails with `P4ReadOnlyError`. Progress
- * is determinate, in files and bytes. A file that cannot be written (a
- * writable file in the way, an operating-system error) is reported in
- * `failures` and does not fail the sync.
- *
- * @returns The files synced, and those that could not be.
- * @throws {P4ReadOnlyError} When the client does not allow mutation.
+ * Sync workspace files with `p4 sync`. Without `allowMutation` it fails with `P4ReadOnlyError`.
+ * Progress is in files and bytes. A file that cannot be written (a writable file in the way, an
+ * operating-system error) is reported in `failures` and does not fail the sync.
  */
 export const sync = operation<SyncOptions, P4SyncItem, P4SyncResult>('sync', (options, sink) =>
   runSync(options, false, sink), 'files');

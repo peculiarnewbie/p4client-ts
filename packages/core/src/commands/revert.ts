@@ -105,16 +105,9 @@ const runRevert = Effect.fnUntraced(function* (
 });
 
 /**
- * Revert open files with `p4 revert`, discarding their changes in the workspace.
- *
- * This changes the workspace and server, so the client must be created with
- * `allowMutation: true`. Give `change` alone to revert everything open in
- * that changelist. Files that were open for add are abandoned and stay on disk.
- * Nothing open is not an error: it is reported as a `not_opened` message.
- *
- * @returns The files reverted.
- * @throws {P4InvalidArgumentError} When neither `fileSpec` nor `change` is given, or `change` is invalid.
- * @throws {P4ReadOnlyError} When the client does not allow mutation.
+ * Revert open files with `p4 revert`, discarding their workspace changes. Needs `allowMutation`.
+ * `change` alone reverts everything open in that changelist. Files open for add stay on disk.
+ * Nothing open is a `not_opened` message, not an error.
  */
 export const revert = operation<RevertOptions, P4RevertedFile, P4RevertResult>('revert', (options, sink) =>
   runRevert(options, false, sink), 'files');
@@ -122,9 +115,6 @@ export const revert = operation<RevertOptions, P4RevertedFile, P4RevertResult>('
 /**
  * Preview {@link revert} with `p4 revert -n`: what would be reverted, without
  * changing anything.
- *
- * @returns The files that would be reverted.
- * @throws {P4InvalidArgumentError} When neither `fileSpec` nor `change` is given, or `change` is invalid.
  */
 export const previewRevert = operation<RevertOptions, P4RevertedFile, P4RevertResult>('previewRevert', (options, sink) =>
   runRevert(options, true, sink), 'files');

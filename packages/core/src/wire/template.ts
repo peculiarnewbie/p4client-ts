@@ -1,10 +1,8 @@
 /**
- * Perforce message templates (`fmt0`) name the arguments the server substituted,
- * for example `Can't clobber writable file %file%`. Matching the formatted text
- * against its template recovers those arguments without English patterns.
- *
- * Supported syntax: `%name%` arguments, `%'text'%` literal text, and
- * `[first|second]` conditionals, where `[text]` alone means optional text.
+ * Recover a message's arguments by matching its text against its `fmt0` template, such as
+ * `Can't clobber writable file %file%`, so no English patterns are needed.
+ * Templates use `%name%` arguments, `%'text'%` literals and `[first|second]` conditionals,
+ * where `[text]` alone is optional text.
  */
 
 type TemplateNode =
@@ -125,13 +123,7 @@ function compile(template: string): CompiledTemplate | null {
   return result;
 }
 
-/**
- * Recover the named arguments of a formatted Perforce message.
- *
- * @param template The message's `fmt0` template.
- * @param text The formatted message (`data`), with or without its trailing newline.
- * @returns Argument values by name, or `null` when the text does not follow the template.
- */
+/** Recover the named arguments of a formatted Perforce message. */
 export function matchTemplate(template: string, text: string): Readonly<Record<string, string>> | null {
   const compiledTemplate = compile(template);
 

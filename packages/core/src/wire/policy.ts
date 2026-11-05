@@ -4,12 +4,9 @@ import type { P4Message } from './message.js';
 import type { P4Reason } from './reasons.js';
 
 /**
- * What an operation does with a message.
- *
- * - `fail`: the operation fails with a `P4CommandError`.
- * - `item`: a per-item failure, returned in the result's `failures`.
- * - `empty`: the request matched nothing; returned in `messages`.
- * - `notice`: informational; returned in `messages`.
+ * What an operation does with a message: `fail` fails it with a `P4CommandError`, `item` is a
+ * per-item failure in `failures`, and `empty` (the request matched nothing) and `notice` are
+ * returned in `messages`.
  */
 export const P4DispositionSchema = Schema.Literals(['fail', 'item', 'empty', 'notice']);
 
@@ -57,10 +54,6 @@ const EMPTY_REASONS = new Set<P4Reason>([
  *
  * By default, errors and the reasons in `ALWAYS_FAIL` fail the operation;
  * warnings that a request matched nothing are `empty`; everything else is a `notice`.
- *
- * @param message A classified message.
- * @param policy The operation's overrides.
- * @returns The disposition.
  */
 export function dispose(
   message: Pick<P4Message, 'reason' | 'severity' | 'code'>,

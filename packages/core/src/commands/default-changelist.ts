@@ -26,9 +26,6 @@ export interface P4DefaultChangelist {
  * Read the default changelist from one `p4 opened -c default`, since
  * `describe` cannot show it. Its owner and description come from the first
  * opened file, and its status is always pending.
- *
- * @param options Which default changelist.
- * @returns The changelist and its opened files.
  */
 export function readDefaultChangelist(options: DefaultChangelistOptions) {
   return Effect.map(

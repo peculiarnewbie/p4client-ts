@@ -66,53 +66,33 @@ const decodeClientPath = Schema.decodeSync(P4ClientPathSchema);
 const decodeLocalPath = Schema.decodeSync(P4LocalPathSchema);
 const decodeFileAction = Schema.decodeSync(P4FileActionSchema);
 
-/** Validated depot path constructor. @throws {Schema.SchemaError} For invalid depot syntax. */
+/** Validated depot path constructor; `make` throws `Schema.SchemaError` for invalid depot syntax. */
 export const P4DepotPath = {
-  /**
-   * Validate and brand a string.
-   * @param value The unbranded value.
-   * @returns The validated branded value.
-   * @throws {Schema.SchemaError} When validation fails.
-   */
+  /** Validate and brand a string. */
   make(value: string): P4DepotPath {
     return decodeDepotPath(value);
   },
 };
 
-/** Validated client path constructor. @throws {Schema.SchemaError} For invalid client syntax. */
+/** Validated client path constructor; `make` throws `Schema.SchemaError` for invalid client syntax. */
 export const P4ClientPath = {
-  /**
-   * Validate and brand a string.
-   * @param value The unbranded value.
-   * @returns The validated branded value.
-   * @throws {Schema.SchemaError} When validation fails.
-   */
+  /** Validate and brand a string. */
   make(value: string): P4ClientPath {
     return decodeClientPath(value);
   },
 };
 
-/** Validated local path constructor. @throws {Schema.SchemaError} For empty paths or control characters. */
+/** Validated local path constructor; `make` throws `Schema.SchemaError` for empty paths or control characters. */
 export const P4LocalPath = {
-  /**
-   * Validate and brand a string.
-   * @param value The unbranded value.
-   * @returns The validated branded value.
-   * @throws {Schema.SchemaError} When validation fails.
-   */
+  /** Validate and brand a string. */
   make(value: string): P4LocalPath {
     return decodeLocalPath(value);
   },
 };
 
-/** Validated action constructor. @throws {Schema.SchemaError} For invalid action tokens. */
+/** Validated action constructor; `make` throws `Schema.SchemaError` for invalid action tokens. */
 export const P4FileAction = {
-  /**
-   * Validate and brand a string.
-   * @param value The unbranded value.
-   * @returns The validated branded value.
-   * @throws {Schema.SchemaError} When validation fails.
-   */
+  /** Validate and brand a string. */
   make(value: string): P4FileAction {
     return decodeFileAction(value);
   },

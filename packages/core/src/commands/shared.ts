@@ -26,11 +26,6 @@ export type FileSpecs = string | readonly string[];
 /**
  * Decode a value from a command's output. Throws `P4ParseError`, which the
  * engine completes with the command that produced the row.
- *
- * @param schema Schema the value must satisfy.
- * @param value The value.
- * @param row The record it came from, kept in the error.
- * @returns The decoded value.
  */
 export function decodeField<A>(schema: Schema.Decoder<A>, value: Field, row: Field = value): A {
   try {
@@ -49,10 +44,6 @@ export function decodeField<A>(schema: Schema.Decoder<A>, value: Field, row: Fie
 /**
  * A parse error for output without the expected shape. Throw it from a
  * decoder, or `yield*` it from a program.
- *
- * @param message What was expected.
- * @param evidence The offending output: a record or field, or the messages printed instead.
- * @returns The error.
  */
 export function malformed(message: string, evidence: Field | readonly P4Message[]): P4ParseError {
   return new P4ParseError({
@@ -133,12 +124,7 @@ export function clientFile(value: Field, row: Row): P4ClientPath | P4LocalPath |
   return trimmed.startsWith('//') ? decodeField(P4ClientPathSchema, trimmed, row) : localPath(trimmed, row);
 }
 
-/**
- * Convert a Unix time in seconds, as Perforce prints it, to ISO 8601.
- *
- * @param value Seconds as a string or number.
- * @returns The ISO timestamp, or `null` for a missing or invalid time.
- */
+/** Convert a Unix time in seconds, as Perforce prints it, to ISO 8601. */
 export function isoFromSeconds(value: Field): string | null {
   const seconds = isWireNumber(value) ? value : isWireString(value) && value.trim() ? Number(value) : NaN;
 
@@ -168,13 +154,7 @@ export function indexes(row: Row, field: string): number[] {
     .sort((left, right) => left - right);
 }
 
-/**
- * Require a positive integer option.
- *
- * @param value The option value.
- * @param option The option name, for the error.
- * @returns The value, or `P4InvalidArgumentError`.
- */
+/** Require a positive integer option. */
 export function requirePositive(value: number, option: string): Effect.Effect<number, P4InvalidArgumentError> {
   return Number.isSafeInteger(value) && value > 0
     ? Effect.succeed(value)
@@ -184,13 +164,7 @@ export function requirePositive(value: number, option: string): Effect.Effect<nu
     }));
 }
 
-/**
- * Require a non-negative integer option.
- *
- * @param value The option value.
- * @param option The option name, for the error.
- * @returns The value, or `P4InvalidArgumentError`.
- */
+/** Require a non-negative integer option. */
 export function requireNonNegative(value: number, option: string): Effect.Effect<number, P4InvalidArgumentError> {
   return Number.isSafeInteger(value) && value >= 0
     ? Effect.succeed(value)
@@ -200,13 +174,7 @@ export function requireNonNegative(value: number, option: string): Effect.Effect
     }));
 }
 
-/**
- * Reject an invalid option.
- *
- * @param option The option name.
- * @param message What is wrong with it.
- * @returns A failed effect.
- */
+/** Reject an invalid option. */
 export function invalid(option: string, message: string): Effect.Effect<never, P4InvalidArgumentError> {
   return Effect.fail(new P4InvalidArgumentError({ message, option }));
 }

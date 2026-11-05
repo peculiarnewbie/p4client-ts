@@ -134,12 +134,7 @@ function integrations(row: Row, index: number): P4Integration[] {
     });
 }
 
-/**
- * Convert a `filelog` record, one path with its revisions.
- *
- * @param row One data record.
- * @returns The path's revisions, newest first.
- */
+/** Convert a `filelog` record, one path with its revisions. */
 export function toFileRevisions(row: Row): P4FileRevision[] {
   const file = depotPath(row.depotFile, row);
 
@@ -199,17 +194,10 @@ function filelogCommand(options: GetFileHistoryOptions, perPath: number | undefi
 }
 
 /**
- * Get a file's revision history with full changelist descriptions
- * (`p4 filelog -l`).
- *
- * `filelog` reports one record per path: several for a wildcard, for a renamed
- * file (its pre-rename path) and with `followBranches` (each ancestor). Their
- * revisions are merged into one newest-first list. `filelog -m` bounds each
- * path separately, so `limit + 1` revisions are requested per path and the
- * merged list is cut to `limit`. A file that does not exist gives an empty
- * history with an `empty` message.
- *
- * @returns The history.
+ * A file's revisions with full descriptions (`p4 filelog -l`), merged newest first across the
+ * paths `filelog` reports (wildcard matches, pre-rename paths, branch ancestors). `-m` bounds each
+ * path, so `limit + 1` per path are read and the merge is cut to `limit`. A missing file gives
+ * an empty history and an `empty` message.
  */
 export const getFileHistory = operation<GetFileHistoryOptions, P4FileRevision, P4FileHistory>('getFileHistory', (options, sink) =>
   Effect.gen(function* () {
@@ -243,19 +231,10 @@ export interface P4FileLineage {
 }
 
 /**
- * Follow a file back through its renames in a history: from the file's
- * `move/add` revision to the path it was `moved from`, up to the revision it
- * was moved at, and so on. Revisions of other files in the history (wildcard
- * matches, branch ancestors) are left out, as are older revisions of a path
- * that a moved file replaced.
- *
- * The lineage is only as complete as the history: one cut short by `limit`
- * gives a shorter lineage, and `paths` can end in a path whose revisions the
- * history does not include.
- *
- * @param history A history from {@link getFileHistory}.
- * @param from The path to start from. Defaults to `history.depotFile`.
- * @returns The file's paths and revisions.
+ * Follow a file back through its renames: from each `move/add` to the path it was `moved from`,
+ * up to the revision it moved at. Other files in the history, and older revisions of a path a
+ * moved file replaced, are left out. It is only as complete as the history, so a `limit` can cut
+ * it short and `paths` can end in a path whose revisions are missing.
  */
 export function followMoves(
   history: Pick<P4FileHistory, 'depotFile' | 'items'>,

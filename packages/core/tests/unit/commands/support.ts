@@ -93,15 +93,7 @@ export interface ArgvCase {
   readonly argv: readonly (readonly string[])[];
 }
 
-/**
- * Define an argv case.
- *
- * @param name Test name.
- * @param op The operation.
- * @param options Its options.
- * @param argv Command arguments of each invocation, without connection options.
- * @param respond Scripted output for each invocation.
- */
+/** Define an argv case. */
 export function argvCase<O, I, R>(
   name: string,
   op: P4Operation<O, I, R>,
@@ -133,10 +125,6 @@ export function fixtureRows(name: string): P4WireFields[] {
 /**
  * A Unix-seconds field of a fixture record as ISO 8601, so assertions follow
  * the capture's clock rather than pinning it.
- *
- * @param name Fixture name.
- * @param field Field holding seconds.
- * @param match Picks the record; defaults to the first.
  */
 export function fixtureTime(
   name: string,

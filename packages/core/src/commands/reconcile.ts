@@ -63,12 +63,7 @@ const ACTIONS: ReadonlySet<string> = new Set<P4ReconcileAction>(['add', 'edit', 
 
 const isReconcileAction = (action: string): action is P4ReconcileAction => ACTIONS.has(action);
 
-/**
- * Convert a `reconcile -n` record.
- *
- * @param row One data record.
- * @returns The candidate.
- */
+/** Convert a `reconcile -n` record. */
 export function toReconcileCandidate(row: Row): P4ReconcileCandidate {
   const decoded: P4FileAction = action(row.action, row);
 
@@ -84,12 +79,7 @@ export function toReconcileCandidate(row: Row): P4ReconcileCandidate {
   };
 }
 
-/**
- * The file spec for everything under a workspace root.
- *
- * @param root The workspace root.
- * @returns `<root>/...` with forward slashes.
- */
+/** The file spec for everything under a workspace root. */
 export function workspaceRootFileSpec(root: string): string {
   return `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/...`;
 }
@@ -113,9 +103,6 @@ function reconcileCommand(options: PreviewReconcileOptions, specs: string[]): P4
  *
  * Candidates are reported as they arrive, with an indeterminate file count:
  * `reconcile -I` prints no progress through a pipe, so none is requested.
- *
- * @returns The candidates, in output order and grouped by action.
- * @throws {P4InvalidArgumentError} When `workspace` has an empty root.
  */
 export const previewReconcile = operation<PreviewReconcileOptions, P4ReconcileCandidate, P4ReconcilePreview>(
   'previewReconcile',

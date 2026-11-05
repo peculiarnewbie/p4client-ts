@@ -161,13 +161,7 @@ export type P4PromiseClient = {
   readonly watch: P4PromiseWatch;
 };
 
-/**
- * Create a Promise facade over a supplied P4 layer, for replay or application-specific executors.
- * @param layer A layer supplying P4; expose P4Config and P4Executor to use Node helper methods.
- * @param derive Build a layer for a derived configuration.
- * @param options Base configuration for with().
- * @returns An immutable client owning a ManagedRuntime.
- */
+/** Create a Promise facade over a supplied P4 layer, for replay or application-specific executors. */
 export function createP4ClientFromLayer(
   layer: Layer.Layer<P4 | P4Context, P4InvalidArgumentError>,
   derive: (options: P4ClientOptions) => Layer.Layer<P4 | P4Context, P4InvalidArgumentError>,
@@ -286,12 +280,7 @@ export function createP4ClientFromLayer(
   });
 }
 
-/**
- * Create an immutable Node client. Dispose it and each client returned by with() when finished.
- * @param options Connection, execution and mutation options.
- * @returns Promise methods and watched methods generated from the operations registry.
- * @throws {P4InvalidArgumentError} When configuration is invalid.
- */
+/** Create an immutable Node client. Dispose it and each client returned by with() when finished. */
 export function createP4Client(options: P4ClientOptions = {}): P4PromiseClient {
   const config = resolveOptions(options);
 
@@ -301,9 +290,6 @@ export function createP4Client(options: P4ClientOptions = {}): P4PromiseClient {
 /**
  * Run a request with a client that is disposed when the callback resolves or rejects.
  * Clients derived inside the callback retain independent ownership.
- * @param options Connection and execution configuration.
- * @param use Request callback; await all client work before returning.
- * @returns The callback result after releasing the client runtime.
  */
 export function withP4Client<A>(
   options: P4ClientOptions,

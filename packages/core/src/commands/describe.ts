@@ -125,8 +125,6 @@ const describeNumbered = Effect.fnUntraced(function* (number: number, shelved: b
  * Numbered changelists use `p4 describe -s`. The default changelist, which
  * `describe` cannot show, is read from `p4 opened -c default`. A changelist
  * that does not exist fails with reason `unknown_changelist`.
- *
- * @returns The changelist and its files.
  */
 export const describeChangelist = operation<DescribeChangelistOptions, never, P4ChangelistDescription>('describeChangelist', (options, sink) =>
   Effect.gen(function* () {
@@ -147,17 +145,9 @@ export const describeChangelist = operation<DescribeChangelistOptions, never, P4
 const DESCRIBE_MANY_POLICY: P4MessagePolicy = { unknown_changelist: 'item' };
 
 /**
- * Describe several numbered changelists with one `p4 describe -s`: their
- * metadata and files, without diffs.
- *
- * A changelist that does not exist is a per-item failure with reason
- * `unknown_changelist`, so the others are still described. `describe` stops
- * at the first changelist that does not exist, so the ones after it are
- * described by a further command. Each changelist is reported as soon as it
- * is read.
- *
- * @returns The changelists, and those that do not exist.
- * @throws {P4InvalidArgumentError} When a change is not a positive integer.
+ * Describe numbered changelists with `p4 describe -s`: metadata and files, no diffs. A missing
+ * one is an `unknown_changelist` failure and the rest are still described (`describe` stops at
+ * it, so a further command reads those after it). Each is an item as soon as it is read.
  */
 export const describeChangelists = operation<
   DescribeChangelistsOptions, P4DescribedChangelist, P4DescribedChangelistList

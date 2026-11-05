@@ -106,21 +106,12 @@ const decodeError = Schema.decodeUnknownSync(P4ErrorSchema);
 /**
  * Encode an error as plain data, for example to send it over Electron IPC,
  * which drops the fields of `Error` subclasses.
- *
- * @param error A p4client-ts error.
- * @returns Plain data accepted by {@link decodeP4Error}.
  */
 export function encodeP4Error(error: P4Error): P4EncodedError {
   return encodeError(error);
 }
 
-/**
- * Rebuild an error from {@link encodeP4Error} output, restoring its class.
- *
- * @param encoded Plain data produced by {@link encodeP4Error}.
- * @returns The error instance, usable with `instanceof` and `Effect.catchTag`.
- * @throws {Error} When the data is not an encoded p4client-ts error.
- */
+/** Rebuild an error from {@link encodeP4Error} output, restoring its class. */
 export function decodeP4Error(
   // This is the boundary decoder: it takes whatever arrived over IPC or storage and parses it here.
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- input from IPC is unknown until parsed here
@@ -131,13 +122,7 @@ export function decodeP4Error(
 
 const MAX_RETAINED = 64 * 1024;
 
-/**
- * Truncate retained output so errors stay small enough to log and send over IPC.
- *
- * @param text Output text.
- * @param limit Maximum length kept.
- * @returns The text, truncated with a marker when it was longer than `limit`.
- */
+/** Truncate retained output so errors stay small enough to log and send over IPC. */
 export function truncateOutput(text: string, limit = MAX_RETAINED): string {
   return text.length <= limit ? text : `${text.slice(0, limit)}\n… (${text.length - limit} more characters)`;
 }

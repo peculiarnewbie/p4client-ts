@@ -20,12 +20,9 @@ import type { P4Executor } from '../exec/executor.js';
 import type { P4Message } from '../wire/message.js';
 
 /**
- * Where local connection settings can come from.
- *
- * - `p4`: what `p4 set -q` reports in the working directory: environment
- *   variables, P4CONFIG files, P4ENVIRO and, on Windows, the registry.
- * - `p4v-app-settings`: P4V's last, open and recent connections.
- * - `p4v-connection-map`: P4V's first saved connection.
+ * Where local connection settings come from: `p4` is what `p4 set -q` reports in the working
+ * directory (environment, P4CONFIG, P4ENVIRO and the Windows registry); `p4v-app-settings` is
+ * P4V's last, open and recent connections; `p4v-connection-map` is P4V's first saved connection.
  */
 export type P4SettingsSource = 'p4' | 'p4v-app-settings' | 'p4v-connection-map';
 
@@ -68,9 +65,6 @@ const p4Settings: Effect.Effect<P4Settings, P4Error, P4Executor | P4Config> = Ef
  *
  * Each source only fills values earlier sources left unset. Resolution stops
  * once a port, user and workspace are known.
- *
- * @param options Sources to consult.
- * @returns The connection and the source of each value.
  */
 export const resolveConnection: (
   options?: ResolveConnectionOptions,
@@ -112,23 +106,10 @@ export interface P4PersistentWorkspace {
 }
 
 /**
- * Select a workspace for every later `p4` on this machine, with `p4 set P4CLIENT=<client>`.
- *
- * **This writes the user's persistent Perforce settings**: the Windows
- * registry (`HKEY_CURRENT_USER`), or the `P4ENVIRO` file elsewhere. It
- * affects P4V, other tools and every later command, not just this client.
- * Nothing else in p4client-ts writes them; call this only on an explicit
- * user request, and prefer passing `connection.client` per client instead.
- *
- * A `P4CLIENT` environment variable or P4CONFIG file still takes precedence
- * over the written value. The client's connection and isolation are not
- * applied, so the value always lands in the user's own settings.
- *
- * Requires `allowMutation: true`.
- *
- * @returns The workspace written.
- * @throws {P4InvalidArgumentError} When `client` is empty or not a single workspace name.
- * @throws {P4ReadOnlyError} When the client does not allow mutation.
+ * `p4 set P4CLIENT=<client>`: **writes the user's persistent settings** (Windows registry or
+ * P4ENVIRO), so P4V and every later `p4` see it. Nothing else here writes them; call it only on an
+ * explicit user request and prefer `connection.client`. P4CLIENT in the environment or P4CONFIG
+ * still wins. Ignores the client's connection and isolation. Needs `allowMutation`.
  */
 export const setPersistentWorkspace = operation<SetPersistentWorkspaceOptions, never, P4PersistentWorkspace>(
   'setPersistentWorkspace',

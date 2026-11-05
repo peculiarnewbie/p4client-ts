@@ -30,13 +30,10 @@ export type P4ProcessEvent =
 export const P4ProcessEvent = Data.taggedEnum<P4ProcessEvent>();
 
 /**
- * Runs `p4` processes.
- *
- * `run` returns a stream of output chunks that ends with exactly one `exit`
- * event. Interrupting the stream, for example on timeout or cancellation, must
- * terminate the process and release its pipes before the interruption completes.
- * The Node implementation is `NodeP4Executor` in `p4client-ts/node`; tests can
- * provide a replay from `p4client-ts/testing`.
+ * Runs `p4` processes. `run` streams output chunks ending in exactly one `exit` event.
+ * Interrupting the stream (timeout, cancellation) must kill the process and release its pipes
+ * before the interruption completes. `p4client-ts/node` provides `NodeP4Executor`;
+ * `p4client-ts/testing` provides replays.
  */
 export class P4Executor extends Context.Service<P4Executor, {
   readonly run: (invocation: P4Invocation) => Stream.Stream<P4ProcessEvent, P4SpawnError>;

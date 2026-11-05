@@ -50,13 +50,10 @@ export interface P4FileOpen {
 }
 
 /**
- * A file that could not be opened. The operation itself succeeded.
- *
- * Reasons callers usually act on:
- * - `exclusive_open`: an exclusive (`+l`) file is already open elsewhere;
- *   `heldBy` names who has it. Stop here: no other workspace can open it.
- * - `exists_in_depot`: `add` of a file the depot already has; use `edit`.
- * - `not_on_client`, `no_such_file`, `not_in_view`: nothing to open.
+ * A file that could not be opened; the operation itself succeeded. `exclusive_open` means a `+l`
+ * file is open elsewhere (`heldBy` says who): stop, nothing else can open it. `exists_in_depot`
+ * means `add` of a file the depot has; use `edit`. `not_on_client`, `no_such_file` and
+ * `not_in_view` mean nothing to open.
  */
 export interface P4OpenFailure extends P4ItemFailure {
   /** For `exclusive_open`: each `user@client` Perforce named as having the file open. */
@@ -164,18 +161,9 @@ const addArgs = Effect.fnUntraced(function* (options: OpenForAddOptions, preview
 });
 
 /**
- * Open files for edit with `p4 edit`, making them writable.
- *
- * This changes the workspace and server, so the client must be created with
- * `allowMutation: true`. A file that cannot be opened is a per-item failure:
- * an exclusive file open in another workspace comes back with reason
- * `exclusive_open` and `heldBy`, and must be treated as a stop. A file already
- * open in this workspace is reported as an `already_opened` message and is
- * not moved to `change`.
- *
- * @returns The files opened, and those that could not be.
- * @throws {P4InvalidArgumentError} When no file is given or `change` is invalid.
- * @throws {P4ReadOnlyError} When the client does not allow mutation.
+ * Open files for edit with `p4 edit`, making them writable. Needs `allowMutation`. A file that
+ * cannot be opened is a per-item failure; `exclusive_open` (with `heldBy`) must be treated as a
+ * stop. A file already open here is an `already_opened` message and is not moved to `change`.
  */
 export const openForEdit = operation<OpenForEditOptions, P4FileOpen, P4OpenResult>('openForEdit', (options, sink) =>
   Effect.flatMap(editArgs(options, false), (args) => runOpen('edit', args, options.fileSpec, sink)), 'files');
@@ -183,32 +171,19 @@ export const openForEdit = operation<OpenForEditOptions, P4FileOpen, P4OpenResul
 /**
  * Preview {@link openForEdit} with `p4 edit -n`: what would be opened, and
  * what would be refused (including `exclusive_open`), without opening anything.
- *
- * @returns The files that would be opened, and those that could not be.
  */
 export const previewOpenForEdit = operation<OpenForEditOptions, P4FileOpen, P4OpenResult>('previewOpenForEdit', (options, sink) =>
   Effect.flatMap(editArgs(options, true), (args) => runOpen('edit', args, options.fileSpec, sink)), 'files');
 
 /**
- * Open new workspace files for add with `p4 add`.
- *
- * This changes the server, so the client must be created with
- * `allowMutation: true`. A file the depot already has is a per-item failure
- * with reason `exists_in_depot`; one already open is an `already_opened`
- * message. File names containing `@`, `#`, `%` or `*` are not supported.
- *
- * @returns The files opened, and those that could not be.
- * @throws {P4InvalidArgumentError} When no file is given, or `change` or `type` is invalid.
- * @throws {P4ReadOnlyError} When the client does not allow mutation.
+ * Open new workspace files for add with `p4 add`. Needs `allowMutation`. A file the depot already
+ * has is an `exists_in_depot` failure; one already open is an `already_opened` message. Names
+ * containing `@`, `#`, `%` or `*` are not supported.
  */
 export const openForAdd = operation<OpenForAddOptions, P4FileOpen, P4OpenResult>('openForAdd', (options, sink) =>
   Effect.flatMap(addArgs(options, false), (args) => runOpen('add', args, options.fileSpec, sink)), 'files');
 
-/**
- * Preview {@link openForAdd} with `p4 add -n`, without opening anything.
- *
- * @returns The files that would be opened, and those that could not be.
- */
+/** Preview {@link openForAdd} with `p4 add -n`, without opening anything. */
 export const previewOpenForAdd = operation<OpenForAddOptions, P4FileOpen, P4OpenResult>('previewOpenForAdd', (options, sink) =>
   Effect.flatMap(addArgs(options, true), (args) => runOpen('add', args, options.fileSpec, sink)), 'files');
 

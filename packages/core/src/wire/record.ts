@@ -28,12 +28,7 @@ const textDecoder = new TextDecoder('utf-8');
 /** `-G` records whose `data` is file content, which must stay as bytes. */
 const CONTENT_CODES = new Set(['text', 'binary']);
 
-/**
- * Read one line of `p4 -Mj -z tag` output as an object.
- *
- * @param line One output line, without its line terminator.
- * @returns The decoded fields, or why the line is not a JSON object.
- */
+/** Read one line of `p4 -Mj -z tag` output as an object. */
 export function readJsonLine(line: string): JsonLineResult {
   const exit = decodeObject(line);
 
@@ -45,12 +40,7 @@ export function readJsonLine(line: string): JsonLineResult {
   return { ok: true, fields: exit.value as P4WireFields };
 }
 
-/**
- * Classify a decoded record as data or a message.
- *
- * @param fields The record's fields.
- * @returns A data record, or a message record with its classification.
- */
+/** Classify a decoded record as data or a message. */
 export function toWireRecord(fields: P4WireFields): WireRecord {
   return isMessageRecord(fields)
     ? WireRecord.message({ message: toMessage(fields) })
@@ -60,9 +50,6 @@ export function toWireRecord(fields: P4WireFields): WireRecord {
 /**
  * Interpret a `-G` record. Strings decode as UTF-8, apart from the `data` of
  * `text` and `binary` content records, which stays as the exact bytes printed.
- *
- * @param record One decoded marshal dictionary.
- * @returns A data record, or a message record with its classification.
  */
 export function fromMarshalRecord(record: MarshalRecord): WireRecord {
   const code = record.code instanceof Uint8Array ? textDecoder.decode(record.code) : null;

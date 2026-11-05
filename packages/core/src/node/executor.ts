@@ -51,12 +51,7 @@ function terminate(child: ChildProcessWithoutNullStreams, closed: Promise<void>)
   });
 }
 
-/**
- * Run one invocation as a stream of output chunks ending with its exit.
- *
- * @param invocation The process to run.
- * @returns Output events; interrupting the stream kills and joins the process.
- */
+/** Run one invocation as a stream of output chunks ending with its exit. */
 export function runNodeProcess(invocation: P4Invocation): Stream.Stream<P4ProcessEvent, P4SpawnError> {
   return Stream.callback<P4ProcessEvent, P4SpawnError>((queue) =>
     Effect.gen(function* () {
@@ -130,10 +125,6 @@ export interface P4ProcessResult {
 /**
  * Collect a process without tagged parsing or a client runtime. This low-level
  * executor does not apply the P4 mutation guard or connection configuration.
- * @param invocation Complete executable, arguments, environment, cwd and stdin.
- * @param options Abort signal; cancellation kills and joins the child before rejecting.
- * @returns UTF-8 stdout/stderr and exitCode, including nonzero exits.
- * @throws {P4SpawnError} When launching or reading the process fails.
  */
 export function runNodeProcessPromise(
   invocation: P4Invocation,
