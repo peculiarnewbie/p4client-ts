@@ -7,15 +7,16 @@ Four Oxlint rules from [pingdotgg/t3code](https://github.com/pingdotgg/t3code)'s
   (`main` on 2026-11-05).
 - **Rules:** `prefer-effect-fn`, `no-inline-schema-compile`, `require-suppression-reason` and
   `no-low-value-comments`, plus `utils.ts`, which `no-inline-schema-compile` imports. The
-  plugin is registered as `t3code` in the root `.oxlintrc.json`, with every rule at `error`.
+  plugin is registered as `t3code` in the root `oxlint.config.ts`, with every rule at `error`.
 - **Deviations:**
   - Each file starts with a one-line notice naming the source and licence.
   - `index.ts` registers only these four rules.
-  - `test/utils.ts` is rewritten for `bun:test`. Upstream's harness uses `@effect/vitest` and
-    `vite-plus`; this one writes the same fixture config and runs the installed `oxlint` with
-    `spawnSync`. The tests import `describe` from `bun:test` and `assert` from
-    `node:assert/strict`; the cases themselves are unchanged.
+  - Imports of `@oxlint/plugins` are rewritten to `vite-plus/lint/plugins`, which re-exports the
+    same API from the Oxlint that `vite-plus` bundles.
+  - `test/utils.ts` is rewritten. Upstream's harness is Effect code on `@effect/vitest` (patched to
+    import `vite-plus/test`); this one writes the same fixture config and runs the Oxlint that
+    `vite-plus` installs with `spawnSync`, on `vite-plus/test`. The test cases are unchanged.
   - `no-low-value-comments` has no upstream test.
-- **Dependencies:** the rules import `effect` and `@oxlint/plugins`, both root dev dependencies.
+- **Dependencies:** `effect` and `vite-plus`, both root dev dependencies.
 
-Run the tests with `bun test ./tools/oxlint/t3code`; `bun run test` includes them.
+`pnpm test` runs the tests as the `lint-rules` project of the root `vite.config.ts`.

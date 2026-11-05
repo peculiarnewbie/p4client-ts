@@ -1,6 +1,6 @@
 import { Predicate } from 'effect';
 import { asAction, asDepotPath } from '../../support/values.js';
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { listChangelists } from '../../../src/commands/changelists.js';
 import { describeChangelist } from '../../../src/commands/describe.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';

@@ -1,4 +1,4 @@
-import { expect, it } from 'bun:test';
+import { expect, it } from 'vite-plus/test';
 import { Effect, Exit, Layer, Stream } from 'effect';
 import { configLayer } from '../../../src/engine/config.js';
 import { runOperation, watchOperation } from '../../../src/engine/operation.js';

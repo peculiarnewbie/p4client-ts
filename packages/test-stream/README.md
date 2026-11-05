@@ -17,7 +17,7 @@ This package is not a runtime dependency. It exists so `p4-ts` can test against 
 The repository's E2E runner performs this flow automatically:
 
 ```bash
-bun run test:e2e
+pnpm test:e2e
 ```
 
 It creates a temporary localhost p4d, provisions the stream and workspace, seeds the files in `seed/`, runs the scenarios, and removes the temporary server and workspace.

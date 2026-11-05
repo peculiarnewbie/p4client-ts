@@ -1,6 +1,6 @@
 // Vendored from pingdotgg/t3code (oxlint-plugin-t3code), MIT, Copyright (c) 2026 T3 Tools Inc. See LICENSE.
 
-import { defineRule } from "@oxlint/plugins";
+import { defineRule } from "vite-plus/lint/plugins";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 

@@ -1,4 +1,4 @@
-import { expect } from 'bun:test';
+import { expect } from 'vite-plus/test';
 
 /** Assert that a failure is an instance of `type` carrying `fields`. */
 export function expectFailure<E extends Error>(

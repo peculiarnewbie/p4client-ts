@@ -1,5 +1,5 @@
 import { Predicate, Schema } from 'effect';
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { corpusReasons } from '../../../scripts/wire-reasons.js';
@@ -71,7 +71,7 @@ describe('message catalog against the wire corpus', () => {
 
 describe('text classification stays confined', () => {
   it('keeps English message patterns in wire/fallback.ts only', () => {
-    const source = join(import.meta.dir, '../../../src');
+    const source = join(import.meta.dirname, '../../../src');
     const offenders: string[] = [];
 
     const walk = (directory: string): void => {

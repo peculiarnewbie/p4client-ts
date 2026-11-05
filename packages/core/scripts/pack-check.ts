@@ -44,7 +44,7 @@ export function checkPackage(directory = fileURLToPath(new URL('..', import.meta
   const missing = [...new Set(entries)].filter((entry) => !paths.has(entry.replace(/^\.\//, '')));
 
   if (missing.length > 0) {
-    throw new Error(`Package is missing declared entry points:\n${missing.join('\n')}\nRun bun run clean && bun run build, then retry pack:core.`);
+    throw new Error(`Package is missing declared entry points:\n${missing.join('\n')}\nRun pnpm clean && pnpm build, then retry pack:core.`);
   }
 
   return paths.size;

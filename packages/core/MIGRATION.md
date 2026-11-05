@@ -206,10 +206,10 @@ validation with casts when consuming untrusted CLI or IPC data.
 
 ## Package verification
 
-`bun run pack:core` validates npm's dry-run file list against every declared runtime
+`pnpm pack:core` validates npm's dry-run file list against every declared runtime
 and declaration entry, including all four subpaths. It fails if the current build is
 incomplete or an entry is excluded from packing. It does not build: run
-`bun run clean` and `bun run build` before retrying after missing output. This catches
+`pnpm clean` and `pnpm build` before retrying after missing output. This catches
 a retained incremental cache with missing dist files.
 
 ## Exported types and field migration

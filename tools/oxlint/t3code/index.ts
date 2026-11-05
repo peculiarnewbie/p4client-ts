@@ -1,7 +1,7 @@
 // Vendored from pingdotgg/t3code (oxlint-plugin-t3code), MIT, Copyright (c) 2026 T3 Tools Inc. See LICENSE.
 // Only the rules p4client-ts uses; see UPSTREAM.md.
 
-import { definePlugin } from "@oxlint/plugins";
+import { definePlugin } from "vite-plus/lint/plugins";
 
 import noInlineSchemaCompile from "./rules/no-inline-schema-compile.ts";
 import noLowValueComments from "./rules/no-low-value-comments.ts";

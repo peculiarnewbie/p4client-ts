@@ -1,5 +1,5 @@
 import { Predicate, Schema } from 'effect';
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { createChange, deleteChange } from '../../../src/commands/change.js';
 import { listChangelists } from '../../../src/commands/changelists.js';
 import { describeChangelists } from '../../../src/commands/describe.js';

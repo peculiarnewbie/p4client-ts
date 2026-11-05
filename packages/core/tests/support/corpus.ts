@@ -6,7 +6,7 @@ import type { P4WireFixture } from '../../src/testing/fixture.js';
 import type { WireRecord } from '../../src/wire/record.js';
 
 /** Directory of captured wire fixtures. */
-export const WIRE_ROOT = join(import.meta.dir, '../fixtures/wire');
+export const WIRE_ROOT = join(import.meta.dirname, '../fixtures/wire');
 
 /** Every command capture in the corpus, by name. */
 export const corpus: ReadonlyMap<string, P4WireFixture> = readWireFixtures(WIRE_ROOT);

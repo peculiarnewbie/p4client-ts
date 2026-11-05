@@ -1,7 +1,6 @@
 // Vendored from pingdotgg/t3code (oxlint-plugin-t3code), MIT, Copyright (c) 2026 T3 Tools Inc. See LICENSE.
 
-import { describe } from "bun:test";
-import assert from "node:assert/strict";
+import { assert, describe } from "vite-plus/test";
 
 import { createOxlintRuleHarness } from "../test/utils.ts";
 

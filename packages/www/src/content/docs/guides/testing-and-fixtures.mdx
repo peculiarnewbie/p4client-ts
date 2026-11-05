@@ -3,8 +3,9 @@ title: Testing and Fixtures
 description: Mock the P4 service or replay strict captured CLI output.
 ---
 
-Use Bun's test runner. Service mocks exercise application logic without starting
-Perforce; replay layers exercise command construction and wire decoding.
+Any test runner works; this repository uses Vitest through Vite+. Service mocks exercise
+application logic without starting Perforce; replay layers exercise command construction and
+wire decoding.
 
 ### Mock operations
 
@@ -65,20 +66,21 @@ Perforce protocol behavior.
 From the repository root:
 
 ```sh
-bun run typecheck
-bun run test
-bun run test:e2e
-bun run docs:check
-bun run build
-bun run pack:core
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm test:e2e
+pnpm docs:check
+pnpm build
+pnpm pack:core
 ```
 
 The e2e runner starts a disposable localhost p4d, seeds a stream and workspace,
 and cleans up afterward. The harness checks the explicit `-p` against that
 isolated port and permits `-x -` only immediately before `print`.
 
-To refresh wire captures, run `bun run wire:capture`, then
-`bun run --cwd packages/core wire:reasons`. Review the golden reason diff.
+To refresh wire captures, run `pnpm wire:capture`, then
+`pnpm --filter p4client-ts wire:reasons`. Review the golden reason diff.
 Every capture must be referenced by a test; the evidence-only allowlist may
 only shrink. Chunk-split tests cover both JSON and Python marshal input.
 

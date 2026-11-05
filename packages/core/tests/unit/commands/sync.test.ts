@@ -1,5 +1,5 @@
 import { Predicate } from 'effect';
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { previewSync, sync } from '../../../src/commands/sync.js';
 import { P4OperationEvent } from '../../../src/engine/operation.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';

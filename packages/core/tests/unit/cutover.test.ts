@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { Effect, Layer, Schema } from 'effect';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

@@ -13,8 +13,8 @@ import { startFixture } from './test-perforce-e2e.js';
 import { WireScriptError } from './wire-script-error.js';
 import type { Fixture } from './test-perforce-e2e.js';
 
-const destination = resolve(import.meta.dir, '../tests/fixtures/wire');
-const privateRoot = resolve(import.meta.dir, '../.captures/disposable');
+const destination = resolve(import.meta.dirname, '../tests/fixtures/wire');
+const privateRoot = resolve(import.meta.dirname, '../.captures/disposable');
 
 type Mode = 'json' | 'tagged' | 'marshal' | 'plain';
 

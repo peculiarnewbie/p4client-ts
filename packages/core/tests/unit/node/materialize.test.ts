@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from 'bun:test';
+import { afterAll, describe, expect, it } from 'vite-plus/test';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { Effect, Layer, Stream } from 'effect';
 import { P4Executor } from '../../../src/exec/executor.js';

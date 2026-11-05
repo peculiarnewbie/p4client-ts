@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { basename } from "node:path";
 import { loadE2EConfig } from "./config.js";
 import { loadFixture } from "./fixture.js";

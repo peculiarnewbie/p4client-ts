@@ -1,5 +1,5 @@
 import { Predicate } from 'effect';
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { previewReconcile, workspaceRootFileSpec } from '../../../src/commands/reconcile.js';
 import { P4OperationEvent } from '../../../src/engine/operation.js';
 import { replayExecutor, scriptedExecutor } from '../../../src/testing/executor.js';

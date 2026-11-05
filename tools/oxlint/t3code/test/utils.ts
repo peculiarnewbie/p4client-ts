@@ -1,8 +1,8 @@
 // Vendored from pingdotgg/t3code (oxlint-plugin-t3code), MIT, Copyright (c) 2026 T3 Tools Inc. See LICENSE.
-// Adapted from upstream's @effect/vitest harness to bun:test: same fixture setup and assertions,
-// running oxlint synchronously.
+// Adapted from upstream's @effect/vitest harness: same fixture setup and assertions, on
+// vite-plus/test, running oxlint synchronously.
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -10,8 +10,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 const repoRoot = join(import.meta.dirname, "..", "..", "..", "..");
+// oxlint is a dependency of vite-plus, not of this repository, so resolve it through vite-plus.
 const oxlintBin = join(
-  dirname(createRequire(join(repoRoot, "package.json")).resolve("oxlint/package.json")),
+  dirname(
+    createRequire(createRequire(join(repoRoot, "package.json")).resolve("vite-plus/package.json"))
+      .resolve("oxlint/package.json"),
+  ),
   "bin",
   "oxlint",
 );

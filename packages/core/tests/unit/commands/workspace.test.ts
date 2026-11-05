@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { getEnvironment } from '../../../src/commands/environment.js';
 import { listOpenedFiles } from '../../../src/commands/opened.js';
 import { listWorkspaces } from '../../../src/commands/workspaces.js';

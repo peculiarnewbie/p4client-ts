@@ -10,15 +10,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          bun-version: "1.3.10"
-      - run: bun install --frozen-lockfile
-      - run: bun run typecheck
-      - run: bun run lint
-      - run: bun run test
-      - run: bun run build
-      - run: bun run pack:core
+          node-version: "24"
+          cache: true
+          run-install: |
+            - cwd: .
+              args: ['--frozen-lockfile']
+      - run: pnpm run typecheck
+      - run: pnpm run lint
+      - run: pnpm run test
+      - run: pnpm run build
+      - run: pnpm run pack:core
       - name: Dependency audit (informational)
-        run: bun audit
+        run: pnpm audit
         continue-on-error: true

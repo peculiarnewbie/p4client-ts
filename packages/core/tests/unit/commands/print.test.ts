@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { Effect, Layer, Predicate } from 'effect';
 import { printBatch, printedText, printFile } from '../../../src/commands/print.js';
 import { runCommand } from '../../../src/engine/command.js';

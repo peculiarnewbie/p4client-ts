@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { loadE2EConfig } from "./config.js";
@@ -103,7 +103,7 @@ describe("p4-ts e2e diff inspection", () => {
 
     expect(printResult.isBinary).toBe(false);
     expect(printResult.content.length).toBeGreaterThan(0);
-    expect(diffResult.messages).toBeArray();
+    expect(Array.isArray(diffResult.messages)).toBe(true);
     expect(diffResult.unifiedDiff.length).toBeGreaterThan(0);
     expect(diffResult.additions + diffResult.deletions).toBeGreaterThan(0);
     expect(basename(localFile ?? '')).toBe(CONFIG_PATH.split('/').pop()!);

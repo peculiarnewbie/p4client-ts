@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { Effect, Layer, Predicate } from 'effect';
 import { diffFile, getChangelistDiffSummary } from '../../../src/commands/diff.js';
 import {
@@ -109,7 +109,7 @@ describe('diffFile', () => {
   it('diffs two depot revisions with plain diff2', async () => {
     const diff = await run(diffFile, { file: TEXT, fromRevision: 1, toRevision: 2 }, replay('diff2-normal'));
     expect(diff).toMatchObject({ source: 'depot', fromRevision: 1, toRevision: 2, additions: 1, deletions: 2 });
-    expect(diff.unifiedDiff).toStartWith('==== //p4ts/main/wire/text.txt#1 (text)');
+    expect(diff.unifiedDiff.startsWith('==== //p4ts/main/wire/text.txt#1 (text)')).toBe(true);
   });
 
   it('diffs a shelved file against its base revision', async () => {

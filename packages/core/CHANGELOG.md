@@ -56,6 +56,10 @@ This project follows semantic versioning.
 - Development: four t3code lint rules (`prefer-effect-fn`, `no-inline-schema-compile`,
   `require-suppression-reason`, `no-low-value-comments`) are vendored under
   `tools/oxlint/t3code/` and enforced as errors.
+- Development: the repository builds with the Vite+ toolchain instead of Bun: pnpm,
+  `vp test` (Vitest), the Oxlint that Vite+ bundles (`oxlint.config.ts`), and `vpx` for
+  scripts. The
+  published package is unchanged and still targets Node.js 18 or later.
 - `materializeDepotFiles` items carry `bytes` and `method`, and the result carries
   `stats`. Results compared with `toEqual` need the new fields.
 - The README rule that clients never write `p4 set` is now that they never do so

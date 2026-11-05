@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { Effect, Layer } from 'effect';
 import { runCommand } from '../../src/engine/command.js';
 import { configLayer } from '../../src/engine/config.js';

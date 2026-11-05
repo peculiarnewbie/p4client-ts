@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { ops } from '../../src/ops.js';
 import type { P4ChangelistPage, ListChangelistsOptions, P4Changelist } from '../../src/commands/changelists.js';
 import type { OpItem, OpOptions, OpResult } from '../../src/ops.js';

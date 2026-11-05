@@ -5,3 +5,4 @@ packages/core/.captures/
 *.tsbuildinfo
 .astro
 packages/www/dist
+.vite-plus

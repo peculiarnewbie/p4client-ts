@@ -4,10 +4,12 @@ This document provides essential information for AI agents working in the p4-ts 
 
 ## Project Overview
 
-A TypeScript monorepo providing typed helpers for the Perforce `p4` CLI. Uses Bun as the runtime and package manager.
+A TypeScript monorepo providing typed helpers for the Perforce `p4` CLI, built with the
+[Vite+](https://viteplus.dev) stack: pnpm, `vp test` (Vitest), Oxlint and `vpx` for scripts.
 
-**Package Manager:** Bun 1.3.10  
-**Runtime:** Node.js >= 18  
+**Package Manager:** pnpm 12 (`packageManager` in the root `package.json`)  
+**Toolchain:** `vite-plus` 1.4.0, on Node.js 22.18+, 24.11+ or 26+  
+**Library runtime:** Node.js >= 18  
 **Main Package:** `p4client-ts` (in `packages/core`)
 
 ## Build/Lint/Test Commands
@@ -16,53 +18,59 @@ All commands run from repo root:
 
 ```bash
 # Install dependencies
-bun install
+pnpm install
 
 # Type checking (strict TypeScript)
-bun run typecheck
+pnpm typecheck
 
 # Effect-aware lint (see below)
-bun run lint
+pnpm lint
 
 # Build the core package
-bun run build
+pnpm build
 
-# Run all unit tests
-bun run test
+# Run all unit tests (core and the vendored lint rules)
+pnpm test
 
 # Run a single test file
-bun test packages/core/tests/helpers.test.ts
+pnpm vp test run packages/core/tests/unit/commands/files.test.ts
 
 # Run e2e tests
-bun run test:e2e
+pnpm test:e2e
 
 # Documentation check (checks and builds the guides)
-bun run docs:check
+pnpm docs:check
 
 # Clean build artifacts
-bun run clean
+pnpm clean
 
 # Pack check for npm publishing
-bun run pack:core
+pnpm pack:core
 ```
+
+Scripts in `packages/core/scripts` run with `vpx <file>.ts`, which strips types and resolves the
+`.js` imports to their `.ts` sources. Tests import from `vite-plus/test`, never `vitest`.
 
 ### TypeScript and Effect diagnostics
 
-`bun run lint` and `bun run lint:fix` run the Effect-patched Oxlint from `@effect/tsgo`
-with its recommended preset (`.oxlintrc.json`). Correctness errors fail the gate, which CI
-runs; suggestions stay warnings. `bun run lint:fix --fix-suggestions` applies suggested
-simplifications. New code must lint without errors; fix findings in code rather than
-disabling rules.
+Lint configuration lives in the root `oxlint.config.ts`, which extends the `@effect/tsgo`
+recommended preset and is also the `lint` block of `vite.config.ts`. `pnpm lint` and
+`pnpm lint:fix` run the Oxlint that `vite-plus` installs through `effect-tsgo oxlint`, which
+swaps in the Effect-patched binary and reads `oxlint.config.ts`. Use them, not `vp lint`: stock
+Oxlint cannot load the preset's `effecttsgo` plugin, and raw Oxlint cannot load `vite.config.ts`. Correctness errors fail the
+gate, which CI runs; suggestions stay warnings. `pnpm lint:fix --fix-suggestions` applies
+suggested simplifications. New code must lint without errors; fix findings in code rather
+than disabling rules.
 
-The same config enables every rule of anti-slop, vendored from upstream under
+The same block enables every rule of anti-slop, vendored from upstream under
 `tools/oxlint/anti-slop/` (see its `UPSTREAM.md`), as errors. Fix its findings in code;
 where that isn't possible, use a one-line `oxlint-disable-next-line <rule> -- <reason>`
 directly above the line. Tests, type tests and scripts each have a `tsconfig.json`, so
 they are linted with their own compiler settings.
 
-`bun run tsrs --noEmit -p packages/core/tsconfig.json` runs the installed Rust compiler.
-Builds and `typecheck` keep using `tsc`. Keep `@effect/tsgo`, `tsrs`, `oxlint` and
-`oxlint-tsgolint` pinned to a set listed together in the
+`pnpm tsrs --noEmit -p packages/core/tsconfig.json` runs the installed Rust compiler.
+Builds and `typecheck` keep using `tsc`. `vite-plus` pins `oxlint` and `oxlint-tsgolint`, so
+keep `vite-plus`, `@effect/tsgo` and `tsrs` on versions listed together in the
 [upstream compatibility table](https://github.com/Effect-TS/tsgo#supported-package-versions)
 for the installed `@effect/tsgo` version; upgrade them together, never one alone.
 
@@ -97,7 +105,7 @@ for the installed `@effect/tsgo` version; upgrade them together, never one alone
 - Use pattern matching for error classification from CLI output
 
 ### Testing
-- Uses Bun's built-in test runner (`bun:test`)
+- Uses Vitest through `vite-plus/test` (`vp test`), configured in the root `vite.config.ts`
 - Test files: `*.test.ts` alongside source or in `tests/` directory
 - E2E tests in `tests/e2e/` using test fixtures
 - Mock external dependencies (CLI calls) in unit tests
@@ -138,8 +146,8 @@ packages/
 
 Always use the repository wrapper; do not invoke a globally installed `effect-solutions` executable directly on Windows. The wrapper invokes the bundled CLI because the upstream launcher has no Windows target.
 
-1. Run `bun run effect:solutions -- list` to see available guides
-2. Run `bun run effect:solutions -- show <topic>...` for relevant patterns (supports multiple topics)
+1. Run `pnpm effect:solutions list` to see available guides
+2. Run `pnpm effect:solutions show <topic>...` for relevant patterns (supports multiple topics)
 3. Search `~/.local/share/effect-solutions/effect` for real implementations
 
 Topics: quick-start, project-setup, tsconfig, basics, services-and-layers, data-modeling, error-handling, config, testing, cli.

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { Layer, Predicate, Schema, Stream } from 'effect';
 import { runTagged, taggedOperation } from '../../../src/commands/raw.js';
 import { P4Executor } from '../../../src/exec/executor.js';

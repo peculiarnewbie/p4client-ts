@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { P4ClientPath, P4DepotPath, P4FileAction, P4LocalPath } from '../../src/index.js';
 
 describe('public brand constructors', () => {

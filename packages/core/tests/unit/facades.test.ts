@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'bun:test';
+import { build } from 'vite-plus';
+import { describe, expect, it } from 'vite-plus/test';
 import { Effect, Fiber, Layer, Predicate, Schema, Stream } from 'effect';
 import { fileURLToPath } from 'node:url';
 import { P4 } from '../../src/P4.js';
@@ -499,14 +500,24 @@ describe('Phase 5 facades', () => {
   });
 
   it('keeps the root entry free of child_process imports in a browser bundle', async () => {
-    const build = await Bun.build({
-      entrypoints: [fileURLToPath(new URL('../../src/index.ts', import.meta.url))],
-      target: 'browser',
-      external: ['node:*'],
+    const built = await build({
+      configFile: false,
+      logLevel: 'silent',
+      build: {
+        write: false,
+        lib: { entry: fileURLToPath(new URL('../../src/index.ts', import.meta.url)), formats: ['es'] },
+        rollupOptions: { external: [/^node:/] },
+      },
     });
 
-    expect(build.success).toBe(true);
-    const bundle = await build.outputs[0]!.text();
+    const outputs = Array.isArray(built) ? built : [built];
+
+    const bundle = outputs
+      .flatMap((result) => ('output' in result ? result.output : []))
+      .map((chunk) => (chunk.type === 'chunk' ? chunk.code : ''))
+      .join('\n');
+
+    expect(bundle).toContain('P4CommandError');
     expect(bundle).not.toContain('node:child_process');
     expect(bundle).not.toContain('NodeP4Executor');
   });

@@ -9,7 +9,6 @@ import { fileURLToPath } from "node:url";
 import { decodeStreamManifest } from "../tests/support/stream-manifest.js";
 
 const repositoryRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
-const coreRoot = join(repositoryRoot, "packages", "core");
 const fixtureRoot = join(repositoryRoot, "packages", "test-stream");
 const fixtureUser = "p4ts-e2e";
 const fixtureClient = "p4ts_e2e_client";
@@ -752,7 +751,8 @@ async function runE2E(fixture: Fixture): Promise<void> {
   });
 
   report("RUN ", "running the canonical E2E scenarios against the disposable fixture");
-  await runVisible(process.execPath, ["test", "tests/e2e"], coreRoot, environment);
+  const vp = resolve(repositoryRoot, "node_modules/vite-plus/bin/vp");
+  await runVisible(process.execPath, [vp, "test", "run", "--project", "e2e", ...process.argv.slice(2)], repositoryRoot, environment);
 }
 
 async function main(): Promise<void> {

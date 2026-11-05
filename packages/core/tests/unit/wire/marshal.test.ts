@@ -1,5 +1,5 @@
 import { Predicate } from 'effect';
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { fixtureStdout } from '../../../src/testing/fixture.js';
 import { createMarshalDecoder } from '../../../src/wire/marshal.js';
 import { fromMarshalRecord } from '../../../src/wire/record.js';

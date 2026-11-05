@@ -1,7 +1,8 @@
 import { Predicate } from 'effect';
 import { expectFailure, rejectionOf } from '../support/assert.js';
-import { describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { describe, expect, it } from 'vite-plus/test';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { P4CommandError, P4MaterializationError } from '../../src/errors.js';
 import { loadE2EConfig } from './config.js';
@@ -33,29 +34,33 @@ describe('real Perforce message and pagination regressions', () => {
     writeFileSync(local, 'materialize bytes\n');
     await harness.run(['add', local]);
     await harness.run(['submit', '-d', 'Materialize trial fixture']);
-    const directory = harness.getPath('materialize-output');
-    mkdirSync(directory, { recursive: true });
+    // Outside the workspace, so later scenarios do not see it as a file to reconcile.
+    const directory = mkdtempSync(join(tmpdir(), 'p4ts-e2e-materialize-'));
     const options = { directory, maxFiles: 1 };
 
-    const printed = await harness.client.materializeDepotFiles({
-      ...options, fileSpec: [{ depotFile: depot, revision: 1, change: 42 }],
-    });
+    try {
+      const printed = await harness.client.materializeDepotFiles({
+        ...options, fileSpec: [{ depotFile: depot, revision: 1, change: 42 }],
+      });
 
-    const output = printed.items[0]!;
-    expect(existsSync(output.localPath)).toBe(true);
-    expect(readFileSync(output.localPath, 'utf8').replaceAll('\r\n', '\n')).toBe('materialize bytes\n');
-    expect(output.file.change).toBe(42);
-    await harness.run(['delete', local]);
-    await harness.run(['submit', '-d', 'Delete materialize trial fixture']);
-    expectFailure(await rejectionOf(harness.client.materializeDepotFiles({
-      ...options, fileSpec: [{ depotFile: depot, revision: 2 }],
-    })), P4MaterializationError, { reason: 'missing_output' });
-    expect(readFileSync(output.localPath, 'utf8').replaceAll('\r\n', '\n')).toBe('materialize bytes\n');
-    const fresh = join(directory, 'fresh');
-    mkdirSync(fresh);
-    expectFailure(await rejectionOf(harness.client.materializeDepotFiles({
-      directory: fresh, maxFiles: 1, fileSpec: [{ depotFile: depot, revision: 2 }],
-    })), P4MaterializationError, { reason: 'missing_output' });
+      const output = printed.items[0]!;
+      expect(existsSync(output.localPath)).toBe(true);
+      expect(readFileSync(output.localPath, 'utf8').replaceAll('\r\n', '\n')).toBe('materialize bytes\n');
+      expect(output.file.change).toBe(42);
+      await harness.run(['delete', local]);
+      await harness.run(['submit', '-d', 'Delete materialize trial fixture']);
+      expectFailure(await rejectionOf(harness.client.materializeDepotFiles({
+        ...options, fileSpec: [{ depotFile: depot, revision: 2 }],
+      })), P4MaterializationError, { reason: 'missing_output' });
+      expect(readFileSync(output.localPath, 'utf8').replaceAll('\r\n', '\n')).toBe('materialize bytes\n');
+      const fresh = join(directory, 'fresh');
+      mkdirSync(fresh);
+      expectFailure(await rejectionOf(harness.client.materializeDepotFiles({
+        directory: fresh, maxFiles: 1, fileSpec: [{ depotFile: depot, revision: 2 }],
+      })), P4MaterializationError, { reason: 'missing_output' });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
   it('retains valid stats beside a missing-revision warning', async () => {
     const result = await harness.client.statFiles({

@@ -1,6 +1,6 @@
 import { appendFileSync, copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { afterAll } from 'bun:test';
+import { afterAll } from 'vite-plus/test';
 import { Effect, Layer, Stream } from 'effect';
 import { P4, P4Executor, configLayer, globalArgs, connectionEnv } from '../../src/index.js';
 import { runNodeProcess } from '../../src/node/index.js';
@@ -141,7 +141,9 @@ export class P4E2EHarness {
       reconcilePreview.edited.length > 0 ||
       reconcilePreview.deleted.length > 0
     ) {
-      throw new Error("Workspace has reconcile candidates after cleanup.");
+      const candidates = reconcilePreview.items.map((item) => `${item.action} ${item.depotFile ?? item.clientFile}`);
+
+      throw new Error(`Workspace has reconcile candidates after cleanup: ${candidates.join(", ")}`);
     }
   }
 

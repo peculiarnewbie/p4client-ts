@@ -1,5 +1,5 @@
 import { Predicate } from 'effect';
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { annotateFile } from '../../../src/commands/annotate.js';
 import { followMoves, getFileHistory } from '../../../src/commands/history.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';
@@ -76,7 +76,7 @@ describe('getFileHistory', () => {
       fileSize: 8,
       integrations: [],
     });
-    expect(history.items[0]?.description).toStartWith('Wire fixture CRLF description\r\nsecond paragraph');
+    expect(history.items[0]?.description?.startsWith('Wire fixture CRLF description\r\nsecond paragraph')).toBe(true);
   });
 
   it('follows branches for a file that has none', async () => {

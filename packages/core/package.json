@@ -54,12 +54,12 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/types && tsc -p tests && tsc -p scripts",
-    "wire:capture": "bun scripts/capture-wire.ts",
-    "test": "bun test tests/*.test.ts tests/unit/",
-    "test:e2e": "bun scripts/test-perforce-e2e.ts",
-    "pack:check": "bun scripts/pack-check.ts",
-    "prepublishOnly": "bun run clean && bun run typecheck && bun run test && bun run build",
-    "wire:reasons": "bun scripts/wire-reasons.ts"
+    "wire:capture": "vpx scripts/capture-wire.ts",
+    "test": "vp test run --config ../../vite.config.ts --project core",
+    "test:e2e": "vpx scripts/test-perforce-e2e.ts",
+    "pack:check": "vpx scripts/pack-check.ts",
+    "prepublishOnly": "pnpm run clean && pnpm run typecheck && pnpm run test && pnpm run build",
+    "wire:reasons": "vpx scripts/wire-reasons.ts"
   },
   "peerDependencies": {
     "effect": "^4.0.0"

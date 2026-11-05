@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { Effect, Exit, Predicate, Stream } from 'effect';
 import { P4SpawnError } from '../../../src/errors.js';
 import { runNodeProcess, runNodeProcessPromise } from '../../../src/node/executor.js';

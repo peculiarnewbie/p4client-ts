@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { getStream, listStreams } from '../../../src/commands/streams.js';
 import { listUsers } from '../../../src/commands/users.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';

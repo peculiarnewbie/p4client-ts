@@ -16,7 +16,7 @@ function readRequiredEnv(name: string): string {
   const value = process.env[name]?.trim();
 
   if (!value) {
-    throw new Error(`The canonical E2E runner did not provide ${name}. Run "bun run test:e2e".`);
+    throw new Error(`The canonical E2E runner did not provide ${name}. Run "pnpm test:e2e".`);
   }
 
   return value;
@@ -33,7 +33,7 @@ function readRequiredPositiveIntegerEnv(name: string): number {
 }
 
 export function loadE2EConfig(): E2EConfig {
-  const repoRoot = resolve(import.meta.dir, "../../../../");
+  const repoRoot = resolve(import.meta.dirname, "../../../../");
   const client = readRequiredEnv("P4CLIENT");
   const p4Port = readRequiredEnv('P4PORT');
 

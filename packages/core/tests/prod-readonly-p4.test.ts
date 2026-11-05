@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -118,7 +118,7 @@ describe('production read guard', () => {
       ['reconcile', '-n', '//depot/main/a'],
       ['status', '-n', '//depot/main/a'],
     ])
-      expect(validateProductionRead(args, scratch)).toBeString();
+      expect(validateProductionRead(args, scratch)).toBeTypeOf('string');
   });
   it('refuses forbidden commands before launching an executable', async () => {
     const root = mkdtempSync(join(tmpdir(), 'p4-guard-'));

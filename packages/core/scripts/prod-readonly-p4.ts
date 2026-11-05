@@ -9,6 +9,7 @@ import {
   rmdirSync,
   writeFileSync,
 } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { WireScriptError } from './wire-script-error.js';
@@ -486,9 +487,9 @@ if (import.meta.main) {
     Effect.gen(function* () {
       if (!configPath)
         refuse(
-          'usage: bun prod-readonly-p4.ts <private-config.json> <command arguments>',
+          'usage: vpx prod-readonly-p4.ts <private-config.json> <command arguments>',
         );
-      const contents = yield* Effect.promise(() => Bun.file(configPath).text());
+      const contents = yield* Effect.promise(() => readFile(configPath, 'utf8'));
 
       const config = yield* decodeConfigJson(contents);
 
