@@ -31,9 +31,23 @@ This project follows semantic versioning.
   `p4client-ts.materialize.printEach`).
 - Reasons `already_opened`, `exists_in_depot` and `changelist_not_empty`; message
   `6:26` (`%change% unknown.`) is classified as `unknown_changelist`.
+- `P4ProcessEvent` and `P4OperationEvent` are also values: `Data.taggedEnum` constructors
+  such as `P4ProcessEvent.stdout({ bytes })` and `P4OperationEvent.done({ result })`, for
+  executors and test doubles that emit events.
+- Named result types `P4UnifiedDiffCounts`, `P4FilledSettings`, `P4RecordingExecutor` and
+  `P4PromiseClientLifecycle`, and the wire types `P4WireFields` and `P4WireValue`.
 
 ### Changed
 
+- Raw rows are typed. `Row` and the record a `P4CommandSpec.decode` receives are
+  `P4WireFields` (strings, numbers, booleans, null, bytes, arrays and nested fields)
+  instead of `Record<string, unknown>`.
+- Number fields in schemas, errors and messages accept only finite numbers
+  (`Schema.Finite`); `NaN` and infinities fail to decode.
+- The getting-started guide matches events with `Predicate.isTagged`.
+- Development: anti-slop's Oxlint rules are vendored under `tools/oxlint/anti-slop/`
+  and enforced as errors, and tests and scripts are linted and typechecked with their
+  own `tsconfig.json`.
 - `materializeDepotFiles` items carry `bytes` and `method`, and the result carries
   `stats`. Results compared with `toEqual` need the new fields.
 - The README rule that clients never write `p4 set` is now that they never do so

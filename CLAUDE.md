@@ -54,6 +54,12 @@ runs; suggestions stay warnings. `bun run lint:fix --fix-suggestions` applies su
 simplifications. New code must lint without errors; fix findings in code rather than
 disabling rules.
 
+The same config enables every rule of anti-slop, vendored from upstream under
+`tools/oxlint/anti-slop/` (see its `UPSTREAM.md`), as errors. Fix its findings in code;
+where that isn't possible, use a one-line `oxlint-disable-next-line <rule> -- <reason>`
+directly above the line. Tests, type tests and scripts each have a `tsconfig.json`, so
+they are linted with their own compiler settings.
+
 `bun run tsrs --noEmit -p packages/core/tsconfig.json` runs the installed Rust compiler.
 Builds and `typecheck` keep using `tsc`. Keep `@effect/tsgo`, `tsrs`, `oxlint` and
 `oxlint-tsgolint` pinned to a set listed together in the

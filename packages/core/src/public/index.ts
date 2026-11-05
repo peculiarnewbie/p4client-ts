@@ -63,3 +63,5 @@ export * from '../commands/workspaces.js';
 export type { P4ItemFailure, FileSpecs, Row } from '../commands/shared.js';
 
 export type { P4CommandSpec, P4CommandOutput, P4CommandEvent } from '../engine/command.js';
+
+export type { P4WireFields, P4WireValue } from '../wire/value.js';
