@@ -21,6 +21,9 @@ bun install
 # Type checking (strict TypeScript)
 bun run typecheck
 
+# Effect-aware lint (see below)
+bun run lint
+
 # Build the core package
 bun run build
 
@@ -42,6 +45,20 @@ bun run clean
 # Pack check for npm publishing
 bun run pack:core
 ```
+
+### TypeScript and Effect diagnostics
+
+`bun run lint` and `bun run lint:fix` run the Effect-patched Oxlint from `@effect/tsgo`
+with its recommended preset (`.oxlintrc.json`). Correctness errors fail the gate, which CI
+runs; suggestions stay warnings. `bun run lint:fix --fix-suggestions` applies suggested
+simplifications. New code must lint without errors; fix findings in code rather than
+disabling rules.
+
+`bun run tsrs --noEmit -p packages/core/tsconfig.json` runs the installed Rust compiler.
+Builds and `typecheck` keep using `tsc`. Keep `@effect/tsgo`, `tsrs`, `oxlint` and
+`oxlint-tsgolint` pinned to a set listed together in the
+[upstream compatibility table](https://github.com/Effect-TS/tsgo#supported-package-versions)
+for the installed `@effect/tsgo` version; upgrade them together, never one alone.
 
 ## Code Style Guidelines
 
