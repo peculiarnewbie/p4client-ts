@@ -1,4 +1,4 @@
-import { Schema } from 'effect';
+import { Predicate, Schema } from 'effect';
 import { Effect, Stream } from 'effect';
 import { P4, P4ClientPath, P4DepotPath, P4LocalPath, P4FileAction } from '../../src/index.js';
 import { createP4Client } from '../../src/promise/index.js';
@@ -46,7 +46,7 @@ const serviceWatch = Stream.unwrap(Effect.map(P4, (p4) => {
 
 const revisionNumber = async () => {
   for await (const event of watch.events) {
-    if (event._tag === 'item') {
+    if (Predicate.isTagged(event, 'item')) {
       const revision: number = event.item.revision;
       // @ts-expect-error Watched items are decoded, not encoded.
       const revisionString: string = event.item.revision;
@@ -81,7 +81,7 @@ const materialize = client.watch.materializeDepotFiles({ fileSpec: [], directory
 
 const failures = async () => {
   for await (const event of client.watch.previewSync({}).events) {
-    if (event._tag === 'failure') {
+    if (Predicate.isTagged(event, 'failure')) {
       const spec: string | null = event.failure.spec;
       const failure: import('../../src/index.js').P4ItemFailure = event.failure;
       void [spec, failure];
@@ -108,7 +108,7 @@ const narrowResults = async () => {
   for await (const event of client.watch.materializeDepotFiles({
     fileSpec: [{ depotFile: '//depot/a', revision: 1, action: 'edit' }], directory: '.', maxFiles: 1,
   }).events) {
-    if (event._tag === 'item') { const action: string = event.item.file.action; void action; }
+    if (Predicate.isTagged(event, 'item')) { const action: string = event.item.file.action; void action; }
   }
 
   void [change, pendingNumber, metadata];
@@ -144,7 +144,7 @@ const nativeOperationTypes = async () => {
   });
 
   const watchedMetadata = Stream.map(watchedFiles, (event) => {
-    if (event._tag === 'item') { const value: string = event.item.file.action;
+    if (Predicate.isTagged(event, 'item')) { const value: string = event.item.file.action;
 
  return value; }
 

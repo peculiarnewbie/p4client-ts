@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Effect, Option, Schema } from 'effect';
 import { createHash } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { access, chmod, cp, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -6,6 +6,7 @@ import { homedir, tmpdir } from "node:os";
 import { createServer } from "node:net";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { decodeStreamManifest } from "../tests/support/stream-manifest.js";
 
 const repositoryRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const coreRoot = join(repositoryRoot, "packages", "core");
@@ -73,7 +74,7 @@ const perforceDownloadRoot = `https://ftp.perforce.com/perforce/${perforceReleas
 // Pins come from each directory's SHA256SUMS. Perforce republishes builds within a release,
 // so a stale pin fails every fresh download. Keys are `platform-arch`, or a bare platform for
 // every architecture (Windows on Arm runs the x64 build).
-const platformBinaries: Partial<Record<string, PlatformBinaries>> = {
+const platformBinaries = new Map<string, PlatformBinaries>(Object.entries({
   "darwin-arm64": {
     directory: "bin.macosx12arm64",
     p4: {
@@ -118,9 +119,9 @@ const platformBinaries: Partial<Record<string, PlatformBinaries>> = {
       sha256: "eee7ac13927872282bcb3e4b037af960f2ec0905a1e6747cb343e77ac1e7091d"
     }
   }
-};
+}));
 
-function assert(condition: unknown, message: string): asserts condition {
+function assert(condition: boolean, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
   }
@@ -130,8 +131,14 @@ function report(status: string, message: string): void {
   process.stdout.write(`${status} p4-ts E2E: ${message}\n`);
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/** One `-Mj -z tag changes` row; only its change number is used. */
+const decodeChangeRow = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ change: Schema.String })));
+
+/** The port of a listening TCP server's address; `server.address()` is a string for pipes. */
+const decodeListeningPort = Schema.decodeUnknownOption(Schema.Struct({ port: Schema.Number }));
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function cleanP4Environment(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -153,7 +160,7 @@ function run(
   options: {
     readonly cwd: string;
     readonly env: NodeJS.ProcessEnv;
-    readonly input?: string;
+    readonly input?: string | undefined;
     readonly timeoutMs?: number;
   }
 ): Promise<CommandResult> {
@@ -264,9 +271,9 @@ function getAvailablePort(): Promise<number> {
     const server = createServer();
     server.once("error", reject);
     server.listen({ host: "127.0.0.1", port: 0 }, () => {
-      const address = server.address();
+      const address = Option.getOrNull(decodeListeningPort(server.address()));
 
-      if (address === null || typeof address === "string") {
+      if (address === null) {
         server.close();
         reject(new Error("Could not reserve a localhost port for the disposable p4d server."));
 
@@ -412,7 +419,7 @@ async function resolveBinaries(): Promise<ResolvedBinaries> {
 
   if (configuredP4 || configuredP4d) {
     assert(
-      configuredP4 && configuredP4d,
+      configuredP4 !== undefined && configuredP4 !== "" && configuredP4d !== undefined && configuredP4d !== "",
       "Set both P4_TS_E2E_P4_EXECUTABLE and P4_TS_E2E_P4D_EXECUTABLE."
     );
     await Promise.all([access(configuredP4), access(configuredP4d)]);
@@ -421,7 +428,7 @@ async function resolveBinaries(): Promise<ResolvedBinaries> {
     return { p4: configuredP4, p4d: configuredP4d };
   }
 
-  const platform = platformBinaries[`${process.platform}-${process.arch}`] ?? platformBinaries[process.platform];
+  const platform = platformBinaries.get(`${process.platform}-${process.arch}`) ?? platformBinaries.get(process.platform);
   assert(
     platform !== undefined,
     `No pinned Perforce binary pair is configured for ${process.platform}-${process.arch}. Set both explicit executable paths.`
@@ -433,31 +440,14 @@ async function resolveBinaries(): Promise<ResolvedBinaries> {
   };
 }
 
-function readJson(path: string): Promise<unknown> {
-  return readFile(path, "utf8").then((contents) => JSON.parse(contents) as unknown);
-}
-
 async function loadFixtureManifest(): Promise<{ readonly manifest: FixtureManifest; readonly seedRoot: string }> {
-  const value = await readJson(join(fixtureRoot, "stream-manifest.json"));
-  assert(typeof value === "object" && value !== null, "stream-manifest.json must contain an object.");
-  const record = value as Record<string, unknown>;
-  const stream = record.stream;
-  const workspace = record.workspace;
-  const seedRoot = record.seedRoot;
-  assert(typeof stream === "object" && stream !== null, "stream-manifest.json is missing stream metadata.");
-  assert(typeof workspace === "object" && workspace !== null, "stream-manifest.json is missing workspace metadata.");
-  assert(typeof seedRoot === "string" && seedRoot.length > 0, "stream-manifest.json is missing seedRoot.");
-  const streamRecord = stream as Record<string, unknown>;
-  const workspaceRecord = workspace as Record<string, unknown>;
-  assert(streamRecord.name === fixtureStream, `Fixture stream must be ${fixtureStream}.`);
-  assert(
-    typeof workspaceRecord.rootFolderName === "string" && workspaceRecord.rootFolderName.length > 0,
-    "stream-manifest.json is missing workspace.rootFolderName."
-  );
+  const decoded = decodeStreamManifest(await readFile(join(fixtureRoot, "stream-manifest.json"), "utf8"));
+  assert(decoded.stream.name === fixtureStream, `Fixture stream must be ${fixtureStream}.`);
+  const { seedRoot } = decoded;
 
   const manifest: FixtureManifest = {
     stream: { name: fixtureStream },
-    workspace: { rootFolderName: workspaceRecord.rootFolderName },
+    workspace: { rootFolderName: decoded.workspace.rootFolderName },
     seedRoot
   };
 
@@ -474,7 +464,7 @@ async function runP4(
 ): Promise<CommandResult> {
   assert(environment.P4PORT === isolatedPort && /^127\.0\.0\.1:\d+$/.test(isolatedPort ?? ''), 'Refusing p4 outside the disposable server.');
   assert(!args.some((arg) => arg.startsWith('-p') || arg.startsWith('-x')), 'Do not override the disposable endpoint or hide arguments.');
-  const result = await run(p4, ['-p', environment.P4PORT ?? '', '-u', fixtureUser, ...args], { cwd, env: environment, ...(input === undefined ? {} : { input }), timeoutMs });
+  const result = await run(p4, ['-p', environment.P4PORT ?? '', '-u', fixtureUser, ...args], { cwd, env: environment, input, timeoutMs });
 
   return result;
 }
@@ -495,9 +485,7 @@ async function latestSubmittedChange(
 
   const line = result.stdout.split(/\r?\n/).find((entry) => entry.length > 0);
   assert(line !== undefined, "Perforce did not return the submitted fixture changelist.");
-  const parsed: unknown = JSON.parse(line);
-  assert(typeof parsed === "object" && parsed !== null, "Perforce returned an invalid changelist row.");
-  const change = Number((parsed as Record<string, unknown>).change);
+  const change = Number(decodeChangeRow(line).change);
   assert(Number.isSafeInteger(change) && change > 0, "Perforce returned an invalid changelist number.");
 
   return { change };
@@ -778,8 +766,8 @@ async function main(): Promise<void> {
 }
 
 if (import.meta.main) {
-  main().catch((error: unknown) => {
-    report("FAIL", errorMessage(error));
+  main().catch((cause: unknown) => {
+    report("FAIL", errorMessage(cause));
     process.exitCode = 1;
   });
 }

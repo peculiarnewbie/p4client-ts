@@ -9,6 +9,7 @@ import { materializeDepotFiles } from '../../../src/node/materialize.js';
 import { commandArgs, recordingExecutor, scriptedExecutor } from '../../../src/testing/executor.js';
 import { fixtureStdout } from '../../../src/testing/fixture.js';
 import { fixtures } from '../commands/support.js';
+import { asLocalPath } from '../../support/values.js';
 import type { MaterializeDepotFilesOptions, P4MaterializeResult } from '../../../src/node/materialize.js';
 import type { P4Error } from '../../../src/errors.js';
 import type { P4Invocation } from '../../../src/exec/executor.js';
@@ -35,7 +36,7 @@ function marshal(records: ReadonlyArray<Readonly<Record<string, string | Uint8Ar
   const bytes: number[] = [];
 
   const string = (value: string | Uint8Array) => {
-    const data = typeof value === 'string' ? encoder.encode(value) : value;
+    const data = value instanceof Uint8Array ? value : encoder.encode(value);
     const size = new Uint8Array(new Uint32Array([data.length]).buffer);
     bytes.push(0x73, ...size, ...data);
   };
@@ -216,7 +217,7 @@ describe('materializeDepotFiles batches', () => {
       writable: true,
     }, recorder));
 
-    expect(result.items.map((item) => item.localPath)).toEqual([join(directory, 'one', 'a.bin'), join(directory, 'two', 'a.bin')] as never);
+    expect(result.items.map((item) => item.localPath)).toEqual([asLocalPath(join(directory, 'one', 'a.bin')), asLocalPath(join(directory, 'two', 'a.bin'))]);
     expect(readFileSync(join(directory, 'two', 'a.bin'), 'utf8')).toBe('abc');
     expect(recorder.invocations[0]?.input).toBe('//d/x/a.bin#1\n');
     expect(result.stats).toMatchObject({ files: 2, bytes: 6, batched: 2 });

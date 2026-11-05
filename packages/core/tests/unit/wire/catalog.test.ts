@@ -1,3 +1,4 @@
+import { Predicate, Schema } from 'effect';
 import { describe, expect, it } from 'bun:test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,7 +12,7 @@ const KNOWN_GENERIC_ONLY = new Set<string>([]);
 
 const messages = [...corpus].flatMap(([name, fixture]) =>
   corpusRecords(fixture).flatMap(({ record }) =>
-    record._tag === 'message' ? [{ name, message: record.message }] : [],
+    Predicate.isTagged(record, 'message') ? [{ name, message: record.message }] : [],
   ),
 );
 
@@ -30,9 +31,11 @@ describe('message catalog against the wire corpus', () => {
   });
 
   it('catalogs every message code the corpus contains', () => {
-    const uncataloged = coded
-      .map(({ name, message }) => ({ name, key: messageKey(message.code!) }))
-      .filter(({ key }) => !MESSAGE_CATALOG.has(key) && !KNOWN_GENERIC_ONLY.has(key));
+    const uncataloged = coded.flatMap(({ name, message }) => {
+      const key = messageKey(message.code!);
+
+      return MESSAGE_CATALOG.has(key) || KNOWN_GENERIC_ONLY.has(key) ? [] : [{ name, key }];
+    });
 
     expect(uncataloged).toEqual([]);
   });
@@ -41,16 +44,20 @@ describe('message catalog against the wire corpus', () => {
     // Multi-part messages print the primary part last.
     const primary = (text: string) => text.split('\n').at(-1) ?? '';
 
-    const unmatched = messages
-      .filter(({ message }) => message.template !== null && matchTemplate(message.template, primary(message.text)) === null)
-      .map(({ name, message }) => ({ name, template: message.template, text: message.text }));
+    const unmatched = messages.flatMap(({ name, message }) =>
+      message.template !== null && matchTemplate(message.template, primary(message.text)) === null
+        ? [{ name, template: message.template, text: message.text }]
+        : []);
 
     expect(unmatched).toEqual([]);
   });
 
   it('classifies every corpus message as recorded in _reasons.json', () => {
-    const golden: unknown = JSON.parse(readFileSync(join(WIRE_ROOT, '_reasons.json'), 'utf8'));
-    expect(corpusReasons()).toEqual(golden as Record<string, string[]>);
+    const golden = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Array(Schema.String))))(
+      readFileSync(join(WIRE_ROOT, '_reasons.json'), 'utf8'),
+    );
+
+    expect(Object.fromEntries(corpusReasons())).toEqual(golden);
   });
 
   it('uses the exact message code layout', () => {

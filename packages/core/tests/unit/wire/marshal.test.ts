@@ -1,3 +1,4 @@
+import { Predicate } from 'effect';
 import { describe, expect, it } from 'bun:test';
 import { fixtureStdout } from '../../../src/testing/fixture.js';
 import { createMarshalDecoder } from '../../../src/wire/marshal.js';
@@ -38,15 +39,15 @@ describe('marshal decoder', () => {
 
   it('keeps printed content as exact bytes', () => {
     const records = decodeAll(fixture('print-marshal-binary'), 4096);
-    const content = records.flatMap((record) => record._tag === 'data' && record.fields.code === 'binary' ? [record.fields.data] : []);
+    const content = records.flatMap((record) => Predicate.isTagged(record, 'data') && record.fields.code === 'binary' ? [record.fields.data] : []);
     expect(content[0]).toEqual(new TextEncoder().encode('full binary\0data'));
   });
 
   it('decodes text fields and classifies messages', () => {
     const records = decodeAll(fixture('print-marshal-batch'), 4096);
-    const stats = records.flatMap((record) => record._tag === 'data' && record.fields.code === 'stat' ? [record.fields.depotFile] : []);
+    const stats = records.flatMap((record) => Predicate.isTagged(record, 'data') && record.fields.code === 'stat' ? [record.fields.depotFile] : []);
     expect(stats).toEqual(['//p4ts/main/wire/text.txt', '//p4ts/main/wire/full.uasset', '//p4ts/main/wire/wide.txt']);
-    const messages = records.flatMap((record) => record._tag === 'message' ? [record.message.reason] : []);
+    const messages = records.flatMap((record) => Predicate.isTagged(record, 'message') ? [record.message.reason] : []);
     expect(messages).toEqual(['no_such_file']);
   });
 

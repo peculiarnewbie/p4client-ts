@@ -1,8 +1,12 @@
+import { Predicate } from 'effect';
+import { asAction, asDepotPath } from '../../support/values.js';
 import { describe, expect, it } from 'bun:test';
 import { listChangelists } from '../../../src/commands/changelists.js';
 import { describeChangelist } from '../../../src/commands/describe.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';
 import { argvCase, argvTable, failure, fixtureTime, fixtures, replay, run, watch } from './support.js';
+import { P4CommandError, P4InvalidArgumentError } from '../../../src/errors.js';
+import { expectFailure } from '../../support/assert.js';
 
 const TAG = ['-Mj', '-z', 'tag'];
 
@@ -119,12 +123,12 @@ describe('listChangelists', () => {
 
   it('rejects a cursor on a spec that has its own revision', async () => {
     const error = await failure(listChangelists, { status: 'submitted', cursor: 3, fileSpec: '//d/...@5' }, scriptedExecutor(() => ({})));
-    expect(error).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'cursor' });
+    expectFailure(error, P4InvalidArgumentError, { option: 'cursor' });
   });
 
   it('rejects a non-positive limit', async () => {
     const error = await failure(listChangelists, { status: 'submitted', limit: 0 }, scriptedExecutor(() => ({})));
-    expect(error).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'limit' });
+    expectFailure(error, P4InvalidArgumentError, { option: 'limit' });
   });
 
   it('fails with the session reason when the ticket expired', async () => {
@@ -134,7 +138,7 @@ describe('listChangelists', () => {
       stdout: expired!.stdout ?? '', stderr: expired!.stderr, exitCode: expired!.exitCode,
     })));
 
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'ticket_expired' });
+    expectFailure(error, P4CommandError, { reason: 'ticket_expired' });
   });
 });
 
@@ -148,8 +152,8 @@ describe('describeChangelist', () => {
   it('describes both halves of a move in index order', async () => {
     const described = await run(describeChangelist, { change: 9 }, replay('describe-move'));
     expect(described.files).toEqual([
-      { depotFile: '//p4ts/main/wire/renamed.txt' as never, action: 'move/add' as never, type: 'text', revision: 1, digest: '64782508BE6BBB8B63A26A5618632559', fileSize: 23 },
-      { depotFile: '//p4ts/main/wire/text.txt' as never, action: 'move/delete' as never, type: 'text', revision: 3, digest: null, fileSize: null },
+      { depotFile: asDepotPath('//p4ts/main/wire/renamed.txt'), action: asAction('move/add'), type: 'text', revision: 1, digest: '64782508BE6BBB8B63A26A5618632559', fileSize: 23 },
+      { depotFile: asDepotPath('//p4ts/main/wire/text.txt'), action: asAction('move/delete'), type: 'text', revision: 3, digest: null, fileSize: null },
     ]);
   });
 
@@ -179,15 +183,15 @@ describe('describeChangelist', () => {
 
   it('fails for a changelist that does not exist', async () => {
     const error = await failure(describeChangelist, { change: 999999 }, replay('describe-unknown'));
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'unknown_changelist', exitCode: 0 });
+    expectFailure(error, P4CommandError, { reason: 'unknown_changelist', exitCode: 0 });
   });
 
   it('decodes thousands of files and reports them as one progress step', async () => {
     const events = await watch(describeChangelist, { change: 11 }, replay('describe-large'));
     const done = events.at(-1);
-    const files = done?._tag === 'done' ? done.result.files : [];
+    const files = Predicate.isTagged(done, 'done') ? done.result.files : [];
     expect(files.length).toBeGreaterThan(1000);
-    expect(events.filter((event) => event._tag === 'progress')).toHaveLength(1);
+    expect(events.filter((event) => Predicate.isTagged(event, 'progress'))).toHaveLength(1);
   });
 
   it('describes the default changelist from opened files', async () => {
@@ -196,11 +200,11 @@ describe('describeChangelist', () => {
     })));
 
     expect(described).toMatchObject({ change: 'default', status: 'pending', client: 'ws', user: 'arif' });
-    expect(described.files.map((file) => file.depotFile)).toEqual(['//d/new.txt' as never]);
+    expect(described.files.map((file) => file.depotFile)).toEqual([asDepotPath('//d/new.txt')]);
   });
 
   it('refuses shelved files of the default changelist', async () => {
     const error = await failure(describeChangelist, { change: 'default', shelved: true }, scriptedExecutor(() => ({})));
-    expect(error).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'shelved' });
+    expectFailure(error, P4InvalidArgumentError, { option: 'shelved' });
   });
 });

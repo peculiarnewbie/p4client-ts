@@ -1,7 +1,9 @@
+import { Predicate } from 'effect';
+import { expectFailure, rejectionOf } from '../support/assert.js';
 import { describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { P4CommandError } from '../../src/errors.js';
+import { P4CommandError, P4MaterializationError } from '../../src/errors.js';
 import { loadE2EConfig } from './config.js';
 import { loadFixture } from './fixture.js';
 import { P4E2EHarness } from './harness.js';
@@ -45,15 +47,15 @@ describe('real Perforce message and pagination regressions', () => {
     expect(output.file.change).toBe(42);
     await harness.run(['delete', local]);
     await harness.run(['submit', '-d', 'Delete materialize trial fixture']);
-    await expect(harness.client.materializeDepotFiles({
+    expectFailure(await rejectionOf(harness.client.materializeDepotFiles({
       ...options, fileSpec: [{ depotFile: depot, revision: 2 }],
-    })).rejects.toMatchObject({ _tag: 'P4MaterializationError', reason: 'missing_output' });
+    })), P4MaterializationError, { reason: 'missing_output' });
     expect(readFileSync(output.localPath, 'utf8').replaceAll('\r\n', '\n')).toBe('materialize bytes\n');
     const fresh = join(directory, 'fresh');
     mkdirSync(fresh);
-    await expect(harness.client.materializeDepotFiles({
+    expectFailure(await rejectionOf(harness.client.materializeDepotFiles({
       directory: fresh, maxFiles: 1, fileSpec: [{ depotFile: depot, revision: 2 }],
-    })).rejects.toMatchObject({ _tag: 'P4MaterializationError', reason: 'missing_output' });
+    })), P4MaterializationError, { reason: 'missing_output' });
   });
   it('retains valid stats beside a missing-revision warning', async () => {
     const result = await harness.client.statFiles({
@@ -133,7 +135,7 @@ describe('real Perforce message and pagination regressions', () => {
       const messages: string[] = [];
 
       for await (const event of watched.events) {
-        if (event._tag === 'message') messages.push(event.message.reason);
+        if (Predicate.isTagged(event, 'message')) messages.push(event.message.reason);
       }
 
       expect(messages).toContain('opened_unchanged');

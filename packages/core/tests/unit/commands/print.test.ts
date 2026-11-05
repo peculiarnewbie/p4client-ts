@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'bun:test';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Predicate } from 'effect';
 import { printBatch, printedText, printFile } from '../../../src/commands/print.js';
 import { runCommand } from '../../../src/engine/command.js';
 import { configLayer } from '../../../src/engine/config.js';
 import { recordingExecutor, replayExecutor, scriptedExecutor } from '../../../src/testing/executor.js';
 import { argvCase, argvTable, failure, fixtureTime, fixtures, replay, run, watch } from './support.js';
+import { asAction, asDepotPath } from '../../support/values.js';
+import type { P4WireFields } from '../../../src/wire/value.js';
 import type { P4CommandSpec } from '../../../src/engine/command.js';
+import { P4CommandError, P4InvalidArgumentError } from '../../../src/errors.js';
+import { expectFailure } from '../../support/assert.js';
 
 const MARSHAL = ['-G'];
 const BATCH_INPUT = '//p4ts/main/wire/text.txt\n//p4ts/main/wire/full.uasset\n//p4ts/main/missing.txt\n//p4ts/main/wire/wide.txt\n';
@@ -50,10 +54,10 @@ describe('printFile', () => {
   it('returns text content as bytes with the revision metadata', async () => {
     const printed = await run(printFile, { file: '//p4ts/main/wire/text.txt' }, replay('print-marshal-text'));
     expect(printed).toEqual({
-      depotFile: '//p4ts/main/wire/text.txt',
+      depotFile: asDepotPath('//p4ts/main/wire/text.txt'),
       revision: 1,
       change: 4,
-      action: 'add',
+      action: asAction('add'),
       type: 'text',
       // The JSON capture of the same revision carries the same submit time.
       time: fixtureTime('print-json', 'time'),
@@ -61,7 +65,7 @@ describe('printFile', () => {
       content: encoder.encode('one\ntwo\n'),
       isBinary: false,
       messages: [],
-    } as never);
+    });
     expect(printedText(printed)).toBe('one\ntwo\n');
   });
 
@@ -81,7 +85,7 @@ describe('printFile', () => {
 
   it('fails when the file does not exist', async () => {
     const error = await failure(printFile, { file: '//p4ts/main/missing.txt' }, replay('print-marshal-missing'));
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'no_such_file', category: 'not_found' });
+    expectFailure(error, P4CommandError, { reason: 'no_such_file', category: 'not_found' });
   });
 
   it('rejects a spec that matches several files', async () => {
@@ -89,7 +93,7 @@ describe('printFile', () => {
     const batch = Buffer.from(fixtures('print-marshal-batch')[0]!.stdoutBase64!, 'base64');
     const stdout = batch.subarray(0, batch.indexOf(encoder.encode('{s\u0004\u0000\u0000\u0000codes\u0005')));
     const error = await failure(printFile, { file: '//p4ts/main/...' }, scriptedExecutor(() => ({ stdout })));
-    expect(error).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'file' });
+    expectFailure(error, P4InvalidArgumentError, { option: 'file' });
   });
 
   it('decodes text that starts with a UTF-16 byte-order mark', () => {
@@ -124,17 +128,17 @@ describe('printBatch', () => {
       chunkSize: 7,
     }));
 
-    expect(events.filter((event) => event._tag !== 'progress').map((event) => event._tag === 'item'
+    expect(events.filter((event) => !Predicate.isTagged(event, 'progress')).map((event) => Predicate.isTagged(event, 'item')
       ? String(event.item.file.depotFile)
       : event._tag)).toEqual([
       '//p4ts/main/wire/text.txt', '//p4ts/main/wire/full.uasset', 'failure', '//p4ts/main/wire/wide.txt', 'done',
     ]);
     const done = events.at(-1);
 
-    if (done?._tag !== 'done') throw new Error('Expected done.');
-    expect(events.flatMap((event) => event._tag === 'failure' ? [event.failure] : []))
+    if (!Predicate.isTagged(done, 'done')) throw new Error('Expected done.');
+    expect(events.flatMap((event) => Predicate.isTagged(event, 'failure') ? [event.failure] : []))
       .toEqual(done.result.failures);
-    const progress = events.flatMap((event) => event._tag === 'progress' ? [event.progress] : []);
+    const progress = events.flatMap((event) => Predicate.isTagged(event, 'progress') ? [event.progress] : []);
     expect(progress.map((update) => [update.completed, update.total, update.bytesCompleted])).toEqual([
       [1, 4, 8], [2, 4, 24], [3, 4, 24], [4, 4, 34],
     ]);
@@ -145,12 +149,12 @@ describe('printBatch', () => {
     const events = await watch(printBatch, { fileSpec: files, keepContent: false }, replay('print-marshal-batch'));
     const done = events.at(-1);
 
-    if (done?._tag !== 'done') throw new Error('Expected a result.');
+    if (!Predicate.isTagged(done, 'done')) throw new Error('Expected a result.');
     expect(done.result.items).toEqual([]);
     expect(done.result.printed.map((file) => file.depotFile)).toEqual([
-      '//p4ts/main/wire/text.txt', '//p4ts/main/wire/full.uasset', '//p4ts/main/wire/wide.txt',
-    ] as never);
-    const streamed = events.flatMap((event) => event._tag === 'item' ? [printedText(event.item)] : []);
+      asDepotPath('//p4ts/main/wire/text.txt'), asDepotPath('//p4ts/main/wire/full.uasset'), asDepotPath('//p4ts/main/wire/wide.txt'),
+    ]);
+    const streamed = events.flatMap((event) => Predicate.isTagged(event, 'item') ? [printedText(event.item)] : []);
     expect(streamed).toEqual(['one\ntwo\n', 'full binary\u0000data', 'wide text\n']);
   });
 
@@ -159,19 +163,19 @@ describe('printBatch', () => {
       throw new Error('p4 must not run');
     });
 
-    expect(await failure(printBatch, { fileSpec: [] }, none)).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'fileSpec' });
-    expect(await failure(printBatch, { fileSpec: ['//d/a\n-o'] }, none)).toMatchObject({ _tag: 'P4InvalidArgumentError' });
+    expectFailure(await failure(printBatch, { fileSpec: [] }, none), P4InvalidArgumentError, { option: 'fileSpec' });
+    expectFailure(await failure(printBatch, { fileSpec: ['//d/a\n-o'] }, none), P4InvalidArgumentError);
   });
 });
 
 describe('print output formats', () => {
   // Why print uses -G: -Mj print carries content in JSON strings, decoded as text.
   it('-Mj print sends content as JSON text rather than bytes', async () => {
-    const decode = (row: Readonly<Record<string, unknown>>) => row;
+    const decode = (row: P4WireFields) => row;
     const text = await collect({ args: ['print', '-q', '//p4ts/main/wire/text.txt'], format: 'json', decode }, 'print-json');
     expect(text.items.map((row) => row.data)).toEqual([undefined, 'one\ntwo\n', '']);
     const binary = await collect({ args: ['print', '-q', '//p4ts/main/wire/full.uasset'], format: 'json', decode }, 'print-json-binary');
-    expect(typeof binary.items[1]?.data).toBe('string');
+    expect(binary.items[1]?.data).toBeTypeOf('string');
   });
 
   it('a missing file is only an empty-result warning by default, which printFile overrides', async () => {

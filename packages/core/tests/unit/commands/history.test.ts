@@ -1,10 +1,14 @@
+import { Predicate } from 'effect';
 import { describe, expect, it } from 'bun:test';
 import { annotateFile } from '../../../src/commands/annotate.js';
 import { followMoves, getFileHistory } from '../../../src/commands/history.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';
 import { argvCase, argvTable, failure, fixtureTime, fixtures, replay, run, watch } from './support.js';
+import { asAction } from '../../support/values.js';
 import type { P4FileRevision } from '../../../src/commands/history.js';
-import type { P4DepotPath } from '../../../src/schemas.js';
+import { asDepotPath } from '../../support/values.js';
+import { P4InvalidArgumentError, P4ParseError } from '../../../src/errors.js';
+import { expectFailure } from '../../support/assert.js';
 
 const TAG = ['-Mj', '-z', 'tag'];
 
@@ -27,7 +31,7 @@ const BRANCHED = rows(
   },
 );
 
-const path = (value: string) => value as P4DepotPath;
+const path = asDepotPath;
 const ids = (revisions: readonly P4FileRevision[]) => revisions.map((revision) => `${revision.depotFile}#${revision.revision}`);
 
 describe('history operations: argv', () => {
@@ -146,14 +150,14 @@ describe('getFileHistory', () => {
       stdout: BRANCHED,
     })));
 
-    expect(events.filter((event) => event._tag === 'progress').map((event) => event.progress.completed)).toEqual([3, 5]);
-    expect(events.filter((event) => event._tag === 'item')).toHaveLength(5);
+    expect(events.filter((event) => Predicate.isTagged(event, 'progress')).map((event) => event.progress.completed)).toEqual([3, 5]);
+    expect(events.filter((event) => Predicate.isTagged(event, 'item'))).toHaveLength(5);
     expect(events.at(-1)?._tag).toBe('done');
   });
 
   it('rejects a non-positive limit', async () => {
     const error = await failure(getFileHistory, { file: '//d/a.txt', limit: 0 }, scriptedExecutor(() => ({})));
-    expect(error).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'limit' });
+    expectFailure(error, P4InvalidArgumentError, { option: 'limit' });
   });
 
   it('fails on a malformed integration revision', async () => {
@@ -161,7 +165,7 @@ describe('getFileHistory', () => {
       stdout: rows({ depotFile: '//d/a.txt', rev0: '1', 'how0,0': 'moved from', 'file0,0': '//d/b.txt', 'srev0,0': 'x', 'erev0,0': '#1' }),
     })));
 
-    expect(error).toMatchObject({ _tag: 'P4ParseError' });
+    expectFailure(error, P4ParseError);
   });
 });
 
@@ -216,7 +220,7 @@ describe('annotateFile', () => {
       depotFile: path('//p4ts/main/wire/text.txt'),
       revision: 1,
       change: 4,
-      action: 'add' as never,
+      action: asAction('add'),
       type: 'text',
       lines: [
         { line: 1, change: 4, text: 'one', depotFile: null },
@@ -264,7 +268,7 @@ describe('annotateFile', () => {
 
   it('reports lines as items', async () => {
     const events = await watch(annotateFile, { file: '//p4ts/main/wire/text.txt' }, replay('annotate'));
-    expect(events.flatMap((event) => (event._tag === 'item' ? [event.item.text] : []))).toEqual(['one', 'two']);
+    expect(events.flatMap((event) => (Predicate.isTagged(event, 'item') ? [event.item.text] : []))).toEqual(['one', 'two']);
   });
 
   it('gives no lines for a file that does not exist', async () => {

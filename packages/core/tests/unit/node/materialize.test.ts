@@ -8,7 +8,9 @@ import { join } from 'node:path';
 import { materializeDepotFiles, materializedFilePath } from '../../../src/node/materialize.js';
 import { replayExecutor, scriptedExecutor } from '../../../src/testing/executor.js';
 import { failure, fixtures, invocations, run, watch } from '../commands/support.js';
-import { P4MaterializationError } from '../../../src/errors.js';
+import { P4CommandError, P4MaterializationError } from '../../../src/errors.js';
+import { expectFailure } from '../../support/assert.js';
+import { asLocalPath } from '../../support/values.js';
 
 const scratch = mkdtempSync(join(tmpdir(), 'p4ts-materialize-'));
 
@@ -39,11 +41,11 @@ describe('materializeDepotFiles', () => {
   it('prints each revision beneath <directory>/<depot>/<path>', async () => {
     const result = await run(materializeDepotFiles, { fileSpec: [TEXT], directory: scratch, maxFiles: 1 }, printMaterialize());
     expect(result).toEqual({
-      directory: scratch,
-      items: [{ file: TEXT, localPath: textPath, bytes: 16, method: 'print' }],
+      directory: asLocalPath(scratch),
+      items: [{ file: TEXT, localPath: asLocalPath(textPath), bytes: 16, method: 'print' }],
       messages: [],
       stats: { files: 1, bytes: 16, batched: 0, printed: 1, batches: 0, retries: 0 },
-    } as never);
+    });
     expect(existsSync(join(scratch, 'p4ts', 'main', 'wire'))).toBe(true);
   });
 
@@ -77,7 +79,7 @@ describe('materializeDepotFiles', () => {
       stderr: '//p4ts/main/wire/text.txt#1 - no such file(s).\r\n',
     })));
 
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'no_such_file' });
+    expectFailure(error, P4CommandError, { reason: 'no_such_file' });
   });
 
   it('fails when print exits zero without output, preserving an existing destination', async () => {
@@ -87,7 +89,7 @@ describe('materializeDepotFiles', () => {
       fileSpec: [{ ...TEXT, revision: 2 }], directory: scratch, maxFiles: 1,
     }, scriptedExecutor(() => ({})));
 
-    expect(error).toMatchObject({ _tag: 'P4MaterializationError', reason: 'missing_output' });
+    expectFailure(error, P4MaterializationError, { reason: 'missing_output' });
     expect(readFileSync(textPath, 'utf8')).toBe('previous revision');
     expect(readdirSync(join(scratch, 'p4ts', 'main', 'wire')).some((name) => name.startsWith('.p4-materialize-'))).toBe(false);
   });
@@ -104,7 +106,7 @@ describe('materializeDepotFiles', () => {
       throw new Error('p4 must not run');
     }));
 
-    expect(error).toMatchObject({ _tag: 'P4MaterializationError', reason: 'limit_exceeded' });
+    expectFailure(error, P4MaterializationError, { reason: 'limit_exceeded' });
   });
 
   it('rejects unsafe depot paths and colliding outputs', async () => {
@@ -113,13 +115,12 @@ describe('materializeDepotFiles', () => {
     });
 
     for (const depotFile of ['//depot', '//d/../x', '//d//x', 'd/x', '//d/x#2']) {
-      expect(await failure(materializeDepotFiles, { fileSpec: [{ depotFile, revision: 1 }], directory: scratch, maxFiles: 1 }, none))
-        .toMatchObject({ _tag: 'P4MaterializationError', reason: 'invalid_depot_path', path: depotFile });
+      expectFailure(await failure(materializeDepotFiles, { fileSpec: [{ depotFile, revision: 1 }], directory: scratch, maxFiles: 1 }, none), P4MaterializationError, { reason: 'invalid_depot_path', path: depotFile });
     }
 
-    expect(await failure(materializeDepotFiles, {
+    expectFailure(await failure(materializeDepotFiles, {
       fileSpec: [TEXT, { ...TEXT, revision: 2 }], directory: scratch, maxFiles: 2,
-    }, none)).toMatchObject({ _tag: 'P4MaterializationError', reason: 'invalid_depot_path' });
+    }, none), P4MaterializationError, { reason: 'invalid_depot_path' });
   });
 
   it('requires an existing directory', async () => {
@@ -127,8 +128,7 @@ describe('materializeDepotFiles', () => {
     writeFileSync(file, '');
 
     for (const directory of [join(scratch, 'missing'), file]) {
-      expect(await failure(materializeDepotFiles, { fileSpec: [TEXT], directory, maxFiles: 1 }, scriptedExecutor(() => ({}))))
-        .toMatchObject({ _tag: 'P4MaterializationError', reason: 'invalid_destination' });
+      expectFailure(await failure(materializeDepotFiles, { fileSpec: [TEXT], directory, maxFiles: 1 }, scriptedExecutor(() => ({}))), P4MaterializationError, { reason: 'invalid_destination' });
     }
   });
 

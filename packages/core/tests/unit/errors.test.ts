@@ -4,6 +4,7 @@ import { runCommand } from '../../src/engine/command.js';
 import { configLayer } from '../../src/engine/config.js';
 import { P4CommandError, P4TimeoutError, decodeP4Error, encodeP4Error } from '../../src/errors.js';
 import { replayExecutor } from '../../src/testing/executor.js';
+import { expectFailure } from '../support/assert.js';
 import { corpus } from '../support/corpus.js';
 
 const commandError = () => Effect.runPromise(
@@ -22,8 +23,7 @@ describe('error codec', () => {
     const restored = decodeP4Error(transported);
     expect(restored).toBeInstanceOf(P4CommandError);
     expect(restored).toBeInstanceOf(Error);
-    expect(restored).toMatchObject({
-      _tag: 'P4CommandError',
+    expectFailure(restored, P4CommandError, {
       reason: 'ticket_expired',
       category: 'authentication',
       message: error.message,
@@ -40,6 +40,7 @@ describe('error codec', () => {
   });
 
   it('rejects data that is not an encoded error', () => {
+    // oxlint-disable-next-line anti-slop-effect/no-manual-tagged-construction -- deliberately invalid encoded data for the decoder
     expect(() => decodeP4Error({ _tag: 'Unknown' })).toThrow();
   });
 

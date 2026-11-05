@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { Effect, Exit, Layer, Stream } from 'effect';
+import { Effect, Exit, Layer, Predicate, Stream } from 'effect';
 import { configLayer } from '../../../src/engine/config.js';
 import { runCommand, runPlainCommand, streamCommand } from '../../../src/engine/command.js';
 import {
@@ -9,12 +9,15 @@ import {
   P4TimeoutError,
 } from '../../../src/errors.js';
 import { P4Executor } from '../../../src/exec/executor.js';
+import { expectFailure } from '../../support/assert.js';
 import { recordingExecutor, replayExecutor, scriptedExecutor } from '../../../src/testing/executor.js';
 import { fixtureStdout } from '../../../src/testing/fixture.js';
 import { corpus } from '../../support/corpus.js';
+import type { P4WireFields } from '../../../src/wire/value.js';
 import type { P4ClientOptions } from '../../../src/engine/config.js';
 import type { P4Error } from '../../../src/errors.js';
-import type { P4CommandEvent, P4CommandSpec } from '../../../src/engine/command.js';
+import { P4CommandEvent } from '../../../src/engine/command.js';
+import type { P4CommandSpec } from '../../../src/engine/command.js';
 import type { P4ScriptedOutput } from '../../../src/testing/executor.js';
 
 const fixtures = (...names: string[]) => names.map((name) => {
@@ -47,12 +50,12 @@ const failure = async <A>(
   if (Exit.isSuccess(exit)) throw new Error('Expected the command to fail.');
   const reason = exit.cause.reasons[0];
 
-  if (reason?._tag !== 'Fail') throw new Error(`Expected a failure, got ${String(reason?._tag)}.`);
+  if (!Predicate.isTagged(reason, 'Fail')) throw new Error(`Expected a failure, got ${String(reason?._tag)}.`);
 
   return reason.error;
 };
 
-const fields = (args: string[]): P4CommandSpec<Readonly<Record<string, unknown>>> => ({
+const fields = (args: string[]): P4CommandSpec<P4WireFields> => ({
   args,
   format: 'json',
   decode: (row) => row,
@@ -85,7 +88,7 @@ describe('structured commands', () => {
 
   it('fails on a missing named object even when p4 exits zero', async () => {
     const error = await failure(runCommand(fields(['describe', '-s', '999999'])), replayExecutor(fixtures('describe-unknown')));
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'unknown_changelist', exitCode: 0 });
+    expectFailure(error, P4CommandError, { reason: 'unknown_changelist', exitCode: 0 });
   });
 
   it('reports a policy-designated per-item failure beside the data', async () => {
@@ -120,12 +123,12 @@ describe('structured commands', () => {
 
   it('classifies plain-text failures printed before reaching a server', async () => {
     const error = await failure(runCommand(fields(['info'])), replayExecutor(fixtures('server-unreachable')));
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'server_unreachable', category: 'connection' });
+    expectFailure(error, P4CommandError, { reason: 'server_unreachable', category: 'connection' });
   });
 
   it('fails a non-zero exit that no message explains', async () => {
     const error = await failure(runCommand(fields(['info'])), scriptedExecutor(() => ({ exitCode: 2, stderr: '' })));
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'unknown', exitCode: 2 });
+    expectFailure(error, P4CommandError, { reason: 'unknown', exitCode: 2 });
   });
 
   it('reads output split at any byte the same way', async () => {
@@ -143,8 +146,8 @@ describe('structured commands', () => {
     const options = { allowMutation: true };
     const events = await run(Stream.runCollect(streamCommand(spec)), executor, options);
     const output = await run(runCommand(spec), executor, options);
-    expect(events.flatMap((event) => event._tag === 'data' ? [event.value] : [])).toEqual(output.items);
-    expect(events.flatMap((event) => event._tag === 'failure' ? [event.message] : [])).toEqual(output.failures);
+    expect(events.flatMap((event) => Predicate.isTagged(event, 'data') ? [event.value] : [])).toEqual(output.items);
+    expect(events.flatMap((event) => Predicate.isTagged(event, 'failure') ? [event.message] : [])).toEqual(output.failures);
     expect(output.failures.map((message) => message.reason)).toEqual(['clobber']);
   });
 
@@ -189,12 +192,12 @@ describe('structured commands', () => {
       },
     }), scriptedExecutor(() => ({ stdout: '{"depotFile":"//d/a.txt"}\n' })));
 
-    expect(error).toMatchObject({ _tag: 'P4ParseError', message: 'bad row', command: 'p4' });
+    expectFailure(error, P4ParseError, { message: 'bad row', command: 'p4' });
   });
 });
 
 describe('output cut short', () => {
-  const marshal = (): P4CommandSpec<Readonly<Record<string, unknown>>> => ({
+  const marshal = (): P4CommandSpec<P4WireFields> => ({
     args: ['print', '-k'],
     format: 'marshal',
     policy: { no_such_file: 'item' },
@@ -206,8 +209,8 @@ describe('output cut short', () => {
   const cutStderr = '{"data":"//d/a.txt - file(s) up-to-date.\\n","severity":2,"generic":17}\n{"data":"//d/b';
 
   /** Events streamed before the command failed, and its error. */
-  const streamed = async (spec: P4CommandSpec<Readonly<Record<string, unknown>>>, output: P4ScriptedOutput, chunkSize?: number) => {
-    const events: Array<P4CommandEvent<Readonly<Record<string, unknown>>>> = [];
+  const streamed = async (spec: P4CommandSpec<P4WireFields>, output: P4ScriptedOutput, chunkSize?: number) => {
+    const events: Array<P4CommandEvent<P4WireFields>> = [];
 
     const error = await failure(
       Stream.runForEach(streamCommand(spec), (event) => Effect.sync(() => {
@@ -228,7 +231,7 @@ describe('output cut short', () => {
   it('reports a signal, not the JSON record it cut short, keeping earlier records', async () => {
     for (const chunkSize of [undefined, 1, 7]) {
       const { events, error } = await streamed(fields(['files', '//d/...']), { stdout: cutJson, exitCode: null }, chunkSize);
-      expect(events).toEqual([{ _tag: 'data', value: { depotFile: '//d/a.txt' } }]);
+      expect(events).toEqual([P4CommandEvent.data({ value: { depotFile: '//d/a.txt' } })]);
       expectSignal(error);
       expect(error.message).toContain('p4 was terminated by a signal.');
     }
@@ -237,7 +240,7 @@ describe('output cut short', () => {
   it('reports a signal, not the marshal record it cut short, keeping earlier records', async () => {
     for (const chunkSize of [undefined, 9]) {
       const { events, error } = await streamed(marshal(), { stdout: batch.subarray(0, batch.length - 3), exitCode: null }, chunkSize);
-      expect(events.some((event) => event._tag === 'data' && event.value.depotFile === '//p4ts/main/wire/text.txt')).toBe(true);
+      expect(events.some((event) => Predicate.isTagged(event, 'data') && event.value.depotFile === '//p4ts/main/wire/text.txt')).toBe(true);
       expectSignal(error);
       expect(error.message).toContain('p4 was terminated by a signal.');
     }
@@ -334,7 +337,7 @@ describe('plain commands', () => {
       replayExecutor(fixtures('diff2-bad-revision-plain')),
     );
 
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'invalid_revision', category: 'usage' });
+    expectFailure(error, P4CommandError, { reason: 'invalid_revision', category: 'usage' });
   });
 
   it('accepts an exit code the spec explains', async () => {

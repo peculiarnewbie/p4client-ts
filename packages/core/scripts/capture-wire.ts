@@ -201,7 +201,8 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
             cwd: '<WORKSPACE>',
             charset: environment.P4CHARSET,
             args: actual.map(normalize),
-            ...(input === undefined ? {} : { input: normalize(input) }),
+            // JSON.stringify leaves `input` out of the fixture when there is none.
+            input: input === undefined ? undefined : normalize(input),
             exitCode: result.exitCode,
             stopped: result.stopped,
             stdout: mode === 'marshal' ? null : stdout,
@@ -851,8 +852,8 @@ if (import.meta.main) {
         Effect.ensuring(Effect.promise(fixture.stop)),
       );
     }),
-  ).catch((error: unknown) => {
-    console.error(String(error));
+  ).catch((cause: unknown) => {
+    console.error(String(cause));
     process.exitCode = 1;
   });
 }

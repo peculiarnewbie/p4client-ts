@@ -13,12 +13,16 @@ const Record = Schema.Struct({
 });
 
 /** Replay a private log through the guard without running any subprocess. */
-export function auditProductionLog(configPath: string): {
-  starts: number;
-  exits: number;
-  forbidden: number;
-  commands: { [command: string]: number };
-} {
+/** What {@link auditProductionLog} found in a production run's log. */
+export interface ProductionLogAudit {
+  readonly starts: number;
+  readonly exits: number;
+  readonly forbidden: number;
+  /** How many times each command ran. */
+  readonly commands: { readonly [command: string]: number };
+}
+
+export function auditProductionLog(configPath: string): ProductionLogAudit {
   const config = Schema.decodeUnknownSync(Schema.fromJsonString(Config))(
     readFileSync(configPath, 'utf8'),
   );
@@ -73,8 +77,8 @@ if (import.meta.main) {
       if (!path) throw new Error('Pass the private guard configuration path.');
       console.log(JSON.stringify(auditProductionLog(path)));
     }),
-  ).catch((error: unknown) => {
-    console.error(String(error));
+  ).catch((cause: unknown) => {
+    console.error(String(cause));
     process.exitCode = 1;
   });
 }

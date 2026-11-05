@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { Effect, Exit, Stream } from 'effect';
+import { Effect, Exit, Predicate, Stream } from 'effect';
 import { P4SpawnError } from '../../../src/errors.js';
 import { runNodeProcess, runNodeProcessPromise } from '../../../src/node/executor.js';
-import type { P4Invocation, P4ProcessEvent } from '../../../src/exec/executor.js';
+import { P4ProcessEvent } from '../../../src/exec/executor.js';
+import type { P4Invocation } from '../../../src/exec/executor.js';
 
 const node = (script: string, extra: Partial<P4Invocation> = {}): P4Invocation => ({
   executable: process.execPath,
@@ -17,7 +18,7 @@ const collect = (invocation: P4Invocation) =>
   Effect.runPromise(Stream.runCollect(runNodeProcess(invocation)));
 
 const text = (events: readonly P4ProcessEvent[], tag: 'stdout' | 'stderr') =>
-  Buffer.concat(events.flatMap((event) => event._tag === tag ? [event.bytes] : [])).toString('utf8');
+  Buffer.concat(events.flatMap((event) => (Predicate.isTagged(event, tag) ? [event.bytes] : []))).toString('utf8');
 
 const isAlive = (pid: number): boolean => {
   try {
@@ -34,8 +35,8 @@ describe('NodeP4Executor', () => {
     const events = await collect(node("process.stdout.write('out'); process.stderr.write('err'); process.exitCode = 3"));
     expect(text(events, 'stdout')).toBe('out');
     expect(text(events, 'stderr')).toBe('err');
-    expect(events.filter((event) => event._tag === 'exit')).toEqual([{ _tag: 'exit', code: 3 }]);
-    expect(events.at(-1)).toEqual({ _tag: 'exit', code: 3 });
+    expect(events.filter((event) => Predicate.isTagged(event, 'exit'))).toEqual([P4ProcessEvent.exit({ code: 3 })]);
+    expect(events.at(-1)).toEqual(P4ProcessEvent.exit({ code: 3 }));
   });
 
   it('delivers large output completely', async () => {
@@ -56,7 +57,7 @@ describe('NodeP4Executor', () => {
 
   it('reports the exit of a process that stops before reading its input', async () => {
     const events = await collect(node('process.exit(2)', { input: 'x\n'.repeat(500_000) }));
-    expect(events.at(-1)).toEqual({ _tag: 'exit', code: 2 });
+    expect(events.at(-1)).toEqual(P4ProcessEvent.exit({ code: 2 }));
   });
 
   it('applies environment changes and removes variables set to undefined', async () => {
@@ -87,7 +88,7 @@ describe('NodeP4Executor', () => {
       const error = exit.cause.reasons[0];
       expect(error?._tag).toBe('Fail');
 
-      if (error?._tag === 'Fail') {
+      if (Predicate.isTagged(error, 'Fail')) {
         expect(error.error).toBeInstanceOf(P4SpawnError);
         expect(error.error.code).toBe('ENOENT');
         expect(error.error.args).toEqual(['-P', '***', 'info']);
@@ -112,7 +113,7 @@ describe('NodeP4Executor', () => {
     const exit = await Effect.runPromiseExit(
       runNodeProcess(node("process.stdout.write(String(process.pid)); setInterval(() => {}, 1000)")).pipe(
         Stream.runForEach((event) => Effect.sync(() => {
-          if (event._tag === 'stdout') pid = Number(Buffer.from(event.bytes).toString('utf8'));
+          if (Predicate.isTagged(event, 'stdout')) pid = Number(Buffer.from(event.bytes).toString('utf8'));
         })),
         Effect.timeout('300 millis'),
       ),

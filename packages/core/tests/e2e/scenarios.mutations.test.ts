@@ -5,6 +5,8 @@ import { basename, join } from "node:path";
 import { loadE2EConfig } from "./config.js";
 import { loadFixture } from "./fixture.js";
 import { P4E2EHarness } from "./harness.js";
+import { P4CommandError, P4ReadOnlyError } from "../../src/errors.js";
+import { expectFailure, rejectionOf } from "../support/assert.js";
 
 const config = loadE2EConfig();
 const fixture = loadFixture(config);
@@ -87,9 +89,7 @@ describe("p4-ts e2e typed mutations", () => {
     expect(described.description).toBe("p4-ts e2e typed mutations\nsecond line");
     expect(described.files.map((file) => basename(file.depotFile)).sort()).toEqual(["config.json", "new-feature.txt"]);
 
-    await expect(client.deleteChange({ change: change.change })).rejects.toMatchObject({
-      _tag: "P4CommandError", reason: "changelist_not_empty",
-    });
+    expectFailure(await rejectionOf(client.deleteChange({ change: change.change })), P4CommandError, { reason: "changelist_not_empty" });
 
     expect((await client.previewRevert({ change: change.change })).items).toHaveLength(2);
     expect((await client.listOpenedFiles({ change: change.change })).items).toHaveLength(2);
@@ -128,9 +128,9 @@ describe("p4-ts e2e typed mutations", () => {
 
     try {
       const before = await readOnly.listChangelists({ status: "pending", includeDefault: false });
-      await expect(readOnly.createChange({ description: "must not exist" })).rejects.toMatchObject({ _tag: "P4ReadOnlyError" });
-      await expect(readOnly.openForEdit({ fileSpec: harness.getPath(CONFIG_PATH) })).rejects.toMatchObject({ _tag: "P4ReadOnlyError" });
-      await expect(readOnly.revert({ fileSpec: harness.getPath(CONFIG_PATH) })).rejects.toMatchObject({ _tag: "P4ReadOnlyError" });
+      expectFailure(await rejectionOf(readOnly.createChange({ description: "must not exist" })), P4ReadOnlyError);
+      expectFailure(await rejectionOf(readOnly.openForEdit({ fileSpec: harness.getPath(CONFIG_PATH) })), P4ReadOnlyError);
+      expectFailure(await rejectionOf(readOnly.revert({ fileSpec: harness.getPath(CONFIG_PATH) })), P4ReadOnlyError);
       const after = await readOnly.listChangelists({ status: "pending", includeDefault: false });
       expect(after.items).toEqual(before.items);
       expect((await readOnly.previewOpenForEdit({ fileSpec: harness.getPath(CONFIG_PATH) })).items).toHaveLength(1);

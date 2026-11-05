@@ -1,5 +1,6 @@
 // Published guide examples; typechecked by the repository.
 import { createP4Client } from '../../src/promise/index.js';
+import { Predicate } from 'effect';
 import { printedText } from '../../src/index.js';
 
 const client = createP4Client({
@@ -62,9 +63,9 @@ const handle = client.watch.previewSync({
 });
 
 for await (const event of handle.events) {
-  if (event._tag === 'progress') console.log(event.progress);
+  if (Predicate.isTagged(event, 'progress')) console.log(event.progress);
 
-  if (event._tag === 'failure') console.log(event.failure);
+  if (Predicate.isTagged(event, 'failure')) console.log(event.failure);
 }
 
 const result = await handle.result;
@@ -151,15 +152,15 @@ let latestPath: string | null = null;
 
 try {
   for await (const event of syncWatch.events) {
-    if (event._tag === 'item') latestPath = event.item.depotFile;
+    if (Predicate.isTagged(event, 'item')) latestPath = event.item.depotFile;
 
-    if (event._tag === 'progress') {
+    if (Predicate.isTagged(event, 'progress')) {
       console.log(latestPath, event.progress.completed, event.progress.total);
     }
 
-    if (event._tag === 'failure') console.error(event.failure.spec, event.failure.reason);
+    if (Predicate.isTagged(event, 'failure')) console.error(event.failure.spec, event.failure.reason);
 
-    if (event._tag === 'message') console.log(event.message.text);
+    if (Predicate.isTagged(event, 'message')) console.log(event.message.text);
   }
 
   const synced = await syncWatch.result;

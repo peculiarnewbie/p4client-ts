@@ -33,7 +33,7 @@ const Config = Schema.Struct({
 export type ProductionReadConfig = typeof Config.Type;
 
 // Only reviewed flags are accepted. A flag's value cannot become another command or option.
-const FLAGS: Readonly<Record<string, Readonly<Record<string, boolean>>>> = {
+const FLAGS = new Map<string, ReadonlyMap<string, boolean>>(Object.entries({
   info: {},
   changes: { '-m': true, '-s': true, '-u': true, '-c': true, '-l': false },
   describe: { '-s': false, '-S': false },
@@ -72,7 +72,7 @@ const FLAGS: Readonly<Record<string, Readonly<Record<string, boolean>>>> = {
   diff: { '-sa': false, '-se': false, '-sd': false, '-sr': false },
   tickets: {},
   set: {},
-};
+}).map(([command, flags]) => [command, new Map(Object.entries(flags))]));
 
 const CLIENT_COMMANDS = new Set([
   'sync',
@@ -149,9 +149,9 @@ export function validateProductionRead(
 
   const command = args[offset++];
 
-  if (!command || !Object.hasOwn(FLAGS, command))
+  if (!command || !FLAGS.has(command))
     refuse('command is not allowlisted');
-  const flags = FLAGS[command];
+  const flags = FLAGS.get(command);
 
   if (!flags) refuse('missing flag policy');
   const seen = new Set<string>();
@@ -167,11 +167,11 @@ export function validateProductionRead(
       continue;
     }
 
-    if (!Object.hasOwn(flags, arg) || seen.has(arg))
+    if (!flags.has(arg) || seen.has(arg))
       refuse(`unreviewed or repeated flag ${arg}`);
     seen.add(arg);
 
-    if (!flags[arg]) continue;
+    if (flags.get(arg) !== true) continue;
     const value = args[++i];
 
     if (!value || value.startsWith('-')) refuse(`missing value for ${arg}`);
@@ -510,8 +510,8 @@ if (import.meta.main) {
       );
       process.exitCode = capture.exitCode;
     }),
-  ).catch((error: unknown) => {
-    console.error(String(error));
+  ).catch((cause: unknown) => {
+    console.error(String(cause));
     process.exitCode = 1;
   });
 }

@@ -5,7 +5,8 @@ import type { OpItem, OpOptions, OpResult } from '../../src/ops.js';
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 
-const assert = <T extends true>(): T => true as T;
+// Compile-time check: a call only typechecks when T is `true`.
+const assert = <_T extends true>(): void => undefined;
 
 describe('operation registry', () => {
   it('names every operation after its method', () => {

@@ -8,6 +8,8 @@ import { commandArgs, replayExecutor, scriptedExecutor } from '../../src/testing
 import { toOpenedFile } from '../../src/commands/opened.js';
 import { toWireRecord } from '../../src/wire/record.js';
 import { WIRE_ROOT, corpus } from '../support/corpus.js';
+import { P4CommandError } from '../../src/errors.js';
+import { expectFailure, rejectionOf } from '../support/assert.js';
 
 describe('cutover wire regressions retained from the legacy suite', () => {
   for (const [name, count, reason] of [
@@ -33,7 +35,7 @@ describe('cutover wire regressions retained from the legacy suite', () => {
         .pipe(Effect.provide(Layer.merge(configLayer({ allowMutation: true }), replayExecutor([normalized]))));
 
       if (reason !== null) {
-        await expect(Effect.runPromise(program)).rejects.toMatchObject({ _tag: 'P4CommandError', reason });
+        expectFailure(await rejectionOf(Effect.runPromise(program)), P4CommandError, { reason });
       } else {
         const result = await Effect.runPromise(program);
         expect(result.items).toHaveLength(count);

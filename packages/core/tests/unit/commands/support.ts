@@ -3,6 +3,7 @@ import { Effect, Exit, Layer, Stream } from 'effect';
 import { configLayer } from '../../../src/engine/config.js';
 import { runOperation, watchOperation } from '../../../src/engine/operation.js';
 import { commandArgs, recordingExecutor, replayExecutor, scriptedExecutor } from '../../../src/testing/executor.js';
+import { readJsonLine } from '../../../src/wire/record.js';
 import { corpus } from '../../support/corpus.js';
 import type { P4ClientOptions } from '../../../src/engine/config.js';
 import type { P4Context, P4Operation, P4OperationEvent } from '../../../src/engine/operation.js';
@@ -10,6 +11,7 @@ import type { P4Error } from '../../../src/errors.js';
 import type { P4Executor } from '../../../src/exec/executor.js';
 import type { P4ScriptedOutput } from '../../../src/testing/executor.js';
 import type { P4WireFixture } from '../../../src/testing/fixture.js';
+import type { P4WireFields } from '../../../src/wire/value.js';
 
 /** Fixtures by name; a missing name fails the test. */
 export function fixtures(...names: string[]): P4WireFixture[] {
@@ -120,9 +122,12 @@ export function argvTable(cases: readonly ArgvCase[]): void {
 }
 
 /** The JSON records a fixture printed on stdout. */
-export function fixtureRows(name: string): Array<Record<string, unknown>> {
-  return (fixtures(name)[0]!.stdout ?? '').split(/\r?\n/).filter((line) => line.startsWith('{'))
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+export function fixtureRows(name: string): P4WireFields[] {
+  return (fixtures(name)[0]!.stdout ?? '').split(/\r?\n/).flatMap((line) => {
+    const parsed = line.startsWith('{') ? readJsonLine(line) : null;
+
+    return parsed?.ok === true ? [parsed.fields] : [];
+  });
 }
 
 /**
@@ -136,7 +141,7 @@ export function fixtureRows(name: string): Array<Record<string, unknown>> {
 export function fixtureTime(
   name: string,
   field: string,
-  match: (row: Record<string, unknown>) => boolean = () => true,
+  match: (row: P4WireFields) => boolean = () => true,
 ): string {
   const row = fixtureRows(name).find(match);
 

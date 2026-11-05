@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { decodeStreamManifest } from "../support/stream-manifest.js";
 import type { E2EConfig } from "./config.js";
 
 export interface FixtureSentinel {
@@ -13,10 +14,6 @@ export interface E2EFixture {
   sentinels: FixtureSentinel[];
 }
 
-interface StreamManifest {
-  seedRoot: string;
-}
-
 const SENTINEL_PATHS = [
   "src/app/config.json",
   "src/app/index.txt",
@@ -24,13 +21,9 @@ const SENTINEL_PATHS = [
   "docs/guide/getting-started.md"
 ] as const;
 
-function readJsonFile<T>(path: string): T {
-  return JSON.parse(readFileSync(path, "utf8")) as T;
-}
-
 export function loadFixture(config: E2EConfig): E2EFixture {
-  const manifest = readJsonFile<StreamManifest>(
-    resolve(config.testStreamPackageRoot, "stream-manifest.json")
+  const manifest = decodeStreamManifest(
+    readFileSync(resolve(config.testStreamPackageRoot, "stream-manifest.json"), "utf8")
   );
 
   const seedRoot = resolve(config.testStreamPackageRoot, manifest.seedRoot);
