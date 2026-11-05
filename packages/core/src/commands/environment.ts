@@ -39,6 +39,7 @@ const UNKNOWN_CLIENT = '*unknown*';
 
 function toEnvironment(row: Row, port: string | null, messages: P4Message[]): P4Environment {
   const client = text(row.clientName);
+
   return {
     user: text(row.userName),
     client: client === UNKNOWN_CLIENT ? null : client,
@@ -65,6 +66,8 @@ export const getEnvironment = operation<GetEnvironmentOptions, never, P4Environm
     const config = yield* P4Config;
     const output = yield* drain(sink, streamCommand({ args: ['info', '-s'], format: 'json', decode: (row) => row }));
     const row = output.items[0];
+
     if (row === undefined) return yield* malformed('p4 info printed no server information.', output.messages);
+
     return toEnvironment(row, config.connection.port ?? null, output.messages);
   }));

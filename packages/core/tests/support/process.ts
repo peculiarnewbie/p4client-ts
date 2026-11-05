@@ -8,6 +8,7 @@ export function captureProcess(invocation: P4Invocation, timeoutMs = 30_000) {
     Stream.runFold(() => ({ stdout: [] as Uint8Array[], stderr: [] as Uint8Array[], exitCode: 0 }), (result, event) => {
       if (event._tag === 'exit') result.exitCode = event.code ?? -1;
       else result[event._tag].push(event.bytes);
+
       return result;
     }),
     Effect.map((result) => ({ stdout: Buffer.concat(result.stdout).toString('utf8'),

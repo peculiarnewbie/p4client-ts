@@ -35,6 +35,7 @@ export function readDefaultChangelist(options: DefaultChangelistOptions) {
     runCommand(openedCommand({ change: 'default', user: options.user, client: options.client, fileSpec: options.fileSpec })),
     (output): P4DefaultChangelist => {
       const first = output.items[0];
+
       return {
         description: {
           change: 'default',

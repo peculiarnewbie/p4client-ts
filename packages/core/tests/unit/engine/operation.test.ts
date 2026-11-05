@@ -17,7 +17,9 @@ import type { P4Executor } from '../../../src/exec/executor.js';
 
 const fixture = (name: string) => {
   const found = corpus.get(name);
+
   if (found === undefined) throw new Error(`Missing fixture ${name}`);
+
   return found;
 };
 
@@ -26,11 +28,13 @@ const provide = <A, E>(effect: Effect.Effect<A, E, P4Context>, executor: Layer.L
 
 const files = operation('files', (_: { readonly specs: readonly string[] }, sink) => Effect.gen(function* () {
   const counter = progressCounter(sink, 'files', 1);
+
   const output = yield* drain(sink, streamCommand({
     args: ['files', ..._.specs],
     format: 'json',
     decode: (row) => String(row.depotFile),
   }), { item: (file) => file, counter });
+
   return { items: output.items, messages: output.messages };
 }));
 
@@ -49,10 +53,13 @@ describe('operations', () => {
 
   it('fails a watch with the error the run fails with', async () => {
     const executor = replayExecutor([fixture('changes-ticket-expired')]);
+
     const changes = operation('changes', (_: void, sink) =>
       drain(sink, streamCommand({ args: ['changes', '-m', '1'], format: 'json', decode: (row) => row })));
+
     const exit = await Effect.runPromiseExit(provide(Stream.runCollect(watchOperation(changes, undefined)), executor));
     expect(Exit.isFailure(exit)).toBe(true);
+
     if (Exit.isFailure(exit)) {
       const reason = exit.cause.reasons[0];
       expect(reason?._tag === 'Fail' ? reason.error : null).toBeInstanceOf(P4CommandError);
@@ -65,12 +72,15 @@ describe('operations', () => {
       yield* counter.advance();
       yield* Effect.sleep(120);
       yield* counter.advance();
+
       return 'ok';
     }));
+
     const events: Array<P4OperationEvent<unknown, string>> = await Effect.runPromise(provide(
       Stream.runCollect(watchOperation(slow, undefined, { progressIntervalMs: 25 })),
       scriptedExecutor(() => ({})),
     ));
+
     const progress = events.flatMap((event) => event._tag === 'progress' ? [event.progress] : []);
     expect(progress.length).toBeGreaterThan(3);
     expect(progress.filter((update) => update.completed === 1).length).toBeGreaterThan(2);
@@ -81,6 +91,7 @@ describe('operations', () => {
 
   it('stops the command when the watcher stops reading', async () => {
     let finished = false;
+
     const endless = operation('endless', (_: void, sink) => Effect.gen(function* () {
       for (let index = 0; ; index += 1) {
         yield* sink.item(index);
@@ -89,10 +100,12 @@ describe('operations', () => {
     }).pipe(Effect.onExit(() => Effect.sync(() => {
       finished = true;
     }))));
+
     const firstThree = await Effect.runPromise(provide(
       watchOperation(endless, undefined).pipe(Stream.take(3), Stream.runCollect),
       scriptedExecutor(() => ({})),
     ));
+
     expect(firstThree.map((event) => event._tag === 'item' ? event.item : null)).toEqual([0, 1, 2]);
     expect(finished).toBe(true);
   });

@@ -22,6 +22,7 @@ const text = (events: readonly P4ProcessEvent[], tag: 'stdout' | 'stderr') =>
 const isAlive = (pid: number): boolean => {
   try {
     process.kill(pid, 0);
+
     return true;
   } catch {
     return false;
@@ -49,6 +50,7 @@ describe('NodeP4Executor', () => {
       "let s = ''; process.stdin.on('data', (d) => s += d).on('end', () => process.stdout.write(s.toUpperCase()))",
       { input: '//depot/a.txt\n' },
     ));
+
     expect(text(events, 'stdout')).toBe('//DEPOT/A.TXT\n');
   });
 
@@ -59,11 +61,13 @@ describe('NodeP4Executor', () => {
 
   it('applies environment changes and removes variables set to undefined', async () => {
     process.env.P4TS_EXECUTOR_TEST_REMOVE = 'inherited';
+
     try {
       const events = await collect(node(
         'process.stdout.write(JSON.stringify([process.env.P4TS_ADDED, process.env.P4TS_EXECUTOR_TEST_REMOVE ?? null]))',
         { env: { P4TS_ADDED: 'yes', P4TS_EXECUTOR_TEST_REMOVE: undefined } },
       ));
+
       expect(text(events, 'stdout')).toBe('["yes",null]');
     } finally {
       delete process.env.P4TS_EXECUTOR_TEST_REMOVE;
@@ -76,10 +80,13 @@ describe('NodeP4Executor', () => {
       executable: 'p4-ts-nonexistent-executable',
       args: ['-P', 'secret', 'info'],
     })));
+
     expect(Exit.isFailure(exit)).toBe(true);
+
     if (Exit.isFailure(exit)) {
       const error = exit.cause.reasons[0];
       expect(error?._tag).toBe('Fail');
+
       if (error?._tag === 'Fail') {
         expect(error.error).toBeInstanceOf(P4SpawnError);
         expect(error.error.code).toBe('ENOENT');
@@ -93,6 +100,7 @@ describe('NodeP4Executor', () => {
       runNodeProcess(node("process.stdout.write(String(process.pid) + '\\n'); setInterval(() => process.stdout.write('tick\\n'), 5)"))
         .pipe(Stream.take(1), Stream.runCollect),
     );
+
     const pid = Number(text(events, 'stdout').split('\n')[0]);
     expect(Number.isInteger(pid)).toBe(true);
     expect(isAlive(pid)).toBe(false);
@@ -100,6 +108,7 @@ describe('NodeP4Executor', () => {
 
   it('kills and joins the process on interruption', async () => {
     let pid = 0;
+
     const exit = await Effect.runPromiseExit(
       runNodeProcess(node("process.stdout.write(String(process.pid)); setInterval(() => {}, 1000)")).pipe(
         Stream.runForEach((event) => Effect.sync(() => {
@@ -108,6 +117,7 @@ describe('NodeP4Executor', () => {
         Effect.timeout('300 millis'),
       ),
     );
+
     expect(Exit.isFailure(exit)).toBe(true);
     expect(pid).toBeGreaterThan(0);
     expect(isAlive(pid)).toBe(false);
@@ -120,6 +130,7 @@ describe('Promise process bridge', () => {
       "process.stdin.on('data', (d) => process.stdout.write(d)); process.stdin.on('end', () => { process.stderr.write('diagnostic'); process.exitCode = 7; });",
       { input: 'héllo\n' },
     ));
+
     expect(result).toEqual({ stdout: 'héllo\n', stderr: 'diagnostic', exitCode: 7 });
   });
   it('rejects with the original abort reason after joining the process', async () => {

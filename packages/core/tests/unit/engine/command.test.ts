@@ -19,7 +19,9 @@ import type { P4ScriptedOutput } from '../../../src/testing/executor.js';
 
 const fixtures = (...names: string[]) => names.map((name) => {
   const fixture = corpus.get(name);
+
   if (fixture === undefined) throw new Error(`Missing fixture ${name}`);
+
   return fixture;
 });
 
@@ -41,9 +43,12 @@ const failure = async <A>(
   options: P4ClientOptions = {},
 ): Promise<P4Error> => {
   const exit = await Effect.runPromiseExit(provide(effect, executor, options));
+
   if (Exit.isSuccess(exit)) throw new Error('Expected the command to fail.');
   const reason = exit.cause.reasons[0];
+
   if (reason?._tag !== 'Fail') throw new Error(`Expected a failure, got ${String(reason?._tag)}.`);
+
   return reason.error;
 };
 
@@ -59,6 +64,7 @@ describe('structured commands', () => {
       runCommand(fields(['files', '//p4ts/main/wire/text.txt', '//p4ts/main/missing.txt'])),
       replayExecutor(fixtures('files-mixed')),
     );
+
     expect(output.items.map((row) => row.depotFile)).toEqual(['//p4ts/main/wire/text.txt']);
     expect(output.messages.map((message) => message.reason)).toEqual(['no_such_file']);
     expect(output.messages[0]?.args).toEqual({ argc: '//p4ts/main/missing.txt' });
@@ -68,6 +74,7 @@ describe('structured commands', () => {
   it('fails on a session failure, carrying the reason and every message', async () => {
     const error = await failure(runCommand(fields(['changes', '-m', '1'])), replayExecutor(fixtures('changes-ticket-expired')));
     expect(error).toBeInstanceOf(P4CommandError);
+
     if (!(error instanceof P4CommandError)) return;
     expect(error.reason).toBe('ticket_expired');
     expect(error.category).toBe('authentication');
@@ -86,6 +93,7 @@ describe('structured commands', () => {
       runCommand({ ...fields(['where', '//p4ts/main/wire/text.txt', '//other/main/a.txt']), policy: { not_in_view: 'item' } }),
       replayExecutor(fixtures('where-mixed')),
     );
+
     expect(output.items.map((row) => row.depotFile)).toEqual(['//p4ts/main/wire/text.txt']);
     expect(output.failures.map((message) => [message.reason, message.args.path])).toEqual([
       ['not_in_view', '//other/main/a.txt'],
@@ -97,11 +105,14 @@ describe('structured commands', () => {
       runCommand({ ...fields(['where', '//p4ts/main/wire/text.txt', '//other/main/a.txt']), policy: { not_in_view: 'item' } }),
       replayExecutor(fixtures('where-mixed')),
     );
+
     expect(asItem.failures.map((message) => message.disposition)).toEqual(['item']);
+
     const empty = await run(
       runCommand(fields(['files', '//p4ts/main/wire/text.txt', '//p4ts/main/missing.txt'])),
       replayExecutor(fixtures('files-mixed')),
     );
+
     expect(empty.messages.map((message) => message.disposition)).toEqual(['empty']);
     const error = await failure(runCommand(fields(['changes', '-m', '1'])), replayExecutor(fixtures('changes-ticket-expired')));
     expect(error instanceof P4CommandError ? error.messages.map((message) => message.disposition) : null).toEqual(['fail']);
@@ -120,6 +131,7 @@ describe('structured commands', () => {
   it('reads output split at any byte the same way', async () => {
     const args = ['files', '//p4ts/main/wire/text.txt', '//p4ts/main/missing.txt'];
     const whole = await run(runCommand(fields(args)), replayExecutor(fixtures('files-mixed')));
+
     for (const chunkSize of [1, 5, 13]) {
       expect(await run(runCommand(fields(args)), replayExecutor(fixtures('files-mixed'), { chunkSize }))).toEqual(whole);
     }
@@ -148,6 +160,7 @@ describe('structured commands', () => {
       }),
       replayExecutor(fixtures('print-marshal-batch'), { chunkSize: 9 }),
     );
+
     expect(output.items.filter((row) => row.code === 'stat').map((row) => row.depotFile)).toEqual([
       '//p4ts/main/wire/text.txt', '//p4ts/main/wire/full.uasset', '//p4ts/main/wire/wide.txt',
     ]);
@@ -160,8 +173,10 @@ describe('structured commands', () => {
       stdout: '{"depotFile":"//d/a.txt"}\nnot json\n',
       exitCode: 0,
     })), { connection: { port: 'ssl:p4:1666' } });
+
     expect(error).toBeInstanceOf(P4ParseError);
     expect(error).toMatchObject({ line: 'not json', command: 'p4' });
+
     if (error instanceof P4ParseError) expect(error.args).toContain('files');
   });
 
@@ -173,6 +188,7 @@ describe('structured commands', () => {
         throw new P4ParseError({ message: 'bad row', line: JSON.stringify(row), detail: 'nope', command: null, args: null });
       },
     }), scriptedExecutor(() => ({ stdout: '{"depotFile":"//d/a.txt"}\n' })));
+
     expect(error).toMatchObject({ _tag: 'P4ParseError', message: 'bad row', command: 'p4' });
   });
 });
@@ -184,6 +200,7 @@ describe('output cut short', () => {
     policy: { no_such_file: 'item' },
     decode: (row) => row,
   });
+
   const batch = fixtureStdout(fixtures('print-marshal-batch')[0]!);
   const cutJson = '{"depotFile":"//d/a.txt"}\n{"depotFile":"//d/b';
   const cutStderr = '{"data":"//d/a.txt - file(s) up-to-date.\\n","severity":2,"generic":17}\n{"data":"//d/b';
@@ -191,12 +208,14 @@ describe('output cut short', () => {
   /** Events streamed before the command failed, and its error. */
   const streamed = async (spec: P4CommandSpec<Readonly<Record<string, unknown>>>, output: P4ScriptedOutput, chunkSize?: number) => {
     const events: Array<P4CommandEvent<Readonly<Record<string, unknown>>>> = [];
+
     const error = await failure(
       Stream.runForEach(streamCommand(spec), (event) => Effect.sync(() => {
         events.push(event);
       })),
       scriptedExecutor(() => output, { chunkSize }),
     );
+
     return { events, error };
   };
 
@@ -227,6 +246,7 @@ describe('output cut short', () => {
   it('reports a signal, not the stderr diagnostic it cut short', async () => {
     const { error } = await streamed(fields(['files', '//d/...']), { stderr: cutStderr, exitCode: null });
     expectSignal(error);
+
     if (error instanceof P4CommandError) expect(error.stderr).toBe(cutStderr);
   });
 
@@ -235,10 +255,12 @@ describe('output cut short', () => {
       const json = await failure(runCommand(fields(['files', '//d/...'])), scriptedExecutor(() => ({ stdout: cutJson, exitCode })));
       expect(json).toBeInstanceOf(P4ParseError);
       expect(json).toMatchObject({ message: 'Unable to parse tagged Perforce JSON output.', line: '{"depotFile":"//d/b', command: 'p4' });
+
       const marshalled = await failure(
         runCommand(marshal()),
         scriptedExecutor(() => ({ stdout: batch.subarray(0, batch.length - 3), exitCode }), { chunkSize: 9 }),
       );
+
       expect(marshalled).toBeInstanceOf(P4ParseError);
       expect(marshalled).toMatchObject({ detail: 'Marshal output ended inside a record.', command: 'p4' });
       const stderr = await failure(runCommand(fields(['files', '//d/...'])), scriptedExecutor(() => ({ stderr: cutStderr, exitCode })));
@@ -278,6 +300,7 @@ describe('command invocation', () => {
 
   it('kills a command that exceeds its timeout and keeps its partial output', async () => {
     let interrupted = false;
+
     const hanging = Layer.succeed(P4Executor, {
       run: () => Stream.concat(
         Stream.make({ _tag: 'stdout' as const, bytes: new TextEncoder().encode('{"depotFile":"//d/a.txt"}\n') }),
@@ -286,6 +309,7 @@ describe('command invocation', () => {
         interrupted = true;
       }))),
     });
+
     const error = await failure(runCommand(fields(['files', '//d/...'])), hanging, { timeoutMs: 50 });
     expect(error).toBeInstanceOf(P4TimeoutError);
     expect(error).toMatchObject({ timeoutMs: 50, stdout: '{"depotFile":"//d/a.txt"}\n' });
@@ -299,6 +323,7 @@ describe('plain commands', () => {
       runPlainCommand({ args: ['diff2', '-du', '//p4ts/main/wire/text.txt#1', '//p4ts/main/wire/text.txt#2'] }),
       replayExecutor(fixtures('diff2-normal')),
     );
+
     expect(new TextDecoder().decode(output.stdout)).toContain('@@');
     expect(output.exitCode).toBe(0);
   });
@@ -308,6 +333,7 @@ describe('plain commands', () => {
       runPlainCommand({ args: ['diff2', '-du', '//p4ts/main/wire/text.txt#invalid', '//p4ts/main/wire/text.txt#1'] }),
       replayExecutor(fixtures('diff2-bad-revision-plain')),
     );
+
     expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'invalid_revision', category: 'usage' });
   });
 
@@ -316,6 +342,7 @@ describe('plain commands', () => {
       runPlainCommand({ args: ['diff2', 'a', 'b'], acceptExit: (code) => code === 1 }),
       scriptedExecutor(() => ({ stdout: '@@ -1 +1 @@\n', exitCode: 1 })),
     );
+
     expect(output.exitCode).toBe(1);
   });
 });

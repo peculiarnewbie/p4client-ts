@@ -8,10 +8,12 @@ import type { P4Invocation, P4ProcessEvent } from '../exec/executor.js';
 
 function environment(overrides: P4Invocation['env']): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
+
   for (const [key, value] of Object.entries(overrides)) {
     if (value === undefined) delete env[key];
     else env[key] = value;
   }
+
   return env;
 }
 
@@ -19,7 +21,9 @@ function spawnError(invocation: P4Invocation, message: string, cause: unknown): 
   const code = typeof cause === 'object' && cause !== null && 'code' in cause && typeof cause.code === 'string'
     ? cause.code
     : null;
+
   const detail = cause instanceof Error ? cause.message : String(cause);
+
   return new P4SpawnError({
     message: `${message} ${detail}`,
     command: invocation.executable,
@@ -40,6 +44,7 @@ function terminate(child: ChildProcessWithoutNullStreams, closed: Promise<void>)
     child.stdin.destroy();
     child.stdout.destroy();
     child.stderr.destroy();
+
     return child.pid === undefined ? Promise.resolve() : closed;
   });
 }
@@ -54,9 +59,11 @@ export function runNodeProcess(invocation: P4Invocation): Stream.Stream<P4Proces
   return Stream.callback<P4ProcessEvent, P4SpawnError>((queue) =>
     Effect.gen(function* () {
       let resolveClosed: () => void = () => undefined;
+
       const closed = new Promise<void>((resolve) => {
         resolveClosed = resolve;
       });
+
       const child = yield* Effect.acquireRelease(
         Effect.try({
           try: () => spawn(invocation.executable, [...invocation.args], {
@@ -69,10 +76,13 @@ export function runNodeProcess(invocation: P4Invocation): Stream.Stream<P4Proces
         }),
         (child) => terminate(child, closed),
       );
+
       let stdinFailure: unknown = null;
+
       const fail = (error: P4SpawnError) => {
         Queue.failCauseUnsafe(queue, Cause.fail(error));
       };
+
       child.on('error', (cause) => fail(spawnError(invocation, 'p4 failed.', cause)));
       child.stdout.on('error', (cause) => fail(spawnError(invocation, 'Reading p4 output failed.', cause)));
       child.stderr.on('error', (cause) => fail(spawnError(invocation, 'Reading p4 output failed.', cause)));
@@ -89,10 +99,13 @@ export function runNodeProcess(invocation: P4Invocation): Stream.Stream<P4Proces
       });
       child.on('close', (code) => {
         resolveClosed();
+
         if (code === 0 && stdinFailure !== null) {
           fail(spawnError(invocation, 'Writing p4 input failed.', stdinFailure));
+
           return;
         }
+
         Queue.offerUnsafe(queue, { _tag: 'exit', code });
         Queue.endUnsafe(queue);
       });
@@ -133,12 +146,14 @@ export function runNodeProcessPromise(
       else if (event._tag === 'stderr') stderr.push(event.bytes);
       else exitCode = event.code;
     })));
+
     return {
       stdout: Buffer.concat(stdout).toString('utf8'),
       stderr: Buffer.concat(stderr).toString('utf8'),
       exitCode,
     };
   });
+
   return Effect.runPromise(output, options).catch((error: unknown) => {
     throw options.signal?.aborted ? options.signal.reason : error;
   });

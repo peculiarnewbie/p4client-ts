@@ -28,11 +28,13 @@ describe('error codec', () => {
       category: 'authentication',
       message: error.message,
     });
+
     if (restored instanceof P4CommandError && error instanceof P4CommandError) expect(restored.messages).toEqual(error.messages);
   });
 
   it('keeps messages plain enough to clone', async () => {
     const error = await commandError();
+
     if (!(error instanceof P4CommandError)) throw new Error('Expected a command error.');
     expect(structuredClone(error.messages)).toEqual(error.messages);
   });
@@ -45,6 +47,7 @@ describe('error codec', () => {
     const error = new P4TimeoutError({
       message: 'p4 info timed out after 5ms.', command: 'p4', args: ['info'], timeoutMs: 5, stdout: '', stderr: '',
     });
+
     expect(decodeP4Error(structuredClone(encodeP4Error(error)))).toBeInstanceOf(P4TimeoutError);
   });
 });

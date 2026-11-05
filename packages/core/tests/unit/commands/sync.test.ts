@@ -15,6 +15,7 @@ const TEXT = '//p4ts/main/wire/text.txt';
 /** Replay a fixture's output whatever the invocation, for fixtures recorded without arguments. */
 function output(name: string): Layer.Layer<P4Executor> {
   const [fixture] = fixtures(name);
+
   return scriptedExecutor(() => ({ stdout: fixtureStdout(fixture!), stderr: fixture!.stderr, exitCode: fixture!.exitCode }));
 }
 
@@ -155,9 +156,11 @@ describe('sync', () => {
   it('reports per-file failures printed on stderr', async () => {
     const [rename] = fixtures('synthetic-review-sync-rename');
     const lines = (rename!.stdout ?? '').split('\n').filter(Boolean);
+
     const executor = scriptedExecutor(() => ({
       stdout: `${lines.slice(0, 2).join('\n')}\n`, stderr: `${lines[2]}\n`, exitCode: 1,
     }));
+
     const result = await run(sync, {}, executor, MUTATE);
     expect(result.items).toHaveLength(2);
     expect(result.failures).toHaveLength(1);
@@ -169,6 +172,7 @@ describe('sync', () => {
       stdout: `${JSON.stringify({ generic: 6, severity: 3, data: 'You don\'t have permission for this operation.' })}\n`,
       exitCode: 1,
     })), MUTATE);
+
     expect(error).toMatchObject({ _tag: 'P4CommandError', category: 'permission' });
   });
 });
@@ -187,6 +191,7 @@ describe('sync: buffered and watched parity', () => {
     { name: 'sync-os-error', op: sync, options: { force: true, fileSpec: TEXT }, client: MUTATE },
     { name: 'sync-clobber', op: sync, options: { fileSpec: '//p4ts/main/wire/clobber.txt' }, client: MUTATE },
   ];
+
   for (const testCase of cases) {
     it(`${testCase.name}: the watched events and done equal the run result`, async () => {
       const result = await run(testCase.op, testCase.options, replay(testCase.name), testCase.client);

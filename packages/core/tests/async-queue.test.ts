@@ -43,9 +43,11 @@ describe("createAsyncEventQueue", () => {
     for (const value of expected) {
       queue.push(value);
     }
+
     queue.finish();
 
     const actual: number[] = [];
+
     for await (const value of queue.iterable) {
       actual.push(value);
     }

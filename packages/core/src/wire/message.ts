@@ -77,16 +77,23 @@ export function isMessageRecord(fields: Readonly<Record<string, unknown>>): bool
 
 function numberField(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
+
   if (typeof value === 'string' && /^\d+$/.test(value)) return Number(value);
+
   return null;
 }
 
 function numericSeverity(fields: Readonly<Record<string, unknown>>, code: P4MessageCode | null): number {
   const explicit = numberField(fields.severity);
+
   if (explicit !== null) return explicit;
+
   if (code !== null) return code.severity;
+
   if (fields.code === 'error') return 3;
+
   if (fields.code === 'warning') return 2;
+
   return 1;
 }
 
@@ -97,13 +104,18 @@ function resolveReason(
   text: string,
 ): { reason: P4Reason; reasonSource: P4Message['reasonSource'] } {
   const cataloged = code === null ? null : catalogReason(code, args);
+
   if (cataloged !== null) return { reason: cataloged, reasonSource: 'code' };
   const fromGeneric = generic === null ? undefined : GENERIC_REASONS.get(generic);
+
   if (code === null && fromGeneric === 'empty') {
     const specific = textReason(text);
+
     if (specific !== 'unknown') return { reason: specific, reasonSource: 'text' };
   }
+
   if (fromGeneric !== undefined) return { reason: fromGeneric, reasonSource: 'generic' };
+
   return { reason: textReason(text), reasonSource: 'text' };
 }
 
@@ -114,10 +126,13 @@ function resolveReason(
  */
 function matchPrimaryPart(template: string, text: string): Readonly<Record<string, string>> {
   const lines = text.split('\n');
+
   for (let start = 0; start < lines.length; start += 1) {
     const args = matchTemplate(template, lines.slice(start).join('\n'));
+
     if (args !== null) return args;
   }
+
   return {};
 }
 
@@ -136,6 +151,7 @@ export function toMessage(fields: Readonly<Record<string, unknown>>): P4Message 
   const generic = numberField(fields.generic) ?? code?.generic ?? null;
   const { reason, reasonSource } = resolveReason(code, generic, args, text);
   const severity = severityName(numericSeverity(fields, code));
+
   return {
     text,
     severity,
@@ -164,6 +180,7 @@ export function textMessage(text: string, exitCode: number): P4Message {
   const trimmed = text.trimEnd();
   const reason = textReason(trimmed);
   const severity = severityName(textSeverity(reason, exitCode));
+
   return {
     text: trimmed,
     severity,

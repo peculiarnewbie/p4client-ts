@@ -69,7 +69,9 @@ const ACTIONS: ReadonlySet<string> = new Set<P4ReconcileAction>(['add', 'edit', 
  */
 export function toReconcileCandidate(row: Row): P4ReconcileCandidate {
   const decoded: P4FileAction = action(row.action, row);
+
   if (!ACTIONS.has(decoded)) throw malformed(`Unsupported reconcile action "${decoded}".`, row);
+
   return {
     depotFile: optionalDepotPath(row.depotFile, row),
     clientFile: clientFile(row.clientFile, row),
@@ -92,10 +94,14 @@ export function workspaceRootFileSpec(root: string): string {
 
 function reconcileCommand(options: PreviewReconcileOptions, specs: string[]): P4CommandSpec<P4ReconcileCandidate> {
   const args = ['reconcile', '-n'];
+
   if (options.change !== undefined) args.push('-c', String(options.change));
+
   if (options.useModTime) args.push('-m');
+
   if (options.includeWritable) args.push('-w');
   args.push(...specs);
+
   return { args, format: 'json', decode: toReconcileCandidate };
 }
 
@@ -113,14 +119,17 @@ export const previewReconcile = operation<PreviewReconcileOptions, P4ReconcileCa
   'previewReconcile',
   (options, sink) => Effect.gen(function* () {
     let specs = specList(options.fileSpec);
+
     if (options.fileSpec === undefined && options.workspace !== undefined) {
       if (!options.workspace.root.trim()) return yield* invalid('workspace', 'The workspace has no root.');
       specs = [workspaceRootFileSpec(options.workspace.root)];
     }
+
     const output = yield* drain(sink, streamCommand(reconcileCommand(options, specs)), {
       item: (candidate) => candidate,
       counter: progressCounter(sink, 'files'),
     });
+
     const result: P4ReconcilePreview = {
       items: output.items,
       added: output.items.filter((item) => item.action === 'add' || item.action === 'move/add'),
@@ -128,6 +137,7 @@ export const previewReconcile = operation<PreviewReconcileOptions, P4ReconcileCa
       deleted: output.items.filter((item) => item.action === 'delete' || item.action === 'move/delete'),
       messages: output.messages,
     };
+
     return result;
   }),
   'files',

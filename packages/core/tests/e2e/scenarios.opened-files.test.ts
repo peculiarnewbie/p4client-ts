@@ -22,9 +22,11 @@ describe("p4-ts e2e opened files", () => {
 
   afterEach(async () => {
     await harness.cleanupWorkspace();
+
     if (numberedChange !== null) {
       await harness.deleteChangelistIfEmpty(numberedChange);
     }
+
     await harness.assertCleanWorkspace();
   });
 

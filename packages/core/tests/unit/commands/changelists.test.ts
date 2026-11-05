@@ -47,6 +47,7 @@ describe('listChangelists', () => {
     const page = await run(listChangelists, {
       status: 'submitted', limit: 4, cursor: 4, fileSpec: ['//p4ts/main/wire/...', '//p4ts/main/docs/...'],
     }, replay('changes-multi-scope'));
+
     expect(page.items.map((item) => item.change)).toEqual([4, 2]);
     expect(page.items[0]?.description).toContain('\r\nsecond paragraph');
   });
@@ -55,6 +56,7 @@ describe('listChangelists', () => {
     const page = await run(listChangelists, { status: 'submitted', limit: 2 }, scriptedExecutor(() => ({
       stdout: changeRows(9, 7, 5),
     })));
+
     expect(page.items.map((item) => item.change)).toEqual([9, 7]);
     expect(page).toMatchObject({ hasMore: true, nextCursor: 6 });
   });
@@ -63,6 +65,7 @@ describe('listChangelists', () => {
     const page = await run(listChangelists, { status: 'submitted', limit: 2 }, scriptedExecutor(() => ({
       stdout: changeRows(9, 7),
     })));
+
     expect(page).toMatchObject({ hasMore: false, nextCursor: null });
   });
 
@@ -72,6 +75,7 @@ describe('listChangelists', () => {
         ? '{"action":"edit","change":"default","client":"ws","depotFile":"//d/a.txt","user":"arif"}\n'
         : '{"change":"7","client":"ws","desc":"Pending\\n","status":"pending","time":"1791937503","user":"arif"}\n',
     })));
+
     expect(page.items.map((item) => [item.change, item.isDefault, item.description])).toEqual([
       ['default', true, 'Default changelist'],
       [7, false, 'Pending'],
@@ -95,6 +99,7 @@ describe('listChangelists', () => {
     const page = await run(listChangelists, {
       status: 'pending', limit: 4, user: 'p4ts-e2e', client: 'p4ts_e2e_client', includeDefault: false,
     }, replay('changes-pending'));
+
     expect(page.items.map((item) => [item.change, item.user, item.client])).toEqual([[7, 'p4ts-e2e', 'p4ts_e2e_client']]);
   });
 
@@ -124,9 +129,11 @@ describe('listChangelists', () => {
 
   it('fails with the session reason when the ticket expired', async () => {
     const [expired] = fixtures('changes-ticket-expired');
+
     const error = await failure(listChangelists, { status: 'submitted' }, scriptedExecutor(() => ({
       stdout: expired!.stdout ?? '', stderr: expired!.stderr, exitCode: expired!.exitCode,
     })));
+
     expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'ticket_expired' });
   });
 });
@@ -187,6 +194,7 @@ describe('describeChangelist', () => {
     const described = await run(describeChangelist, { change: 'default' }, scriptedExecutor(() => ({
       stdout: '{"action":"add","change":"default","client":"ws","depotFile":"//d/new.txt","rev":"1","type":"text","user":"arif"}\n',
     })));
+
     expect(described).toMatchObject({ change: 'default', status: 'pending', client: 'ws', user: 'arif' });
     expect(described.files.map((file) => file.depotFile)).toEqual(['//d/new.txt' as never]);
   });

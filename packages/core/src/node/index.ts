@@ -7,8 +7,11 @@ import type { P4InvalidArgumentError } from '../errors.js';
 import type { P4Executor } from '../exec/executor.js';
 
 export * from './executor.js';
+
 export * from './connection.js';
+
 export * from './workspace.js';
+
 export * from './materialize.js';
 
 /**

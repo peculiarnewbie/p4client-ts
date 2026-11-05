@@ -21,14 +21,18 @@ export interface P4TestExecutorOptions {
 }
 
 const encoder = new TextEncoder();
+
 const bytes = (value: string | Uint8Array | undefined): Uint8Array =>
   typeof value === 'string' ? encoder.encode(value) : value ?? new Uint8Array(0);
 
 function chunks(data: Uint8Array, size: number | undefined): Uint8Array[] {
   if (data.length === 0) return [];
+
   if (size === undefined || size <= 0) return [data];
   const result: Uint8Array[] = [];
+
   for (let offset = 0; offset < data.length; offset += size) result.push(data.subarray(offset, offset + size));
+
   return result;
 }
 
@@ -38,6 +42,7 @@ function emit(output: P4ScriptedOutput, options: P4TestExecutorOptions): Stream.
     ...chunks(bytes(output.stderr), undefined).map((chunk) => ({ _tag: 'stderr' as const, bytes: chunk })),
     { _tag: 'exit', code: output.exitCode === undefined ? 0 : output.exitCode },
   ];
+
   return Stream.fromIterable(events);
 }
 
@@ -75,8 +80,10 @@ const VALUE_OPTIONS = new Set(['-z', '-x', '-d', '-r', '-v', '-P', '-L', '-Q']);
 export function commandArgs(args: readonly string[]): string[] {
   const result: string[] = [];
   let index = 0;
+
   for (; index < args.length && args[index]!.startsWith('-'); index += 1) {
     const arg = args[index]!;
+
     if (CONNECTION_OPTIONS.has(arg)) {
       index += 1;
     } else if (VALUE_OPTIONS.has(arg)) {
@@ -86,6 +93,7 @@ export function commandArgs(args: readonly string[]): string[] {
       result.push(arg);
     }
   }
+
   return [...result, ...args.slice(index)];
 }
 
@@ -107,16 +115,21 @@ export function replayExecutor(
 ): Layer.Layer<P4Executor> {
   const list = fixtures instanceof Map ? [...fixtures.values()] : [...fixtures as Iterable<P4WireFixture>];
   const byKey = new Map(list.map((fixture) => [key(fixture.args, fixture.input), fixture]));
+
   return Layer.succeed(P4Executor, {
     run: (invocation) => {
       const fixture = byKey.get(key(invocation.args, invocation.input));
+
       if (fixture !== undefined) {
         return emit({ stdout: fixtureStdout(fixture), stderr: fixture.stderr, exitCode: fixture.exitCode }, options);
       }
+
       const wanted = commandArgs(invocation.args);
+
       const nearest = list
         .map((candidate) => commandArgs(candidate.args))
         .find((args) => args.some((arg) => wanted.includes(arg) && !arg.startsWith('-')));
+
       return Stream.die(new Error(
         `No fixture records ${JSON.stringify(wanted)}${invocation.input ? ' with input' : ''}.`
           + (nearest ? ` Closest: ${JSON.stringify(nearest)}.` : ''),
@@ -136,14 +149,18 @@ export function recordingExecutor(inner: Layer.Layer<P4Executor>): {
   readonly invocations: P4Invocation[];
 } {
   const invocations: P4Invocation[] = [];
+
   const layer = Layer.effect(P4Executor, Effect.gen(function* () {
     const executor = yield* P4Executor;
+
     return {
       run: (invocation: P4Invocation) => Stream.suspend(() => {
         invocations.push(invocation);
+
         return executor.run(invocation);
       }),
     };
   })).pipe(Layer.provide(inner));
+
   return { layer, invocations };
 }

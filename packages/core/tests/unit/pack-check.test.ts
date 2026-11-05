@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { checkPackage } from '../../scripts/pack-check.js';
 
 const scratch: string[] = [];
+
 afterEach(() => {
   for (const directory of scratch.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
@@ -22,14 +23,17 @@ function fixture(files = '["dist"]'): string {
       "./testing": { "import": "./dist/testing/index.js", "types": "./dist/testing/index.d.ts" }
     }
   }`);
+
   return directory;
 }
 
 function build(directory: string, omitted = ''): void {
   for (const entry of ['', 'node/', 'promise/', 'testing/']) {
     mkdirSync(join(directory, 'dist', entry), { recursive: true });
+
     for (const extension of ['js', 'd.ts']) {
       const file = `${entry}index.${extension}`;
+
       if (file !== omitted) writeFileSync(join(directory, 'dist', file), 'export {};\n');
     }
   }

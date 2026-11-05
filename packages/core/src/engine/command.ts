@@ -108,15 +108,18 @@ function invocation(
  */
 function groupDiagnostics(text: string): string[] {
   const groups: string[] = [];
+
   for (const line of text.split(/\r?\n/)) {
     if (!line.trim()) continue;
     const previous = groups.length - 1;
+
     if (/^\s/.test(line) && previous >= 0 && !groups[previous]!.startsWith('{')) {
       groups[previous] = `${groups[previous]}\n${line.trim()}`;
     } else {
       groups.push(line.trim());
     }
   }
+
   return groups;
 }
 
@@ -153,16 +156,22 @@ class OutputReader {
   classify(received: P4Message): P4CommandEvent<never> | null {
     const disposition = dispose(received, this.policy);
     const message: P4Message = { ...received, disposition };
+
     if (disposition === 'fail') {
       this.fatal.push(message);
       this.messages.push(message);
+
       return null;
     }
+
     if (disposition === 'item') {
       this.failures.push(message);
+
       return { _tag: 'failure', message };
     }
+
     this.messages.push(message);
+
     return { _tag: 'message', message };
   }
 
@@ -171,13 +180,17 @@ class OutputReader {
     if (this.retainedStdout.length < 65_536) {
       this.retainedStdout += new TextDecoder('utf-8').decode(bytes.subarray(0, 65_536));
     }
+
     if (this.format === 'plain') {
       this.stdoutChunks.push(bytes);
+
       return [];
     }
+
     if (this.format === 'marshal') return this.marshal.push(bytes).map(fromMarshalRecord);
     const lines = (this.stdoutCarry + this.stdoutDecoder.decode(bytes, { stream: true })).split(/\r?\n/);
     this.stdoutCarry = lines.pop() ?? '';
+
     return lines.flatMap((line) => this.jsonLine(line));
   }
 
@@ -194,6 +207,7 @@ class OutputReader {
    */
   finish(exitCode: number | null): { records: WireRecord[]; stderrMessages: P4Message[] } {
     const records: WireRecord[] = [];
+
     if (exitCode !== null) {
       if (this.format === 'json') {
         records.push(...this.jsonLine(this.stdoutCarry + this.stdoutDecoder.decode()));
@@ -201,20 +215,27 @@ class OutputReader {
         this.marshal.end();
       }
     }
+
     this.stderrText += this.stderrDecoder.decode();
     const groups = groupDiagnostics(this.stderrText);
     const lastLineCut = exitCode === null && !/\n\s*$/.test(this.stderrText);
+
     const stderrMessages = groups.flatMap((line, index) => {
       if (!line.startsWith('{')) return [textMessage(line, exitCode ?? 1)];
       const parsed = readJsonLine(line);
+
       if (!parsed.ok) {
         if (lastLineCut && index === groups.length - 1) return [];
         throw this.parseError('Unable to parse Perforce diagnostics.', line, parsed.detail);
       }
+
       const record = toWireRecord(parsed.fields);
+
       if (record._tag !== 'message') throw this.parseError('Unexpected data on stderr.', line, 'Expected a message.');
+
       return [record.message];
     });
+
     return { records, stderrMessages };
   }
 
@@ -222,26 +243,34 @@ class OutputReader {
     const total = this.stdoutChunks.reduce((size, chunk) => size + chunk.length, 0);
     const bytes = new Uint8Array(total);
     let offset = 0;
+
     for (const chunk of this.stdoutChunks) {
       bytes.set(chunk, offset);
       offset += chunk.length;
     }
+
     return bytes;
   }
 
   /** Fail if a message did, or if the exit is unexplained; otherwise accept. */
   verdict(exitCode: number | null, acceptExit: () => boolean): P4CommandError | null {
     const first = this.fatal[0];
+
     if (first !== undefined) return this.commandError(exitCode, first.text, first);
+
     if (exitCode === 0) return null;
+
     if (exitCode !== null && (this.messages.length > 0 || this.failures.length > 0 || acceptExit())) return null;
+
     const detail = this.stderrText.trim()
       || (exitCode === null ? 'p4 was terminated by a signal.' : 'No diagnostics were reported.');
+
     return this.commandError(exitCode, detail, null);
   }
 
   timeoutError(timeoutMs: number): P4TimeoutError {
     const args = redactArgs(this.run.args);
+
     return new P4TimeoutError({
       message: `${this.run.executable} ${args.join(' ')} timed out after ${timeoutMs}ms.`,
       command: this.run.executable,
@@ -254,6 +283,7 @@ class OutputReader {
 
   private commandError(exitCode: number | null, detail: string, message: P4Message | null): P4CommandError {
     const args = redactArgs(this.run.args);
+
     return new P4CommandError({
       message: `${this.run.executable} ${args.join(' ')} failed (exit ${exitCode ?? 'signal'}): ${detail}`,
       reason: message?.reason ?? 'unknown',
@@ -269,7 +299,9 @@ class OutputReader {
   private jsonLine(line: string): WireRecord[] {
     if (!line.trim()) return [];
     const parsed = readJsonLine(line);
+
     if (!parsed.ok) throw this.parseError('Unable to parse tagged Perforce JSON output.', line, parsed.detail);
+
     return [toWireRecord(parsed.fields)];
   }
 }
@@ -284,6 +316,7 @@ function attempt<A>(reader: OutputReader, f: () => A): Effect.Effect<A, P4ParseE
           ? reader.parseError(error.message, error.line, error.detail)
           : error;
       }
+
       throw error;
     },
   });
@@ -299,8 +332,10 @@ function processStream<A>(
     const options = yield* P4Config;
     const executor = yield* P4Executor;
     const run = invocation(options, format, spec);
+
     if (checkCommand(run.args, run.input).mutates && !options.allowMutation) {
       const args = redactArgs(run.args);
+
       return yield* new P4ReadOnlyError({
         message: `Refusing to run ${run.executable} ${args.join(' ')}: it can change the server or a workspace, `
           + 'and this client was not created with allowMutation: true.',
@@ -308,25 +343,32 @@ function processStream<A>(
         args,
       });
     }
+
     const reader = new OutputReader(run, format, spec.policy);
+
     const events = executor.run(run).pipe(
       Stream.mapEffect((event: P4ProcessEvent): Effect.Effect<Array<P4CommandEvent<A>>, P4Error> => {
         if (event._tag === 'stderr') {
           return Effect.sync((): Array<P4CommandEvent<A>> => {
             reader.stderr(event.bytes);
+
             return [];
           });
         }
+
         if (event._tag === 'stdout') {
           return attempt(reader, () => reader.stdout(event.bytes)).pipe(
             Effect.flatMap((records) => onRecords(reader, records)),
           );
         }
+
         return onExit(reader, event.code);
       }),
       Stream.flattenIterable,
     );
+
     const timeoutMs = options.timeoutMs;
+
     return timeoutMs === undefined
       ? events
       : events.pipe(Stream.interruptWhen(
@@ -350,11 +392,15 @@ export function streamCommand<A>(spec: P4CommandSpec<A>): Stream.Stream<P4Comman
     attempt(reader, () => records.flatMap((record): Array<P4CommandEvent<A>> => {
       if (record._tag === 'message') {
         const event = reader.classify(record.message);
+
         return event === null ? [] : [event];
       }
+
       const value = spec.decode(record.fields);
+
       return value === null ? [] : [{ _tag: 'data', value }];
     }));
+
   return processStream<A>(
     spec.format,
     spec,
@@ -362,12 +408,17 @@ export function streamCommand<A>(spec: P4CommandSpec<A>): Stream.Stream<P4Comman
     (reader, code) => Effect.gen(function* () {
       const { records, stderrMessages } = yield* attempt(reader, () => reader.finish(code));
       const events = yield* toEvents(reader, records);
+
       for (const message of stderrMessages) {
         const event = reader.classify(message);
+
         if (event !== null) events.push(event);
       }
+
       const error = reader.verdict(code, () => false);
+
       if (error !== null) return yield* error;
+
       return events;
     }),
   );
@@ -390,6 +441,7 @@ export function runCommand<A>(spec: P4CommandSpec<A>): Effect.Effect<P4CommandOu
       if (event._tag === 'data') output.items.push(event.value);
       else if (event._tag === 'message') output.messages.push(event.message);
       else output.failures.push(event.message);
+
       return output;
     },
   );
@@ -410,11 +462,14 @@ export function runPlainCommand(spec: P4PlainCommandSpec): Effect.Effect<P4Plain
     () => Effect.succeed([]),
     (reader, code) => Effect.gen(function* () {
       const { stderrMessages } = yield* attempt(reader, () => reader.finish(code));
+
       for (const message of stderrMessages) reader.classify(message);
       const stdout = reader.plainStdout();
       const error = reader.verdict(code, () => code !== null && (spec.acceptExit?.(code, stdout) ?? false));
+
       if (error !== null) return yield* error;
       const output: P4PlainOutput = { stdout, exitCode: code ?? 0, messages: reader.messages, failures: reader.failures };
+
       return [{ _tag: 'data', value: output }];
     }),
   ).pipe(

@@ -67,28 +67,36 @@ function toRevertedFile(row: Row): P4RevertedFile {
 function runRevert(options: RevertOptions, preview: boolean, sink: P4Sink<P4RevertedFile>) {
   return Effect.gen(function* () {
     const args = ['revert'];
+
     if (preview) args.push('-n');
+
     if (options.change !== undefined) {
       args.push('-c', options.change === 'default' ? 'default' : String(yield* requirePositive(options.change, 'change')));
     }
+
     const specs = specList(options.fileSpec);
+
     if (specs.length === 0) {
       if (options.change === undefined) {
         return yield* invalid('fileSpec', 'revert needs fileSpec, change, or both; it never reverts everything implicitly.');
       }
+
       specs.push('//...');
     }
+
     const output = yield* drain(sink, streamCommand({
       args: [...args, ...specs],
       format: 'json',
       policy: REVERT_POLICY,
       decode: toRevertedFile,
     }), { item: (file) => file, counter: progressCounter(sink, 'files') });
+
     const result: P4RevertResult = {
       items: output.items,
       failures: output.failures.map(itemFailure),
       messages: output.messages,
     };
+
     return result;
   });
 }

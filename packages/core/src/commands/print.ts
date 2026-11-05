@@ -126,10 +126,13 @@ function toPrintRecord(row: Row): PrintRecord | null {
       },
     };
   }
+
   if (row.code === 'text' || row.code === 'binary') {
     if (!(row.data instanceof Uint8Array)) throw malformed('print content is not bytes.', { code: row.code });
+
     return { _tag: 'chunk', data: row.data };
   }
+
   return null;
 }
 
@@ -148,10 +151,12 @@ function concat(chunks: readonly Uint8Array[]): Uint8Array {
   if (chunks.length === 1) return chunks[0]!;
   const bytes = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.length, 0));
   let offset = 0;
+
   for (const chunk of chunks) {
     bytes.set(chunk, offset);
     offset += chunk.length;
   }
+
   return bytes;
 }
 
@@ -168,24 +173,31 @@ interface PrintHandlers {
 function printFiles(spec: P4CommandSpec<PrintRecord>, handlers: PrintHandlers): Effect.Effect<void, P4Error, P4Context> {
   return Effect.suspend(() => {
     let current: { info: P4PrintedFileInfo; chunks: Uint8Array[] } | null = null;
+
     const flush = Effect.suspend(() => {
       if (current === null) return Effect.void;
       const item = { file: current.info, content: concat(current.chunks) };
       current = null;
+
       return handlers.file(item);
     });
+
     return streamCommand(spec).pipe(
       Stream.runForEach((event): Effect.Effect<void, P4Error> => {
         if (event._tag === 'message') return handlers.message(event.message);
+
         if (event._tag === 'failure') return Effect.andThen(flush, handlers.failure(event.message));
         const record = event.value;
+
         if (record._tag === 'stat') {
           return Effect.andThen(flush, Effect.sync(() => {
             current = { info: record.info, chunks: [] };
           }));
         }
+
         if (current === null) return Effect.fail(malformed('print sent content before naming its file.', null));
         current.chunks.push(record.data);
+
         return Effect.void;
       }),
       Effect.andThen(flush),
@@ -227,11 +239,15 @@ export const printFile = operation<PrintFileOptions, never, P4PrintedFile>('prin
       failure: () => Effect.void,
     });
     const printed = files[0];
+
     if (printed === undefined) return yield* malformed(`print printed nothing for ${spec}.`, messages);
+
     if (files.length > 1) {
       return yield* invalid('file', `${spec} matches ${files.length} files; printFile prints one. Use printBatch.`);
     }
+
     yield* advance(counter, printed);
+
     return {
       ...printed.file,
       content: printed.content,
@@ -256,17 +272,22 @@ export const printFile = operation<PrintFileOptions, never, P4PrintedFile>('prin
 export const printBatch = operation<PrintBatchOptions, P4PrintedBatchItem, P4PrintBatchResult>('printBatch', (options, sink) =>
   Effect.gen(function* () {
     if (options.fileSpec.length === 0) return yield* invalid('fileSpec', 'printBatch needs at least one file.');
+
     if (options.fileSpec.some((file) => /[\r\n]/.test(file) || file.length === 0)) {
       return yield* invalid('fileSpec', 'File specs must be non-empty and on one line.');
     }
+
     const total = options.fileSpec.length;
     const counter = progressCounter(sink, 'files', total);
     const keepContent = options.keepContent ?? true;
     const result: P4PrintBatchResult = { items: [], printed: [], messages: [], failures: [] };
+
     const step = () => Effect.suspend(() => {
       if (counter.snapshot().completed >= total) counter.expect(null);
+
       return Effect.void;
     });
+
     yield* printFiles({
       args: printArgs(options.keywords),
       globalArgs: ['-x', '-'],
@@ -277,6 +298,7 @@ export const printBatch = operation<PrintBatchOptions, P4PrintedBatchItem, P4Pri
     }, {
       file: (item) => Effect.sync(() => {
         result.printed.push(item.file);
+
         if (keepContent) result.items.push(item);
       }).pipe(
         Effect.andThen(sink.item(item)),
@@ -290,6 +312,7 @@ export const printBatch = operation<PrintBatchOptions, P4PrintedBatchItem, P4Pri
         Effect.andThen(counter.advance(1)),
       ),
     });
+
     return result;
   }), 'files');
 
@@ -306,8 +329,11 @@ export const printBatch = operation<PrintBatchOptions, P4PrintedBatchItem, P4Pri
  */
 export function printedText(printed: { readonly content: Uint8Array }): string {
   const bytes = printed.content;
+
   if (bytes[0] === 0xff && bytes[1] === 0xfe) return utf16(bytes, true);
+
   if (bytes[0] === 0xfe && bytes[1] === 0xff) return utf16(bytes, false);
+
   return new TextDecoder('utf-8').decode(bytes);
 }
 
@@ -315,10 +341,13 @@ export function printedText(printed: { readonly content: Uint8Array }): string {
 function utf16(bytes: Uint8Array, littleEndian: boolean): string {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const units: number[] = [];
+
   for (let offset = 2; offset + 1 < bytes.length; offset += 2) units.push(view.getUint16(offset, littleEndian));
   let text = '';
+
   for (let start = 0; start < units.length; start += 8192) {
     text += String.fromCharCode(...units.slice(start, start + 8192));
   }
+
   return text;
 }

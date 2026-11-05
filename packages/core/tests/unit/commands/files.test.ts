@@ -136,6 +136,7 @@ describe('listDepotFiles', () => {
     const files = await run(listDepotFiles, { depotPath: '//d', deletedFiles: 'only', limit: 1 }, scriptedExecutor(() => ({
       stdout: fileRows(['//d/a', 'delete'], ['//d/b', 'edit'], ['//d/c', 'move/delete']),
     })));
+
     expect(files.items.map((file) => file.name)).toEqual(['a']);
     expect(files.hasMore).toBe(true);
   });
@@ -185,15 +186,18 @@ describe('listFiles', () => {
     const files = await run(listFiles, { fileSpec: '//d/...', limit: 2 }, scriptedExecutor(() => ({
       stdout: fileRows(['//d/a', 'add'], ['//d/b', 'add'], ['//d/c', 'add']),
     })));
+
     expect(files.items.map((file) => file.name)).toEqual(['a', 'b']);
     expect(files.hasMore).toBe(true);
   });
 
   it('still fails when the session is not usable', async () => {
     const [expired] = fixtures('changes-ticket-expired');
+
     const error = await failure(listFiles, { fileSpec: ['//d/a', '//d/b'] }, scriptedExecutor(() => ({
       stdout: expired!.stdout ?? '', stderr: expired!.stderr, exitCode: expired!.exitCode,
     })));
+
     expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'ticket_expired' });
   });
 });
@@ -212,6 +216,7 @@ describe('listDepotFilesAtChange', () => {
     const events = await watch(listDepotFilesAtChange, { file: '//d/...', change: 9, limit: 1 }, scriptedExecutor(() => ({
       stdout: fileRows(['//d/a', 'add'], ['//d/b', 'edit']),
     })));
+
     expect(events.filter((event) => event._tag === 'item')).toHaveLength(1);
     expect(events.filter((event) => event._tag === 'progress').at(-1)).toMatchObject({
       progress: { completed: 2, total: 1, unit: 'files' },
@@ -224,6 +229,7 @@ describe('listDepotFilesAtChange', () => {
     const error = await failure(listDepotFilesAtChange, { file: '//d/...', change: 9, limit: 1 }, scriptedExecutor(() => ({
       stdout: '{"depotFile":"//d/a","rev":"1","change":"4","action":"add"}\n',
     })));
+
     expect(error).toMatchObject({ _tag: 'P4ParseError' });
   });
 
@@ -276,9 +282,11 @@ describe('statFiles', () => {
 
   it('fails on a record without a depot path', async () => {
     const [capture] = fixtures('fstat-fields-without-path');
+
     const error = await failure(statFiles, { fileSpec: '//p4ts/main/wire/text.txt' }, scriptedExecutor(() => ({
       stdout: capture!.stdout ?? '',
     })));
+
     expect(error).toMatchObject({ _tag: 'P4ParseError' });
   });
 
@@ -306,6 +314,7 @@ describe('statFiles', () => {
     const stats = await run(statFiles, {
       fileSpec: ['//p4ts/main/wire/text.txt#999999', '//p4ts/main/docs/guide/getting-started.md'],
     }, replay('fstat-mixed-revision'));
+
     expect(stats.items.map((stat) => String(stat.depotFile))).toEqual(['//p4ts/main/docs/guide/getting-started.md']);
     expect(reasons(stats.failures)).toEqual(['unknown_revision']);
   });
@@ -357,6 +366,7 @@ describe('whereFiles', () => {
     const mapped = await run(whereFiles, { fileSpec: '//d/x/a.txt' }, scriptedExecutor(() => ({
       stdout: '{"depotFile":"-//d/x/a.txt","clientFile":"-//ws/x/a.txt","path":"-C:\\\\ws\\\\x\\\\a.txt","unmap":""}\n',
     })));
+
     expect(mapped.items).toEqual([{
       depotFile: '//d/x/a.txt' as never, clientFile: '//ws/x/a.txt' as never, localFile: 'C:\\ws\\x\\a.txt' as never, isExcluded: true,
     }]);
@@ -394,12 +404,15 @@ describe('code-less studio missing-file diagnostics', () => {
     const file = '//depot/valid.txt';
     const missing = '//depot/__missing__.txt';
     const diagnostic = JSON.stringify({ data: `${missing} - no such file(s).\n`, generic: 17, severity: 2 });
+
     const listed = await run(listFiles, { fileSpec: [file, missing] }, scriptedExecutor(() => ({
       stdout: fileRows([file, 'add']) + '\n' + diagnostic + '\n',
     })));
+
     const stats = await run(statFiles, { fileSpec: [file, missing] }, scriptedExecutor(() => ({
       stdout: JSON.stringify({ depotFile: file, headRev: '1', headAction: 'add', headType: 'text' }) + '\n' + diagnostic + '\n',
     })));
+
     for (const result of [listed, stats]) {
       expect(result.items).toHaveLength(1);
       expect(result.failures[0]).toMatchObject({ spec: missing, reason: 'no_such_file' });

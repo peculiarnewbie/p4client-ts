@@ -113,6 +113,7 @@ describe('diffFile', () => {
     const diff = await run(diffFile, {
       file: TEXT, changelistStatus: 'shelved', shelvedChange: 7, action: 'edit', revision: 1,
     }, replay('diff2-shelved'));
+
     expect(diff).toMatchObject({ fromRevision: 1, toRevision: '@=7', additions: 1, deletions: 1 });
     expect(parseUnifiedDiff(diff.unifiedDiff)).toEqual([{
       oldStart: 1, oldLines: 2, newStart: 1, newLines: 2, lines: [' one', '-two', '+changed line', ''],
@@ -123,6 +124,7 @@ describe('diffFile', () => {
     const error = await failure(diffFile, {
       file: TEXT, fromRevision: 'invalid', toRevision: 1,
     }, replay('diff2-bad-revision-plain'));
+
     expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'invalid_revision' });
   });
 
@@ -137,6 +139,7 @@ describe('diffFile', () => {
     const diff = await run(diffFile, { file: '//d/a.uasset', allowBinary: false, type: 'binary+F' }, scriptedExecutor(() => {
       throw new Error('p4 must not run');
     }));
+
     expect(diff).toMatchObject({ isBinary: true, unifiedDiff: '', source: 'workspace', messages: [] });
   });
 
@@ -160,6 +163,7 @@ describe('diff2 output formats', () => {
     const decode = (row: Readonly<Record<string, unknown>>) => row;
     const json = await collect({ args, format: 'json', decode }, 'diff2-normal-json');
     const marshal = await collect({ args, format: 'marshal', decode }, 'diff2-normal-marshal');
+
     for (const output of [json, marshal]) {
       expect(output.items).toHaveLength(1);
       expect(output.items[0]).toMatchObject({ status: 'content', rev: '1', rev2: '2' });
@@ -171,6 +175,7 @@ describe('diff2 output formats', () => {
     const output = await collect({
       args: ['diff2', '-du', '//p4ts/main/missing.txt#1', '//p4ts/main/missing.txt#2'], format: 'json', decode: (row) => row,
     }, 'diff2-empty');
+
     expect([output.items, output.messages.map((message) => message.reason)]).toEqual([[], ['no_such_file']]);
   });
 });
@@ -180,6 +185,7 @@ describe('getChangelistDiffSummary', () => {
     const summary = await run(getChangelistDiffSummary, {
       change: 'default', includeLineCounts: true,
     }, replay('opened-default', 'diff-opened-json'));
+
     expect(summary.changelist).toMatchObject({ change: 'default', status: 'pending', user: 'p4ts-e2e' });
     expect(summary.files).toEqual([{
       depotFile: TEXT,
@@ -197,6 +203,7 @@ describe('getChangelistDiffSummary', () => {
     const summary = await run(getChangelistDiffSummary, {
       change: 7, shelved: true, includeLineCounts: true,
     }, replay('describe-shelved', 'diff2-shelved'));
+
     expect(summary.changelist.status).toBe('shelved');
     expect(summary.files.map((file) => [String(file.depotFile), file.additions, file.deletions, file.localFile])).toEqual([
       [TEXT, 1, 1, null],
@@ -207,6 +214,7 @@ describe('getChangelistDiffSummary', () => {
     const events = await watch(getChangelistDiffSummary, { change: 6 }, replay('describe-submitted'));
     expect(events.map((event) => event._tag)).toEqual(['item', 'progress', 'done']);
     const done = events.at(-1);
+
     if (done?._tag !== 'done') throw new Error('expected done');
     expect(done.result.files).toEqual([{
       depotFile: '//p4ts/main/wire/deleted.txt',

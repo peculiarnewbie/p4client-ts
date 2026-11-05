@@ -37,6 +37,7 @@ export class P4E2EHarness {
    */
   createWorkspaceClient(cwd: string, client?: string): P4PromiseClient {
     const config = this.config;
+
     const options: P4ClientOptions = {
       executable: config.p4Executable,
       cwd,
@@ -45,26 +46,34 @@ export class P4E2EHarness {
         client: client ?? config.client, isolated: true },
       allowMutation: true,
     };
+
     const executor = Layer.succeed(P4Executor, {
       run: (invocation) => Stream.unwrap(Effect.sync(() => {
         this.assertIsolated(invocation);
+
         return runNodeProcess(invocation);
       })),
     });
+
     const derive = (patch: P4ClientOptions) => P4.layer.pipe(
       Layer.provideMerge(Layer.merge(configLayer(patch), executor)),
     );
+
     const created = createP4ClientFromLayer(derive(options), derive, options);
     this._clients.push(created);
+
     return created;
   }
 
   private assertIsolated(invocation: P4Invocation): void {
     const args = invocation.args;
+
     const ports = args.flatMap((arg, index) => arg === '-p' ? [args[index + 1]] :
       arg.startsWith('-p') ? [arg.slice(2)] : []);
+
     const batches = args.flatMap((arg, index) => arg === '-x' ? [index] :
       arg.startsWith('-x') ? [-1] : []);
+
     if (ports.length !== 1 || ports[0] !== this.config.p4Port ||
       this.config.p4Port !== process.env.P4_TS_E2E_ISOLATED_PORT ||
       !/^127\.0\.0\.1:\d+$/.test(this.config.p4Port) ||
@@ -79,9 +88,11 @@ export class P4E2EHarness {
 
   getSeedSentinel(relativePath: string): FixtureSentinel {
     const sentinel = this.fixture.sentinels.find((entry) => entry.relativePath === relativePath);
+
     if (!sentinel) {
       throw new Error(`Unknown fixture sentinel: ${relativePath}`);
     }
+
     return sentinel;
   }
 
@@ -118,11 +129,13 @@ export class P4E2EHarness {
 
   async assertCleanWorkspace() {
     const openedFiles = await this.client.listOpenedFiles({});
+
     if (openedFiles.items.length > 0) {
       throw new Error(`Workspace is not clean; found ${openedFiles.items.length} opened file(s).`);
     }
 
     const reconcilePreview = await this.client.previewReconcile({ fileSpec: "..." });
+
     if (
       reconcilePreview.added.length > 0 ||
       reconcilePreview.edited.length > 0 ||
@@ -193,6 +206,7 @@ export class P4E2EHarness {
   async seedRenameChain(): Promise<{ sourceDepotFile: string; targetDepotFile: string }> {
     const sourceDepotFile = `${this.config.stream}/${RENAME_SOURCE_PATH}`;
     const targetDepotFile = `${this.config.stream}/${RENAME_TARGET_PATH}`;
+
     if (await this.depotFileExists(targetDepotFile)) {
       return { sourceDepotFile, targetDepotFile };
     }
@@ -223,6 +237,7 @@ export class P4E2EHarness {
     const result = await this.run(["-Mj", "-z", "tag", "files", depotFile], {
       allowNonZeroExit: true
     });
+
     return result.stdout.includes("\"depotFile\"");
   }
 
@@ -258,6 +273,7 @@ export class P4E2EHarness {
   async run(args: string[], options: { input?: string; allowNonZeroExit?: boolean } = {}) {
     const connection = { port: this.config.p4Port, user: this.config.user,
       client: this.config.client, isolated: true };
+
     const invocation: P4Invocation = {
       executable: this.config.p4Executable,
       args: [...globalArgs(connection), ...args],
@@ -265,11 +281,14 @@ export class P4E2EHarness {
       env: { ...this.config.p4Env, ...connectionEnv(connection) },
       input: options.input,
     };
+
     this.assertIsolated(invocation);
     const result = await Effect.runPromise(captureProcess(invocation));
+
     if (result.exitCode !== 0 && !options.allowNonZeroExit) {
       throw new Error(`Fixture command failed: ${args.join(' ')}\n${result.stderr}${result.stdout}`);
     }
+
     return result;
   }
 }

@@ -60,9 +60,11 @@ export function stripMessageSubject(text: string): string {
  */
 export function textReason(text: string): P4Reason {
   const subject = stripMessageSubject(text.trim());
+
   for (const [pattern, reason] of TEXT_REASONS) {
     if (pattern.test(subject)) return reason;
   }
+
   return 'unknown';
 }
 
@@ -91,6 +93,7 @@ export function textSeverity(reason: P4Reason, exitCode: number): number {
  */
 export function textSubject(text: string): Readonly<Record<string, string>> {
   const match = /^(?<file>(?:\/\/|[A-Za-z]:[\\/]|\/)[^\r\n]*?) - /.exec(text);
+
   return match?.groups?.file === undefined ? {} : { file: match.groups.file };
 }
 
@@ -102,6 +105,7 @@ export function textSubject(text: string): Readonly<Record<string, string>> {
  */
 export function createdChangeNumber(text: string): number | null {
   const match = /^Change (\d+) created\b/m.exec(text);
+
   return match?.[1] === undefined ? null : Number(match[1]);
 }
 
@@ -117,5 +121,6 @@ export function openHolder(text: string): { readonly file: string; readonly hold
   const match = /^(?<file>(?:\/\/|[A-Za-z]:[\\/]|\/)[^\r\n]*?) - (?:also opened|locked) by (?<holder>\S+)$/.exec(text.trim());
   const file = match?.groups?.file;
   const holder = match?.groups?.holder;
+
   return file === undefined || holder === undefined ? null : { file, holder };
 }

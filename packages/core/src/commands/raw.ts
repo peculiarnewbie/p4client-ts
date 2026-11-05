@@ -55,6 +55,7 @@ function taggedProgram<A>(
   return operation<TaggedCommandOptions, A, P4TaggedResult<A>>(name, (options, sink) =>
     Effect.gen(function* () {
       if (options.args.length === 0) return yield* invalid('args', 'args must name a command.');
+
       const output = yield* drain(sink, streamCommand<A>({
         args: options.args,
         input: options.input,
@@ -65,11 +66,13 @@ function taggedProgram<A>(
         item: (record) => record,
         counter: progressCounter(sink, 'records'),
       });
+
       const result: P4TaggedResult<A> = {
         items: output.items,
         messages: output.messages,
         failures: output.failures.map(itemFailure),
       };
+
       return result;
     }));
 }

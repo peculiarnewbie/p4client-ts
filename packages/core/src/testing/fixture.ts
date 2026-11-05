@@ -41,6 +41,7 @@ const readMode = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct(
  */
 export function fixtureStdout(fixture: P4WireFixture): Uint8Array {
   if (fixture.stdoutBase64) return new Uint8Array(Buffer.from(fixture.stdoutBase64, 'base64'));
+
   return new TextEncoder().encode(fixture.stdout ?? '');
 }
 
@@ -64,11 +65,14 @@ export function readWireFixture(path: string): P4WireFixture {
  */
 export function readWireFixtures(directory: string): ReadonlyMap<string, P4WireFixture> {
   const fixtures = new Map<string, P4WireFixture>();
+
   for (const name of readdirSync(directory).sort()) {
     if (!name.endsWith('.json') || name.startsWith('_')) continue;
     const text = readFileSync(join(directory, name), 'utf8');
+
     if (Option.isNone(readMode(text))) continue;
     fixtures.set(name.slice(0, -'.json'.length), decodeFixture(text));
   }
+
   return fixtures;
 }

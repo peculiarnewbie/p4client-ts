@@ -22,6 +22,7 @@ describe("p4-ts e2e typed mutations", () => {
 
   beforeAll(async () => {
     await harness.validateSeededWorkspace();
+
     // An exclusive (+l) asset, as in an Unreal project, held by a second workspace.
     if (!(await harness.depotFileExists(EXCLUSIVE_DEPOT))) {
       mkdirSync(harness.getPath("exclusive"), { recursive: true });
@@ -29,6 +30,7 @@ describe("p4-ts e2e typed mutations", () => {
       await harness.run(["add", "-t", "binary+l", harness.getPath(EXCLUSIVE_PATH)]);
       await harness.run(["submit", "-d", "p4-ts E2E exclusive asset"]);
     }
+
     await harness.run(["client", "-i"], {
       input: [
         `Client: ${SECOND_CLIENT}`,
@@ -52,6 +54,7 @@ describe("p4-ts e2e typed mutations", () => {
       await harness.run(["revert", "-c", String(created), "//..."], { allowNonZeroExit: true });
       await harness.deleteChangelistIfEmpty(created);
     }
+
     await harness.cleanupWorkspace();
     await harness.assertCleanWorkspace();
   });
@@ -106,6 +109,7 @@ describe("p4-ts e2e typed mutations", () => {
 
     const preview = await harness.client.previewOpenForEdit({ fileSpec: EXCLUSIVE_DEPOT });
     const attempt = await harness.client.openForEdit({ fileSpec: EXCLUSIVE_DEPOT });
+
     for (const result of [preview, attempt]) {
       expect(result.items).toEqual([]);
       expect(result.failures).toMatchObject([{
@@ -114,12 +118,14 @@ describe("p4-ts e2e typed mutations", () => {
         heldBy: [`${config.user}@${SECOND_CLIENT}`],
       }]);
     }
+
     expect((await harness.client.listOpenedFiles({ fileSpec: EXCLUSIVE_DEPOT })).items).toEqual([]);
     await second.revert({ fileSpec: EXCLUSIVE_DEPOT });
   });
 
   it("refuses every mutation on a read-only client, creating nothing", async () => {
     const readOnly = harness.client.with({ allowMutation: false });
+
     try {
       const before = await readOnly.listChangelists({ status: "pending", includeDefault: false });
       await expect(readOnly.createChange({ description: "must not exist" })).rejects.toMatchObject({ _tag: "P4ReadOnlyError" });
@@ -146,6 +152,7 @@ describe("p4-ts e2e typed mutations", () => {
     const fileSpec = files.items.map((file) => ({ depotFile: file.depotFile, revision: file.revision ?? 1 }));
     const batched = mkdtempSync(join(tmpdir(), "p4ts-e2e-batch-"));
     const each = mkdtempSync(join(tmpdir(), "p4ts-e2e-each-"));
+
     try {
       const fromBatch = await harness.client.materializeDepotFiles({ fileSpec, directory: batched, maxFiles: 2, batch: true });
       const perFile = await harness.client.materializeDepotFiles({ fileSpec, directory: each, maxFiles: 2 });
@@ -153,6 +160,7 @@ describe("p4-ts e2e typed mutations", () => {
         ["lock.uasset", "batch"],
         ["config.json", "print"],
       ]);
+
       for (const [index, item] of fromBatch.items.entries()) {
         expect(readFileSync(item.localPath)).toEqual(readFileSync(perFile.items[index]!.localPath));
       }

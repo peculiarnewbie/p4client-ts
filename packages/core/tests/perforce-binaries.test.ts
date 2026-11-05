@@ -14,8 +14,10 @@ describe('E2E binary cache', () => {
   let cacheDirectory: string;
   let cachedPath: string;
   let downloads: string[];
+
   const download = (bytes: Uint8Array) => async (url: string) => {
     downloads.push(url);
+
     return bytes;
   };
 

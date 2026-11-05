@@ -24,5 +24,6 @@ const SUBJECT_ARGS = ['file', 'arg', 'path', 'depotFile', 'clientFile', 'argc'] 
  */
 export function itemFailure(message: P4Message): P4ItemFailure {
   const spec = SUBJECT_ARGS.map((key) => message.args[key]).find((value) => value !== undefined && value !== '');
+
   return { spec: spec ?? null, reason: message.reason, message };
 }

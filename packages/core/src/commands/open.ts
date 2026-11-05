@@ -98,17 +98,22 @@ function toFileOpen(row: Row): P4FileOpen {
 /** Validate an optional `-c` changelist. */
 function changeArgs(change: number | 'default' | undefined) {
   if (change === undefined) return Effect.succeed([]);
+
   if (change === 'default') return Effect.succeed(['-c', 'default']);
+
   return Effect.map(requirePositive(change, 'change'), (value) => ['-c', String(value)]);
 }
 
 /** Attach each holder notice to the exclusive-open failure for the same file. */
 function withHolders(failures: P4ItemFailure[], messages: P4Message[]): P4OpenFailure[] {
   const holders = new Map<string, string[]>();
+
   for (const message of messages) {
     const held = openHolder(message.text);
+
     if (held !== null) holders.set(held.file, [...(holders.get(held.file) ?? []), held.holder]);
   }
+
   return failures.map((failure) => ({
     ...failure,
     heldBy: failure.reason === 'exclusive_open' && failure.spec !== null ? holders.get(failure.spec) ?? [] : [],
@@ -118,18 +123,22 @@ function withHolders(failures: P4ItemFailure[], messages: P4Message[]): P4OpenFa
 function runOpen(command: 'edit' | 'add', args: string[], fileSpec: FileSpecs, sink: P4Sink<P4FileOpen>) {
   return Effect.gen(function* () {
     const specs = specList(fileSpec);
+
     if (specs.length === 0) return yield* invalid('fileSpec', `${command} needs at least one file.`);
+
     const output = yield* drain(sink, streamCommand({
       args: [command, ...args, ...specs],
       format: 'json',
       policy: OPEN_POLICY,
       decode: toFileOpen,
     }), { item: (file) => file, counter: progressCounter(sink, 'files') });
+
     const result: P4OpenResult = {
       items: output.items,
       failures: withHolders(output.failures.map(itemFailure), output.messages),
       messages: output.messages,
     };
+
     return result;
   });
 }
@@ -141,10 +150,12 @@ function editArgs(options: OpenForEditOptions, preview: boolean) {
 function addArgs(options: OpenForAddOptions, preview: boolean) {
   return Effect.gen(function* () {
     const args = [...(preview ? ['-n'] : []), ...yield* changeArgs(options.change)];
+
     if (options.type !== undefined) {
       if (!/^[A-Za-z0-9+]+$/.test(options.type)) return yield* invalid('type', `Invalid file type "${options.type}".`);
       args.push('-t', options.type);
     }
+
     return args;
   });
 }

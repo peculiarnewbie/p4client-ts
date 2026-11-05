@@ -157,29 +157,37 @@ export function watchOperation<O, I, R>(
 ): Stream.Stream<P4OperationEvent<I, R>, P4Error, P4Context> {
   return Stream.callback<P4OperationEvent<I, R>, P4Error, P4Context>((queue) => Effect.gen(function* () {
     const started = yield* Clock.currentTimeMillis;
+
     let latest: P4ProgressUpdate = {
       completed: 0, total: null, unit: op.progressUnit, bytesCompleted: null, bytesTotal: null,
     };
+
     let reportedAt = started;
     const emit = (event: P4OperationEvent<I, R>) => Queue.offer(queue, event).pipe(Effect.asVoid);
+
     const report = (update: P4ProgressUpdate) => Effect.flatMap(Clock.currentTimeMillis, (now) => {
       latest = update;
       reportedAt = now;
+
       return emit({ _tag: 'progress', progress: { ...update, elapsedMs: now - started } });
     });
+
     const sink: P4Sink<I> = {
       item: (item) => emit({ _tag: 'item', item }),
       message: (message) => emit({ _tag: 'message', message }),
       failure: (failure) => emit({ _tag: 'failure', failure }),
       progress: report,
     };
+
     const interval = watch.progressIntervalMs;
+
     if (interval !== undefined && interval > 0) {
       yield* Effect.forkScoped(Effect.forever(Effect.sleep(interval).pipe(
         Effect.andThen(Clock.currentTimeMillis),
         Effect.flatMap((now) => (now - reportedAt >= interval ? report(latest) : Effect.void)),
       )));
     }
+
     // A failure must reach the queue explicitly: left in the callback's effect, it hangs the stream.
     yield* op.program(options, sink).pipe(
       Effect.flatMap((result) => emit({ _tag: 'done', result })),
@@ -215,6 +223,7 @@ export function progressCounter(
   total: number | null = null,
 ): P4ProgressCounter {
   let state: P4ProgressUpdate = { completed: 0, total, unit, bytesCompleted: null, bytesTotal: null };
+
   return {
     expect: (expected, bytesTotal) => {
       state = { ...state, total: expected, bytesTotal: bytesTotal === undefined ? state.bytesTotal : bytesTotal };
@@ -225,6 +234,7 @@ export function progressCounter(
         completed: state.completed + count,
         bytesCompleted: bytes === undefined ? state.bytesCompleted : (state.bytesCompleted ?? 0) + bytes,
       };
+
       return sink.progress(state);
     }),
     snapshot: () => state,
@@ -257,20 +267,26 @@ export function drain<A, I>(
 ): Effect.Effect<P4CommandOutput<A>, P4Error, P4Context> {
   return Effect.suspend(() => {
     const output: P4CommandOutput<A> = { items: [], messages: [], failures: [] };
+
     return events.pipe(
       Stream.runForEach((event): Effect.Effect<void> => {
         if (event._tag === 'message') {
           output.messages.push(event.message);
+
           return sink.message(event.message);
         }
+
         if (event._tag === 'failure') {
           output.failures.push(event.message);
+
           return sink.failure(itemFailure(event.message));
         }
+
         output.items.push(event.value);
         options.inspect?.(event.value);
         const item = options.item?.(event.value) ?? null;
         const reported = item === null ? Effect.void : sink.item(item);
+
         return options.counter === undefined ? reported : Effect.andThen(reported, options.counter.advance());
       }),
       Effect.as(output),

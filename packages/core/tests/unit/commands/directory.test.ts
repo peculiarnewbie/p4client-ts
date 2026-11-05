@@ -92,6 +92,7 @@ describe('listStreams', () => {
     const streams = await run(listStreams, {}, scriptedExecutor(() => ({
       stdout: '{"Stream":"//p4ts/dev","Parent":"//p4ts/main","Type":"development"}\n',
     })));
+
     expect(streams.items[0]).toMatchObject({ name: 'dev', parent: path('//p4ts/main'), options: [], description: null });
   });
 

@@ -40,6 +40,7 @@ export function isBinaryP4Type(type: string | null | undefined): boolean {
   if (!type) return false;
   const normalized = type.toLowerCase();
   const base = normalized.split('+', 1)[0] ?? normalized;
+
   return NON_TEXT_BASE_TYPES.has(base) || base.includes('binary') || base.includes('xb');
 }
 
@@ -56,8 +57,10 @@ export function summarizeUnifiedDiff(diff: string): { additions: number; deletio
   let deletions = 0;
   let oldRemaining = 0;
   let newRemaining = 0;
+
   for (const line of diff.split(/\r?\n/)) {
     const header = HUNK_HEADER.exec(line);
+
     if (header) {
       oldRemaining = Number(header[2] ?? 1);
       newRemaining = Number(header[4] ?? 1);
@@ -72,6 +75,7 @@ export function summarizeUnifiedDiff(diff: string): { additions: number; deletio
       newRemaining = Math.max(0, newRemaining - 1);
     }
   }
+
   return { additions, deletions };
 }
 
@@ -84,8 +88,10 @@ export function summarizeUnifiedDiff(diff: string): { additions: number; deletio
 export function parseUnifiedDiff(diff: string): P4DiffHunk[] {
   const hunks: P4DiffHunk[] = [];
   let current: P4DiffHunk | null = null;
+
   for (const line of diff.split(/\r?\n/)) {
     const header = HUNK_HEADER.exec(line);
+
     if (header) {
       if (current) hunks.push(current);
       current = {
@@ -99,7 +105,9 @@ export function parseUnifiedDiff(diff: string): P4DiffHunk[] {
       current.lines.push(line);
     }
   }
+
   if (current) hunks.push(current);
+
   return hunks;
 }
 
@@ -122,8 +130,11 @@ export function hasUnifiedHunk(diff: string): boolean {
  */
 export function fileAtRevision(file: string, revision: P4RevisionSpec): string {
   const text = String(revision);
+
   if (text.toLowerCase() === 'none') return `${file}#none`;
+
   if (text.startsWith('#') || text.startsWith('@')) return `${file}${text}`;
+
   return `${file}#${text}`;
 }
 
@@ -145,12 +156,17 @@ export function submittedDiffRevisions(file: {
 }): P4DiffRevisions | null {
   const action = file.action.toLowerCase();
   const revision = file.revision;
+
   if (action === 'add' || action === 'move/add' || action === 'branch') {
     return { fromRevision: 'none', toRevision: revision ?? 'have' };
   }
+
   if (revision === null || revision <= 1) return null;
+
   if (action === 'delete' || action === 'move/delete') return { fromRevision: revision - 1, toRevision: 'none' };
+
   if (action === 'edit' || action === 'integrate') return { fromRevision: revision - 1, toRevision: revision };
+
   return null;
 }
 
@@ -173,7 +189,9 @@ export function shelvedDiffRevisions(file: {
   const action = file.action.toLowerCase();
   const revision = file.revision;
   const shelf = `@=${file.shelvedChange}`;
+
   if (action === 'add' || action === 'move/add') return { fromRevision: 'none', toRevision: shelf };
+
   if (action === 'delete' || action === 'move/delete') {
     if (revision === null) {
       throw new P4InvalidArgumentError({
@@ -181,8 +199,10 @@ export function shelvedDiffRevisions(file: {
         option: 'revision',
       });
     }
+
     return { fromRevision: revision, toRevision: 'none' };
   }
+
   if (action === 'edit' || action === 'integrate' || action === 'branch') {
     if (revision === null || revision < 1) {
       throw new P4InvalidArgumentError({
@@ -190,8 +210,10 @@ export function shelvedDiffRevisions(file: {
         option: 'revision',
       });
     }
+
     return { fromRevision: revision, toRevision: shelf };
   }
+
   throw new P4InvalidArgumentError({
     message: `Unable to infer revisions for shelved ${action} file ${file.depotFile}.`,
     option: 'action',
@@ -257,17 +279,21 @@ function depotPlan(options: P4DiffPlanOptions, revisions: P4DiffRevisions, flags
 export function resolveDiffPlan(options: P4DiffPlanOptions): P4DiffPlan {
   const flags = options.diffFlags ?? ['-du'];
   const { fromRevision, toRevision } = options;
+
   if ((fromRevision === undefined) !== (toRevision === undefined)) {
     throw new P4InvalidArgumentError({
       message: 'A depot-to-depot diff needs both fromRevision and toRevision.',
       option: fromRevision === undefined ? 'fromRevision' : 'toRevision',
     });
   }
+
   if (fromRevision !== undefined && toRevision !== undefined) {
     return depotPlan(options, { fromRevision, toRevision }, flags);
   }
+
   const action = options.action ?? 'edit';
   const revision = options.revision ?? null;
+
   if (options.changelistStatus === 'shelved') {
     if (options.shelvedChange === undefined) {
       throw new P4InvalidArgumentError({
@@ -275,20 +301,25 @@ export function resolveDiffPlan(options: P4DiffPlanOptions): P4DiffPlan {
         option: 'shelvedChange',
       });
     }
+
     return depotPlan(options, shelvedDiffRevisions({
       depotFile: options.file, action, revision, shelvedChange: options.shelvedChange,
     }), flags);
   }
+
   if (options.changelistStatus === 'submitted') {
     const revisions = submittedDiffRevisions({ action, revision });
+
     if (revisions === null) {
       throw new P4InvalidArgumentError({
         message: `Unable to infer revisions for submitted ${action} file ${options.file}#${String(revision)}.`,
         option: 'revision',
       });
     }
+
     return depotPlan(options, revisions, flags);
   }
+
   return {
     source: 'workspace',
     command: 'diff',

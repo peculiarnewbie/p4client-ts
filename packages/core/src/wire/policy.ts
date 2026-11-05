@@ -67,8 +67,12 @@ export function dispose(
   policy: P4MessagePolicy = {},
 ): P4Disposition {
   const override = policy[message.reason];
+
   if (override !== undefined) return override;
+
   if (ALWAYS_FAIL.has(message.reason) || isErrorSeverity(message.severity)) return 'fail';
+
   if (EMPTY_REASONS.has(message.reason) || message.code?.generic === 0x11) return 'empty';
+
   return 'notice';
 }

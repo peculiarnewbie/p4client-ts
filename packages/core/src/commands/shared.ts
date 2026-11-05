@@ -63,6 +63,7 @@ export function malformed(message: string, row: unknown): P4ParseError {
 export function text(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
+
   return trimmed.length > 0 ? trimmed : null;
 }
 
@@ -111,6 +112,7 @@ export function optionalAction(value: unknown, row: unknown): P4FileAction | nul
 /** A local path field, or `null` when absent. */
 export function localPath(value: unknown, row: unknown): P4LocalPath | null {
   const trimmed = text(value);
+
   return trimmed === null ? null : decodeField(P4LocalPathSchema, trimmed, row);
 }
 
@@ -120,7 +122,9 @@ export function localPath(value: unknown, row: unknown): P4LocalPath | null {
  */
 export function clientFile(value: unknown, row: unknown): P4ClientPath | P4LocalPath | null {
   const trimmed = text(value);
+
   if (trimmed === null) return null;
+
   return trimmed.startsWith('//') ? decodeField(P4ClientPathSchema, trimmed, row) : localPath(trimmed, row);
 }
 
@@ -132,23 +136,28 @@ export function clientFile(value: unknown, row: unknown): P4ClientPath | P4Local
  */
 export function isoFromSeconds(value: unknown): string | null {
   const seconds = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
+
   if (!Number.isFinite(seconds)) return null;
   const date = new Date(seconds * 1000);
+
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 
 /** The file specs as a list. */
 export function specList(specs: FileSpecs | undefined): string[] {
   if (specs === undefined) return [];
+
   return typeof specs === 'string' ? [specs] : [...specs];
 }
 
 /** Every `name{index}` field of a record, by index, in index order (as `describe` and `filelog` print them). */
 export function indexes(row: Row, field: string): number[] {
   const pattern = new RegExp(`^${field}(\\d+)$`);
+
   return Object.keys(row)
     .flatMap((key) => {
       const match = pattern.exec(key);
+
       return match?.[1] === undefined ? [] : [Number(match[1])];
     })
     .sort((left, right) => left - right);
@@ -198,4 +207,5 @@ export function invalid(option: string, message: string): Effect.Effect<never, P
 }
 
 export { itemFailure } from '../engine/failure.js';
+
 export type { P4ItemFailure } from '../engine/failure.js';

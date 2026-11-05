@@ -54,9 +54,11 @@ function readP4vFile(name: string, parse: (xml: string) => P4Settings): Effect.E
 /** `p4 set -q` in the configured directory, ignoring the configured connection it would otherwise report. */
 const p4Settings: Effect.Effect<P4Settings, P4Error, P4Executor | P4Config> = Effect.gen(function* () {
   const options = yield* P4Config;
+
   const output = yield* runPlainCommand({ args: ['set', '-q'] }).pipe(
     Effect.provideService(P4Config, { ...options, connection: {} }),
   );
+
   return parseP4SetOutput(new TextDecoder().decode(output.stdout));
 });
 
@@ -76,17 +78,22 @@ export function resolveConnection(
   return Effect.gen(function* () {
     let settings: P4Settings = {};
     const sources: Partial<Record<P4SettingField, P4SettingsSource>> = {};
+
     for (const source of options.sources ?? DEFAULT_SOURCES) {
       const found = source === 'p4'
         ? yield* p4Settings
         : source === 'p4v-app-settings'
           ? yield* readP4vFile('ApplicationSettings.xml', parseP4vApplicationSettingsXml)
           : yield* readP4vFile('connectionmap.xml', parseP4vConnectionMapXml);
+
       const merged = fillMissing(settings, found);
       settings = merged.settings;
+
       for (const field of merged.contributed) sources[field] = source;
+
       if (settings.port && settings.user && settings.client) break;
     }
+
     return { connection: toConnection(settings), sources };
   });
 }
@@ -126,16 +133,21 @@ export const setPersistentWorkspace = operation<SetPersistentWorkspaceOptions, n
   'setPersistentWorkspace',
   (options, sink) => Effect.gen(function* () {
     const client = options.client.trim();
+
     if (client === '' || client !== options.client || /[\s=#@%*]|^-|\.\.\./.test(client)) {
       return yield* invalid('client', `"${options.client}" is not a workspace name.`);
     }
+
     const config = yield* P4Config;
+
     // The configured connection becomes -c/-p/-u and isolation redirects P4ENVIRO; neither may
     // decide where the persistent setting is written.
     const output = yield* runPlainCommand({ args: ['set', `P4CLIENT=${client}`] }).pipe(
       Effect.provideService(P4Config, { ...config, connection: {} }),
     );
+
     for (const message of output.messages) yield* sink.message(message);
+
     return { client, messages: output.messages };
   }),
 );

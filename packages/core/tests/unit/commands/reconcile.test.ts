@@ -109,6 +109,7 @@ describe('previewReconcile', () => {
         + row({ action: 'move/delete', depotFile: '//d/old.txt', clientFile: '/ws/old.txt' })
         + row({ action: 'delete', depotFile: '//d/gone.txt', clientFile: '/ws/gone.txt', change: 'default' }),
     })));
+
     expect(result.added.map((item) => item.action)).toEqual(['move/add']);
     expect(result.deleted.map((item) => [item.action, item.change])).toEqual([['move/delete', null], ['delete', 'default']]);
   });
@@ -117,6 +118,7 @@ describe('previewReconcile', () => {
     const error = await failure(previewReconcile, {}, scriptedExecutor(() => ({
       stdout: row({ action: 'integrate', depotFile: '//d/a.txt' }),
     })));
+
     expect(error).toMatchObject({ _tag: 'P4ParseError' });
   });
 
@@ -126,6 +128,7 @@ describe('previewReconcile', () => {
         + `${JSON.stringify({ severity: 3, generic: 33, data: 'open for read: /ws/b.txt: Permission denied.' })}\n`,
       exitCode: 1,
     })));
+
     expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'fault' });
   });
 
@@ -151,6 +154,7 @@ describe('reconcile: buffered and watched parity', () => {
       executor: () => withoutProgressFlag('reconcile-progress-large'),
     },
   ];
+
   for (const testCase of cases) {
     it(`${testCase.name}: the watched events and done equal the run result`, async () => {
       const result = await run(previewReconcile, testCase.options, testCase.executor());

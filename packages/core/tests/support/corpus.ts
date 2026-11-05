@@ -21,6 +21,7 @@ function jsonRecords(text: string, source: CorpusRecord['source']): CorpusRecord
   return text.split(/\r?\n/).flatMap((line) => {
     if (!line.trim().startsWith('{')) return [];
     const result = readJsonLine(line);
+
     return result.ok ? [{ source, record: toWireRecord(result.fields) }] : [];
   });
 }
@@ -34,5 +35,6 @@ export function corpusRecords(fixture: P4WireFixture): CorpusRecord[] {
     ? createMarshalDecoder().push(fixtureStdout(fixture))
       .map((record) => ({ source: 'stdout' as const, record: fromMarshalRecord(record) }))
     : jsonRecords(fixture.stdout ?? '', 'stdout');
+
   return [...stdout, ...jsonRecords(fixture.stderr, 'stderr')];
 }

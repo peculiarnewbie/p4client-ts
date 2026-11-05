@@ -64,6 +64,7 @@ describe("p4-ts e2e baseline", () => {
 
   it('rejects a derived connection outside the isolated port before spawning', async () => {
     const redirected = harness.client.with({ connection: { port: '127.0.0.1:1' } });
+
     try {
       await expect(redirected.getEnvironment({})).rejects.toThrow(
         'Refusing command outside the disposable localhost server.',
@@ -78,6 +79,7 @@ describe("p4-ts e2e baseline", () => {
       `${config.stream}/src/app/config.json`,
       `${config.stream}/src/app/config.json#999999`,
     ] });
+
     expect(printed.items).toHaveLength(1);
     expect(printed.items[0]?.content.length).toBeGreaterThan(0);
     expect(printed.failures).toHaveLength(1);

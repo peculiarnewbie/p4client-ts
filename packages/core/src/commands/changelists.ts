@@ -96,8 +96,10 @@ interface P4NumberedChangelist extends P4Changelist {
 function toChangelist(status: P4ChangelistStatus) {
   return (row: Row): P4NumberedChangelist | null => {
     const number = change(row.change, row);
+
     // `changes` does not list the default changelist; it is synthesized from `opened`.
     if (number === 'default') return null;
+
     return {
       change: number,
       status,
@@ -114,9 +116,11 @@ function toChangelist(status: P4ChangelistStatus) {
 function scopedSpecs(specs: string[], cursor: number | undefined) {
   if (cursor === undefined) return Effect.succeed(specs);
   const scopes = specs.length === 0 ? ['//...'] : specs;
+
   if (scopes.some((spec) => /[#@]/.test(spec))) {
     return invalid('cursor', 'cursor requires file specs without a revision specifier.');
   }
+
   return Effect.succeed(scopes.map((spec) => `${spec}@${cursor}`));
 }
 
@@ -131,19 +135,26 @@ export const listChangelists = operation<ListChangelistsOptions, P4Changelist, P
     const cursor = options.cursor === undefined ? undefined : yield* requireNonNegative(options.cursor, 'cursor');
     const specs = yield* scopedSpecs(specList(options.fileSpec), cursor);
     const args = ['changes', '-s', options.status];
+
     if (options.fullDescriptions ?? true) args.push('-l');
+
     if (limit !== null) args.push('-m', String(limit + 1));
+
     if (options.user !== undefined) args.push('-u', options.user);
+
     if (options.client !== undefined) args.push('-c', options.client);
     args.push(...specs);
 
     const counter = progressCounter(sink, 'changes', limit);
+
     const output = yield* drain(sink, streamCommand({ args, format: 'json', decode: toChangelist(options.status) }), {
       counter,
     });
+
     // Several scopes can each report the same changelist.
     const unique = [...new Map(output.items.map((item) => [item.change, item])).values()]
       .sort((left, right) => right.change - left.change);
+
     const hasMore = limit !== null && unique.length > limit;
     const numbered = limit === null ? unique : unique.slice(0, limit);
     const oldest = numbered.at(-1)?.change ?? null;
@@ -151,10 +162,13 @@ export const listChangelists = operation<ListChangelistsOptions, P4Changelist, P
     const messages = [...output.messages];
 
     const wantsDefault = options.status === 'pending' && (options.includeDefault ?? true) && cursor === undefined;
+
     if (wantsDefault) {
       const { description: found, opened } = yield* readDefaultChangelist(options);
       messages.push(...found.messages);
+
       for (const message of found.messages) yield* sink.message(message);
+
       if (opened.length > 0) {
         page.unshift({
           change: 'default',
@@ -167,6 +181,7 @@ export const listChangelists = operation<ListChangelistsOptions, P4Changelist, P
         });
       }
     }
+
     for (const item of page) yield* sink.item(item);
 
     return {

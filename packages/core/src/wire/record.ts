@@ -16,7 +16,9 @@ export type JsonLineResult =
 const decodeObject = Schema.decodeUnknownExit(
   Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
 );
+
 const textDecoder = new TextDecoder('utf-8');
+
 /** `-G` records whose `data` is file content, which must stay as bytes. */
 const CONTENT_CODES = new Set(['text', 'binary']);
 
@@ -28,6 +30,7 @@ const CONTENT_CODES = new Set(['text', 'binary']);
  */
 export function readJsonLine(line: string): JsonLineResult {
   const exit = decodeObject(line);
+
   return Exit.isSuccess(exit)
     ? { ok: true, fields: exit.value }
     : { ok: false, detail: 'Expected one JSON object per line.' };
@@ -56,10 +59,12 @@ export function fromMarshalRecord(record: MarshalRecord): WireRecord {
   const code = record.code instanceof Uint8Array ? textDecoder.decode(record.code) : null;
   const keepBytes = code !== null && CONTENT_CODES.has(code);
   const fields: Record<string, unknown> = {};
+
   for (const [key, value] of Object.entries(record)) {
     fields[key] = value instanceof Uint8Array && !(keepBytes && key === 'data')
       ? textDecoder.decode(value)
       : value;
   }
+
   return toWireRecord(fields);
 }

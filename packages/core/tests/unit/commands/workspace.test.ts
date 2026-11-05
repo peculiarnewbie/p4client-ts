@@ -50,6 +50,7 @@ describe('getEnvironment', () => {
     const environment = await run(getEnvironment, {}, scriptedExecutor(() => ({
       stdout: '{"userName":"arif","clientName":"*unknown*"}\n',
     })));
+
     expect(environment).toMatchObject({ user: 'arif', client: null, port: null });
   });
 });

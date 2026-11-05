@@ -22,6 +22,7 @@ export interface P4MessageCode {
  */
 export function decodeMessageCode(code0: number): P4MessageCode {
   const code = code0 >>> 0;
+
   return {
     severity: code >>> 28,
     argc: (code >>> 24) & 0x0f,
@@ -140,6 +141,8 @@ export const GENERIC_REASONS: ReadonlyMap<number, P4Reason> = new Map<number, P4
  */
 export function catalogReason(code: P4MessageCode, args: Readonly<Record<string, string>>): P4Reason | null {
   const entry = MESSAGE_CATALOG.get(messageKey(code));
+
   if (entry === undefined) return null;
+
   return entry.refine ? entry.refine(args) : entry.reason;
 }

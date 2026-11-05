@@ -42,18 +42,24 @@ export interface P4CommandCheck {
 function subcommandIndex(args: readonly string[]): number {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
+
     if (!arg.startsWith('-')) return index;
+
     if (GLOBAL_VALUE_OPTIONS.has(arg)) index += 1;
   }
+
   return -1;
 }
 
 function argumentFile(args: readonly string[], end: number): string | null {
   for (let index = 0; index < end; index += 1) {
     if (args[index] === '-x') return args[index + 1] ?? null;
+
     if (args[index]!.startsWith('-x') && args[index] !== '-x') return args[index]!.slice(2);
+
     if (GLOBAL_VALUE_OPTIONS.has(args[index]!)) index += 1;
   }
+
   return null;
 }
 
@@ -69,19 +75,29 @@ function argumentFile(args: readonly string[], end: number): string | null {
  */
 export function checkCommand(args: readonly string[], input?: string): P4CommandCheck {
   const index = subcommandIndex(args);
+
   if (index < 0) return { command: null, mutates: false };
   const command = args[index]!;
   const file = argumentFile(args, index);
+
   if (file !== null && file !== '-') return { command, mutates: true };
   const stdinArgs = file === '-' ? (input ?? '').split(/\r?\n/).filter((line) => line !== '') : [];
+
   // Arguments from stdin are appended; they may add a file, but never an option.
   if (stdinArgs.some((arg) => arg.startsWith('-'))) return { command, mutates: true };
   const options = args.slice(index + 1).filter((arg) => arg.startsWith('-'));
+
   if (READ_COMMANDS.has(command)) return { command, mutates: false };
+
   if (SPEC_COMMANDS.has(command)) return { command, mutates: !options.includes('-o') };
+
   if (PREVIEW_COMMANDS.has(command)) return { command, mutates: !options.includes('-n') };
+
   if (command === 'property') return { command, mutates: !options.includes('-l') };
+
   if (command === 'set') return { command, mutates: args.slice(index + 1).some((arg) => arg.includes('=')) };
+
   if (command === 'login') return { command, mutates: !options.includes('-s') };
+
   return { command, mutates: true };
 }

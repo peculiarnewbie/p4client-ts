@@ -67,25 +67,30 @@ function makeP4Service(config: P4ResolvedOptions, executor: P4Executor['Service'
       Effect.provideService(P4Config, Option.getOrElse(current, () => config)),
       Effect.provideService(P4Executor, executor),
     ));
+
   const provideStream = <A, E>(stream: Stream.Stream<A, E, P4Config | P4Executor>) =>
     Stream.unwrap(Effect.map(Effect.serviceOption(P4Config), (current) => stream.pipe(
       Stream.provideService(P4Config, Option.getOrElse(current, () => config)),
       Stream.provideService(P4Executor, executor),
     )));
+
   const methods: Record<string, unknown> = {};
   const watch: Record<string, unknown> = {};
+
   for (const [name, entry] of Object.entries(ops)) {
     const op = entry as P4Operation<unknown, unknown, unknown>;
     methods[name] = (options: unknown) => provide(runOperation(op, options));
     watch[name] = (options: unknown, settings?: P4WatchOptions) =>
       provideStream(watchOperation(op, options, settings));
   }
+
   methods.runTagged = (options: RunTaggedOptions) => provide(runOperation(
     options.schema === undefined ? ops.runTagged : taggedOperation(options.schema), options,
   ));
   watch.runTagged = (options: RunTaggedOptions, settings?: P4WatchOptions) => provideStream(watchOperation(
     options.schema === undefined ? ops.runTagged : taggedOperation(options.schema), options, settings,
   ));
+
   return Object.freeze({ ...methods, watch: Object.freeze(watch) }) as P4Service;
 }
 
@@ -106,9 +111,11 @@ export class P4 extends Context.Service<P4, P4Service>()('p4client-ts/P4') {
     return Layer.sync(P4, () => {
       const methods: Record<string, unknown> = {};
       const watch: Record<string, unknown> = {};
+
       for (const name of Object.keys(ops)) {
         const method = (partialOps as Record<string, unknown>)[name] as
           ((options: unknown) => Effect.Effect<unknown, unknown>) | undefined;
+
         const run = method ?? (() => Effect.die(new Error(`Unmocked P4 operation: ${name}`)));
         methods[name] = run;
         watch[name] = (partialOps.watch as Record<string, unknown> | undefined)?.[name] ??
@@ -116,6 +123,7 @@ export class P4 extends Context.Service<P4, P4Service>()('p4client-ts/P4') {
             Effect.map((result) => ({ _tag: 'done' as const, result })),
           )));
       }
+
       return Object.freeze({ ...methods, watch: Object.freeze(watch) }) as P4Service;
     });
   }

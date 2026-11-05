@@ -18,6 +18,7 @@ export const SETTING_FIELDS: readonly P4SettingField[] = ['port', 'user', 'clien
 
 function set(settings: P4Settings, field: P4SettingField, value: string | undefined): void {
   const trimmed = value?.trim();
+
   if (trimmed) settings[field] = trimmed;
 }
 
@@ -29,12 +30,16 @@ function set(settings: P4Settings, field: P4SettingField, value: string | undefi
  */
 export function parseP4SetOutput(output: string): P4Settings {
   const settings: P4Settings = {};
+
   for (const line of output.split(/\r?\n/)) {
     const separator = line.indexOf('=');
+
     if (separator <= 0) continue;
     const field = VARIABLES[line.slice(0, separator).trim()];
+
     if (field !== undefined) set(settings, field, line.slice(separator + 1));
   }
+
   return settings;
 }
 
@@ -50,6 +55,7 @@ export function parseP4vConnectionString(connection: string): P4Settings {
   set(settings, 'port', port);
   set(settings, 'user', user);
   set(settings, 'client', client);
+
   return settings;
 }
 
@@ -75,13 +81,17 @@ function bestCandidate(candidates: readonly P4Settings[]): P4Settings {
 export function parseP4vApplicationSettingsXml(xml: string): P4Settings {
   const candidates: P4Settings[] = [];
   const last = /<String\s+varName="LastConnection">([\s\S]*?)<\/String>/i.exec(xml)?.[1];
+
   if (last !== undefined) candidates.push(parseP4vConnectionString(last));
+
   for (const list of ['OpenWorkspaces', 'RecentConnections']) {
     const section = new RegExp(`<StringList\\s+varName="${list}">([\\s\\S]*?)<\\/StringList>`, 'i').exec(xml)?.[1];
+
     for (const match of section?.matchAll(/<String>([\s\S]*?)<\/String>/gi) ?? []) {
       candidates.push(parseP4vConnectionString(match[1] ?? ''));
     }
   }
+
   return bestCandidate(candidates.filter(hasAny));
 }
 
@@ -93,10 +103,12 @@ export function parseP4vApplicationSettingsXml(xml: string): P4Settings {
  */
 export function parseP4vConnectionMapXml(xml: string): P4Settings {
   const entry = /<ConnectionMap\b[\s\S]*?<\/ConnectionMap>/i.exec(xml)?.[0];
+
   if (entry === undefined) return {};
   const settings: P4Settings = {};
   set(settings, 'port', /<P4Port>([\s\S]*?)<\/P4Port>/i.exec(entry)?.[1]);
   set(settings, 'user', /<User>([\s\S]*?)<\/User>/i.exec(entry)?.[1]);
+
   return settings;
 }
 
@@ -113,13 +125,16 @@ export function fillMissing(
 ): { readonly settings: P4Settings; readonly contributed: P4SettingField[] } {
   const settings: P4Settings = { ...primary };
   const contributed: P4SettingField[] = [];
+
   for (const field of SETTING_FIELDS) {
     const value = fallback[field];
+
     if (settings[field] === undefined && value !== undefined) {
       settings[field] = value;
       contributed.push(field);
     }
   }
+
   return { settings, contributed };
 }
 

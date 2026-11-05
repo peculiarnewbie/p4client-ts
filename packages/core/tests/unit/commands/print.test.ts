@@ -123,12 +123,14 @@ describe('printBatch', () => {
     const events = await watch(printBatch, { fileSpec: files }, replayExecutor(fixtures('print-marshal-batch'), {
       chunkSize: 7,
     }));
+
     expect(events.filter((event) => event._tag !== 'progress').map((event) => event._tag === 'item'
       ? String(event.item.file.depotFile)
       : event._tag)).toEqual([
       '//p4ts/main/wire/text.txt', '//p4ts/main/wire/full.uasset', 'failure', '//p4ts/main/wire/wide.txt', 'done',
     ]);
     const done = events.at(-1);
+
     if (done?._tag !== 'done') throw new Error('Expected done.');
     expect(events.flatMap((event) => event._tag === 'failure' ? [event.failure] : []))
       .toEqual(done.result.failures);
@@ -142,6 +144,7 @@ describe('printBatch', () => {
   it('leaves content to the events when asked not to keep it', async () => {
     const events = await watch(printBatch, { fileSpec: files, keepContent: false }, replay('print-marshal-batch'));
     const done = events.at(-1);
+
     if (done?._tag !== 'done') throw new Error('Expected a result.');
     expect(done.result.items).toEqual([]);
     expect(done.result.printed.map((file) => file.depotFile)).toEqual([
@@ -155,6 +158,7 @@ describe('printBatch', () => {
     const none = scriptedExecutor(() => {
       throw new Error('p4 must not run');
     });
+
     expect(await failure(printBatch, { fileSpec: [] }, none)).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'fileSpec' });
     expect(await failure(printBatch, { fileSpec: ['//d/a\n-o'] }, none)).toMatchObject({ _tag: 'P4InvalidArgumentError' });
   });
@@ -179,23 +183,29 @@ describe('print output formats', () => {
 it('associates code-less marshal missing-file warnings with the requested spec', async () => {
   const file = '//p4ts/main/wire/text.txt';
   const missing = '//p4ts/main/__missing__.txt#3';
+
   const marshalString = (value: string): Buffer => {
     const bytes = Buffer.from(value, 'utf8');
     const prefix = Buffer.alloc(5);
     prefix[0] = 's'.charCodeAt(0);
     prefix.writeInt32LE(bytes.length, 1);
+
     return Buffer.concat([prefix, bytes]);
   };
+
   const message = Buffer.concat([
     Buffer.from('{'),
     ...Object.entries({ code: 'error', data: `${missing} - no such file(s).\n`, generic: '17', severity: '2' })
       .flatMap(([key, value]) => [marshalString(key), marshalString(value)]),
     Buffer.from('0'),
   ]);
+
   const valid = Buffer.from(fixtures('print-marshal-text')[0]!.stdoutBase64!, 'base64');
+
   const result = await run(printBatch, { fileSpec: [file, missing] }, scriptedExecutor(() => ({
     stdout: Buffer.concat([valid, message]),
   }), { chunkSize: 3 }));
+
   expect(result.items).toHaveLength(1);
   expect(result.failures[0]).toMatchObject({ spec: missing, reason: 'no_such_file' });
   expect(result.messages).toEqual([]);

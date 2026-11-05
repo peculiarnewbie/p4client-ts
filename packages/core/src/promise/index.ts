@@ -27,6 +27,7 @@ import type { P4InvalidArgumentError } from '../errors.js';
 
 const nodeOps = { findWorkspaceForPath, materializeDepotFiles, setPersistentWorkspace };
 const promiseOps = { ...ops, ...nodeOps };
+
 /** Neutral and Node operations exposed as Promise and watch methods. */
 export type P4PromiseOps = P4Ops & {
   readonly findWorkspaceForPath: typeof findWorkspaceForPath;
@@ -125,44 +126,57 @@ export function createP4ClientFromLayer(
   function execute<A, E>(effect: Effect.Effect<A, E, P4 | P4Context>, signal?: AbortSignal,
     controller = new AbortController()): Promise<A> {
     if (disposed) return Promise.reject(new Error('P4 client disposed.'));
+
     if (signal?.aborted) return Promise.reject(signal.reason);
     const abort = () => controller.abort(signal?.reason);
     signal?.addEventListener('abort', abort, { once: true });
+
     const result = runtime.runPromise(effect, { signal: controller.signal }).catch((error: unknown) => {
       throw controller.signal.aborted ? controller.signal.reason : error;
     }).finally(() => {
       signal?.removeEventListener('abort', abort);
       active.delete(controller);
     });
+
     active.set(controller, result);
+
     return result;
   }
 
   const methods: Record<string, unknown> = {};
   const watched: Record<string, unknown> = {};
+
   type Run = (options: unknown) => Effect.Effect<unknown, unknown>;
+
   type Watch = (options: unknown, settings?: P4WatchOptions) =>
     Stream.Stream<P4OperationEvent<unknown, unknown>, unknown>;
+
   for (const name of Object.keys(promiseOps) as Array<keyof P4PromiseOps>) {
     const nodeOp = nodeOps[name as keyof typeof nodeOps] as P4Operation<unknown, unknown, unknown> | undefined;
+
     const run = (input: unknown): Effect.Effect<unknown, unknown, P4 | P4Context> => nodeOp === undefined
       ? Effect.flatMap(P4, (service) => (service[name as keyof P4Ops] as Run)(input))
       : runOperation(nodeOp, input);
+
     const watch = (input: P4PromiseWatchOptions):
       Stream.Stream<P4OperationEvent<unknown, unknown>, unknown, P4 | P4Context> => nodeOp === undefined
       ? Stream.unwrap(Effect.map(P4, (service) =>
         (service.watch[name as keyof P4Ops] as Watch)(input, input)))
       : watchOperation(nodeOp, input, input);
+
     methods[name] = (input: P4PromiseOptions) => execute(run(input), input.signal);
     watched[name] = (input: P4PromiseWatchOptions): P4WatchHandle<unknown, unknown> => {
       const queue = createAsyncEventQueue<P4OperationEvent<unknown, unknown>>(
         input.maxBuffered === undefined ? {} : { maxBuffered: input.maxBuffered },
       );
+
       const controller = new AbortController();
       let final: { result: unknown } | undefined;
+
       const result = execute(watch(input).pipe(
         Stream.runForEach((event) => Effect.sync(() => {
           queue.push(event);
+
           if (event._tag === 'done') final = { result: event.result };
         })),
         Effect.flatMap(() => final === undefined
@@ -170,31 +184,38 @@ export function createP4ClientFromLayer(
           : Effect.succeed(final.result)),
       ), input.signal, controller).then((value) => {
         queue.finish();
+
         return value;
       }, (error: unknown) => {
         queue.fail(error);
         throw error;
       });
+
       // Watching events alone must not cause an unhandled result rejection.
       void result.catch(() => {});
       let consumed = false;
+
       const events: AsyncIterable<P4OperationEvent<unknown, unknown>> = {
         [Symbol.asyncIterator]() {
           if (consumed) throw new Error('P4 watch events can only be consumed once.');
           consumed = true;
           const iterator = queue.iterable[Symbol.asyncIterator]();
+
           return {
             next: () => iterator.next(),
             return: () => {
               if (final === undefined) controller.abort(new Error('P4 watch iteration ended early.'));
+
               return iterator.return!();
             },
           };
         },
       };
+
       return { events, result };
     };
   }
+
   return Object.freeze({
     ...methods,
     resolveConnection: (input: ResolveConnectionOptions & P4PromiseOptions) =>
@@ -205,13 +226,16 @@ export function createP4ClientFromLayer(
     with: (patch: P4ClientOptions) => {
       if (disposed) throw new Error('P4 client disposed.');
       const merged = mergeOptions(config, patch);
+
       return createP4ClientFromLayer(derive(merged), derive, merged);
     },
     dispose: () => {
       if (disposal !== undefined) return disposal;
       disposed = true;
+
       for (const controller of active.keys()) controller.abort(new Error('P4 client disposed.'));
       disposal = Promise.allSettled([...active.values()]).then(() => runtime.dispose());
+
       return disposal;
     },
   }) as P4PromiseClient;
@@ -225,6 +249,7 @@ export function createP4ClientFromLayer(
  */
 export function createP4Client(options: P4ClientOptions = {}): P4PromiseClient {
   const config = resolveOptions(options);
+
   return createP4ClientFromLayer(layerNode(config), layerNode, config);
 }
 

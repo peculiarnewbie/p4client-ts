@@ -99,25 +99,32 @@ export interface P4FileHistory {
 /** `#3` as 3 and `#none` as 0. */
 function revisionNumber(value: unknown, row: Row): number {
   const raw = text(value);
+
   if (raw === '#none') return 0;
   const match = raw === null ? null : /^#(\d+)$/.exec(raw);
+
   if (match?.[1] === undefined) throw malformed(`Expected a revision such as #3, received ${String(value)}.`, row);
+
   return Number(match[1]);
 }
 
 /** The `how{n},{m}` records of revision `n`, in index order. */
 function integrations(row: Row, index: number): P4Integration[] {
   const pattern = new RegExp(`^how${index},(\\d+)$`);
+
   return Object.keys(row)
     .flatMap((key) => {
       const match = pattern.exec(key);
+
       return match?.[1] === undefined ? [] : [Number(match[1])];
     })
     .sort((left, right) => left - right)
     .map((other) => {
       const suffix = `${index},${other}`;
       const how = text(row[`how${suffix}`]);
+
       if (how === null) throw malformed('Expected an integration with a how field.', row);
+
       return {
         how,
         file: depotPath(row[`file${suffix}`], row),
@@ -135,6 +142,7 @@ function integrations(row: Row, index: number): P4Integration[] {
  */
 export function toFileRevisions(row: Row): P4FileRevision[] {
   const file = depotPath(row.depotFile, row);
+
   return indexes(row, 'rev').map((index) => ({
     depotFile: file,
     revision: positive(row[`rev${index}`], row),
@@ -154,9 +162,11 @@ export function toFileRevisions(row: Row): P4FileRevision[] {
 /** Newest first: by changelist, else by submit time; otherwise keep the input order. */
 function newestFirst(left: P4FileRevision, right: P4FileRevision): number {
   if (left.change !== null && right.change !== null) return right.change - left.change;
+
   if (left.submittedAt !== null && right.submittedAt !== null) {
     return right.submittedAt < left.submittedAt ? -1 : right.submittedAt > left.submittedAt ? 1 : 0;
   }
+
   return 0;
 }
 
@@ -164,21 +174,27 @@ function newestFirst(left: P4FileRevision, right: P4FileRevision): number {
 function merge(rows: readonly P4FileRevision[][]): P4FileRevision[] {
   const seen = new Set<string>();
   const merged: P4FileRevision[] = [];
+
   for (const revision of rows.flat()) {
     // A wide integration graph can report one path in several records.
     const key = `${revision.depotFile}#${revision.revision}`;
+
     if (seen.has(key)) continue;
     seen.add(key);
     merged.push(revision);
   }
+
   return merged.sort(newestFirst);
 }
 
 function filelogCommand(options: GetFileHistoryOptions, perPath: number | undefined): P4CommandSpec<P4FileRevision[]> {
   const args = ['filelog', '-l'];
+
   if (options.followBranches) args.push('-i');
+
   if (perPath !== undefined) args.push('-m', String(perPath));
   args.push(options.file);
+
   return { args, format: 'json', decode: toFileRevisions };
 }
 
@@ -199,13 +215,17 @@ export const getFileHistory = operation<GetFileHistoryOptions, P4FileRevision, P
   Effect.gen(function* () {
     const limit = options.limit === undefined ? undefined : yield* requirePositive(options.limit, 'limit');
     const counter = progressCounter(sink, 'revisions');
+
     const events = streamCommand(filelogCommand(options, limit === undefined ? undefined : limit + 1)).pipe(
       Stream.tap((event) => (event._tag === 'data' ? counter.advance(event.value.length) : Effect.void)),
     );
+
     const output = yield* drain(sink, events);
     const merged = merge(output.items);
     const items = limit === undefined ? merged : merged.slice(0, limit);
+
     for (const item of items) yield* sink.item(item);
+
     return {
       depotFile: output.items[0]?.[0]?.depotFile ?? null,
       items,
@@ -245,18 +265,24 @@ export function followMoves(
   const items: P4FileRevision[] = [];
   let path = from;
   let upTo = Number.POSITIVE_INFINITY;
+
   while (path !== null && !paths.includes(path)) {
     paths.push(path);
     const current: P4DepotPath = path;
+
     const revisions = history.items
       .filter((revision) => revision.depotFile === current && revision.revision <= upTo)
       .sort((left, right) => right.revision - left.revision);
+
     path = null;
+
     for (const revision of revisions) {
       items.push(revision);
+
       const moved = revision.action === 'move/add'
         ? revision.integrations.find((integration) => integration.how === 'moved from')
         : undefined;
+
       if (moved !== undefined) {
         path = moved.file;
         upTo = moved.endRevision;
@@ -264,5 +290,6 @@ export function followMoves(
       }
     }
   }
+
   return { paths, items };
 }

@@ -48,12 +48,14 @@ export class P4Config extends Context.Service<P4Config, P4ResolvedOptions>()('p4
  */
 export function requireTimeout(timeoutMs: number | undefined): number | undefined {
   if (timeoutMs === undefined) return undefined;
+
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) {
     throw new P4InvalidArgumentError({
       message: `timeoutMs must be a positive number of milliseconds no greater than ${MAX_TIMEOUT_MS}.`,
       option: 'timeoutMs',
     });
   }
+
   return timeoutMs;
 }
 

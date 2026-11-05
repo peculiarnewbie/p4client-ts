@@ -22,6 +22,7 @@ describe('the mutation guard', () => {
   const none = () => {
     throw new Error('p4 must not run');
   };
+
   it.each([
     ['createChange', () => failure(createChange, { description: 'x' }, scriptedExecutor(none))],
     ['deleteChange', () => failure(deleteChange, { change: 15 }, scriptedExecutor(none))],
@@ -50,8 +51,10 @@ describe('createChange', () => {
   it('fails with the server diagnostics for a rejected spec', async () => {
     const recorder = recordingExecutor(scriptedExecutor(() => {
       const fixture = fixtures('change-create-invalid')[0]!;
+
       return { stderr: fixture.stderr, exitCode: fixture.exitCode };
     }));
+
     const error = await failure(createChange, { description: 'x' }, recorder.layer, MUTATE);
     expect(error).toMatchObject({ _tag: 'P4CommandError' });
     expect(error._tag === 'P4CommandError' ? error.messages.map((message) => message.text) : [])
@@ -221,10 +224,12 @@ describe('revert', () => {
 describe('setPersistentWorkspace', () => {
   it('runs p4 set without the configured connection or isolation', async () => {
     const recorder = recordingExecutor(scriptedExecutor(() => ({})));
+
     const result = await run(setPersistentWorkspace, { client: 'ws_main' }, recorder.layer, {
       ...MUTATE,
       connection: { port: 'ssl:p4:1666', user: 'u', client: 'other', isolated: true },
     });
+
     expect(result).toEqual({ client: 'ws_main', messages: [] });
     const [invocation] = recorder.invocations;
     expect(commandArgs(invocation!.args)).toEqual(['set', 'P4CLIENT=ws_main']);
@@ -244,15 +249,20 @@ describe('describeChangelists', () => {
     const [many] = fixtures('describe-many');
     const [moved] = fixtures('describe-move');
     const movedRow = JSON.parse(moved!.stdout!.split('\n')[0]!) as { change: string };
+
     const responses = new Map([
       [JSON.stringify([...TAG, 'describe', '-s', '6', '999999', movedRow.change]), fixtureStdout(many!)],
       [JSON.stringify([...TAG, 'describe', '-s', movedRow.change]), fixtureStdout(moved!)],
     ]);
+
     const recorder = recordingExecutor(scriptedExecutor((invocation) => {
       const stdout = responses.get(JSON.stringify(commandArgs(invocation.args)));
+
       if (stdout === undefined) throw new Error(`Unexpected ${commandArgs(invocation.args).join(' ')}`);
+
       return { stdout };
     }));
+
     const result = await run(describeChangelists, { changes: [6, 999999, Number(movedRow.change)] }, recorder.layer);
     expect(result.items.map((item) => item.change)).toEqual([6, Number(movedRow.change)]);
     expect(result.failures).toMatchObject([{ spec: '999999', reason: 'unknown_changelist' }]);
@@ -271,6 +281,7 @@ describe('describeChangelists', () => {
     const events = await watch(describeChangelists, { changes: [6] }, scriptedExecutor(() => ({
       stdout: `${fixtures('describe-many')[0]!.stdout!.split('\n')[0]!}\n`,
     })));
+
     expect(events.map((event) => event._tag)).toEqual(['item', 'progress', 'done']);
     expect(events[1]).toMatchObject({ progress: { completed: 1, total: 1, unit: 'changes' } });
   });
@@ -280,9 +291,11 @@ describe('server-scoped reads', () => {
   it('lists a whole range without -l or -m', async () => {
     const [fixture] = fixtures('changes-range-short');
     const spec = fixture!.args.at(-1)!;
+
     const result = await run(listChangelists, {
       status: 'submitted', fileSpec: spec, limit: 'all', fullDescriptions: false,
     }, replay('changes-range-short'));
+
     expect(result.hasMore).toBe(false);
     expect(result.nextCursor).toBeNull();
     expect(result.items.map((item) => item.change)).toEqual([10, 9, 8]);
@@ -299,6 +312,7 @@ describe('server-scoped reads', () => {
       excludeWorkspaceData: true,
       fields: ['headRev', 'headChange', 'headAction', 'headType', 'digest', 'fileSize'],
     }, replay('fstat-server-only'));
+
     expect(result.items[0]).toMatchObject({
       depotFile: '//p4ts/main/wire/clobber.txt',
       headRevision: 2,

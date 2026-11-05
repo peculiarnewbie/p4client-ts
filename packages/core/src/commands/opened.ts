@@ -90,11 +90,16 @@ export function toOpenedFile(row: Row): P4OpenedFile {
  */
 export function openedCommand(options: ListOpenedFilesOptions): P4CommandSpec<P4OpenedFile> {
   const args = ['opened'];
+
   if (options.allClients) args.push('-a');
+
   if (options.user !== undefined) args.push('-u', options.user);
+
   if (options.client !== undefined) args.push('-C', options.client);
+
   if (options.change !== undefined) args.push('-c', String(options.change));
   args.push(...specList(options.fileSpec));
+
   return { args, format: 'json', decode: toOpenedFile };
 }
 

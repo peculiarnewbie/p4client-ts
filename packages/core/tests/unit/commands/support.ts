@@ -15,7 +15,9 @@ import type { P4WireFixture } from '../../../src/testing/fixture.js';
 export function fixtures(...names: string[]): P4WireFixture[] {
   return names.map((name) => {
     const fixture = corpus.get(name);
+
     if (fixture === undefined) throw new Error(`Missing fixture ${name}`);
+
     return fixture;
   });
 }
@@ -57,9 +59,12 @@ export async function failure<O, I, R>(
   client: P4ClientOptions = {},
 ): Promise<P4Error> {
   const exit = await Effect.runPromiseExit(provide(runOperation(op, options), executor, client));
+
   if (Exit.isSuccess(exit)) throw new Error('Expected the operation to fail.');
   const reason = exit.cause.reasons[0];
+
   if (reason?._tag !== 'Fail') throw new Error(`Expected a failure, got ${String(reason?._tag)}: ${String(exit.cause)}`);
+
   return reason.error;
 }
 
@@ -75,6 +80,7 @@ export async function invocations<O, I, R>(
 ): Promise<string[][]> {
   const recorder = recordingExecutor(scriptedExecutor((invocation) => respond(commandArgs(invocation.args))));
   await Effect.runPromiseExit(provide(runOperation(op, options), recorder.layer, client));
+
   return recorder.invocations.map((invocation) => commandArgs(invocation.args));
 }
 
@@ -133,6 +139,8 @@ export function fixtureTime(
   match: (row: Record<string, unknown>) => boolean = () => true,
 ): string {
   const row = fixtureRows(name).find(match);
+
   if (row === undefined) throw new Error(`No matching record in fixture ${name}`);
+
   return new Date(Number(row[field]) * 1000).toISOString();
 }

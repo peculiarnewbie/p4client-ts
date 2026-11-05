@@ -69,6 +69,7 @@ export interface Fixture {
 
 const perforceRelease = "r26.1";
 const perforceDownloadRoot = `https://ftp.perforce.com/perforce/${perforceRelease}`;
+
 // Pins come from each directory's SHA256SUMS. Perforce republishes builds within a release,
 // so a stale pin fails every fresh download. Keys are `platform-arch`, or a bare platform for
 // every architecture (Windows on Arm runs the x64 build).
@@ -136,11 +137,13 @@ function errorMessage(error: unknown): string {
 function cleanP4Environment(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = { ...process.env };
   delete environment.PWD;
+
   for (const key of Object.keys(environment)) {
     if (key.toUpperCase().startsWith("P4")) {
       delete environment[key];
     }
   }
+
   return { ...environment, ...overrides };
 }
 
@@ -156,6 +159,7 @@ function run(
 ): Promise<CommandResult> {
   return new Promise((resolvePromise, reject) => {
     let child: ChildProcess;
+
     try {
       child = spawn(command, [...args], {
         cwd: options.cwd,
@@ -165,6 +169,7 @@ function run(
       });
     } catch (error) {
       reject(error);
+
       return;
     }
 
@@ -180,13 +185,16 @@ function run(
     });
     child.once("close", (exitCode, signal) => {
       clearTimeout(timeout);
+
       const result = {
         exitCode: exitCode ?? -1,
         stderr: Buffer.concat(stderr).toString("utf8"),
         stdout: Buffer.concat(stdout).toString("utf8")
       };
+
       if (result.exitCode === 0) {
         resolvePromise(result);
+
         return;
       }
 
@@ -210,6 +218,7 @@ function run(
 function runVisible(command: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv) {
   return new Promise<void>((resolvePromise, reject) => {
     let child: ChildProcess;
+
     try {
       child = spawn(command, [...args], {
         cwd,
@@ -219,6 +228,7 @@ function runVisible(command: string, args: readonly string[], cwd: string, env: 
       });
     } catch (error) {
       reject(error);
+
       return;
     }
 
@@ -226,8 +236,10 @@ function runVisible(command: string, args: readonly string[], cwd: string, env: 
     child.once("close", (exitCode, signal) => {
       if (exitCode === 0) {
         resolvePromise();
+
         return;
       }
+
       reject(new Error(`${basename(command)} exited with ${exitCode ?? -1}${signal ? ` (${signal})` : ""}.`));
     });
   });
@@ -253,11 +265,14 @@ function getAvailablePort(): Promise<number> {
     server.once("error", reject);
     server.listen({ host: "127.0.0.1", port: 0 }, () => {
       const address = server.address();
+
       if (address === null || typeof address === "string") {
         server.close();
         reject(new Error("Could not reserve a localhost port for the disposable p4d server."));
+
         return;
       }
+
       server.close((error) => (error ? reject(error) : resolvePromise(address.port)));
     });
   });
@@ -269,27 +284,33 @@ async function waitForServer(
   cwd: string
 ): Promise<void> {
   let lastError: unknown;
+
   for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
       assert(environment.P4PORT === isolatedPort, 'Server readiness must use the isolated endpoint.');
       await run(p4, ['-p', environment.P4PORT ?? '', '-u', fixtureUser, 'info'], { cwd, env: environment, timeoutMs: 1_000 });
+
       return;
     } catch (error) {
       lastError = error;
       await wait(100);
     }
   }
+
   throw new Error("The disposable p4d server did not become ready.", { cause: lastError });
 }
 
 function cacheRoot(): string {
   const configured = process.env.P4_TS_E2E_BINARY_CACHE;
+
   if (configured) {
     return resolve(configured);
   }
+
   if (process.platform === "win32") {
     return join(process.env.LOCALAPPDATA ?? tmpdir(), "p4-ts", "perforce");
   }
+
   return join(process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "p4-ts", "perforce");
 }
 
@@ -304,6 +325,7 @@ async function readCachedHash(path: string): Promise<string | null> {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
       return null;
     }
+
     throw error;
   }
 }
@@ -311,6 +333,7 @@ async function readCachedHash(path: string): Promise<string | null> {
 async function downloadBinary(url: string): Promise<Uint8Array> {
   const response = await fetch(url);
   assert(response.ok, `Could not download ${url}: ${response.status} ${response.statusText}`);
+
   return new Uint8Array(await response.arrayBuffer());
 }
 
@@ -338,8 +361,10 @@ export async function resolveCachedBinary(
   await mkdir(destinationDirectory, { recursive: true });
 
   const cached = await readCachedHash(destination);
+
   if (cached === binary.sha256) {
     report("RUN ", `using hash-verified cached ${binary.name}`);
+
     return destination;
   }
 
@@ -365,21 +390,26 @@ export async function resolveCachedBinary(
 
   // Write beside the cache and rename, so an interrupted download never leaves a partial binary.
   const partial = `${destination}.${process.pid}.download`;
+
   try {
     await writeFile(partial, bytes);
+
     if (process.platform !== "win32") {
       await chmod(partial, 0o755);
     }
+
     await rename(partial, destination);
   } finally {
     await rm(partial, { force: true });
   }
+
   return destination;
 }
 
 async function resolveBinaries(): Promise<ResolvedBinaries> {
   const configuredP4 = process.env.P4_TS_E2E_P4_EXECUTABLE;
   const configuredP4d = process.env.P4_TS_E2E_P4D_EXECUTABLE;
+
   if (configuredP4 || configuredP4d) {
     assert(
       configuredP4 && configuredP4d,
@@ -387,6 +417,7 @@ async function resolveBinaries(): Promise<ResolvedBinaries> {
     );
     await Promise.all([access(configuredP4), access(configuredP4d)]);
     report("RUN ", "using explicitly configured isolated p4 and p4d binaries");
+
     return { p4: configuredP4, p4d: configuredP4d };
   }
 
@@ -395,6 +426,7 @@ async function resolveBinaries(): Promise<ResolvedBinaries> {
     platform !== undefined,
     `No pinned Perforce binary pair is configured for ${process.platform}-${process.arch}. Set both explicit executable paths.`
   );
+
   return {
     p4: await resolveCachedBinary(platform.directory, platform.p4),
     p4d: await resolveCachedBinary(platform.directory, platform.p4d)
@@ -422,11 +454,13 @@ async function loadFixtureManifest(): Promise<{ readonly manifest: FixtureManife
     typeof workspaceRecord.rootFolderName === "string" && workspaceRecord.rootFolderName.length > 0,
     "stream-manifest.json is missing workspace.rootFolderName."
   );
+
   const manifest: FixtureManifest = {
     stream: { name: fixtureStream },
     workspace: { rootFolderName: workspaceRecord.rootFolderName },
     seedRoot
   };
+
   return { manifest, seedRoot: resolve(fixtureRoot, seedRoot) };
 }
 
@@ -441,6 +475,7 @@ async function runP4(
   assert(environment.P4PORT === isolatedPort && /^127\.0\.0\.1:\d+$/.test(isolatedPort ?? ''), 'Refusing p4 outside the disposable server.');
   assert(!args.some((arg) => arg.startsWith('-p') || arg.startsWith('-x')), 'Do not override the disposable endpoint or hide arguments.');
   const result = await run(p4, ['-p', environment.P4PORT ?? '', '-u', fixtureUser, ...args], { cwd, env: environment, ...(input === undefined ? {} : { input }), timeoutMs });
+
   return result;
 }
 
@@ -457,18 +492,21 @@ async function latestSubmittedChange(
     cwd,
     environment
   );
+
   const line = result.stdout.split(/\r?\n/).find((entry) => entry.length > 0);
   assert(line !== undefined, "Perforce did not return the submitted fixture changelist.");
   const parsed: unknown = JSON.parse(line);
   assert(typeof parsed === "object" && parsed !== null, "Perforce returned an invalid changelist row.");
   const change = Number((parsed as Record<string, unknown>).change);
   assert(Number.isSafeInteger(change) && change > 0, "Perforce returned an invalid changelist number.");
+
   return { change };
 }
 
 async function copyDirectoryContents(source: string, destination: string): Promise<void> {
   await mkdir(destination, { recursive: true });
   const entries = await readdir(source, { withFileTypes: true });
+
   for (const entry of entries) {
     await cp(join(source, entry.name), join(destination, entry.name), { recursive: entry.isDirectory() });
   }
@@ -486,6 +524,7 @@ async function createDepot(p4: string, environment: NodeJS.ProcessEnv, cwd: stri
     `Map: ${fixtureDepot}/...`,
     ""
   ].join("\n");
+
   await runP4(p4, ["depot", "-i"], cwd, environment, specification);
 }
 
@@ -506,6 +545,7 @@ async function createStream(p4: string, environment: NodeJS.ProcessEnv, cwd: str
     "\tshare ...",
     ""
   ].join("\n");
+
   await runP4(p4, ["stream", "-i"], cwd, environment, specification);
 }
 
@@ -524,6 +564,7 @@ async function createClient(
     `Stream: ${fixtureStream}`,
     ""
   ].join("\n");
+
   await runP4(p4, ["client", "-i"], cwd, environment, specification);
 }
 
@@ -534,6 +575,7 @@ async function submitFixture(
   description: string
 ): Promise<SubmittedChange> {
   await runP4(p4, ["submit", "-d", description], workspace, environment);
+
   return latestSubmittedChange(p4, environment, workspace);
 }
 
@@ -567,6 +609,7 @@ async function seedFixture(
     ].join("\n"),
     "utf8"
   );
+
   return baseline.change;
 }
 
@@ -579,14 +622,17 @@ async function stopServer(
   if (server === undefined) {
     return;
   }
+
   try {
     await runP4(p4, ["admin", "stop"], cwd, environment, undefined, 5_000);
   } catch {
     // The process fallback below is scoped to the disposable operation root.
   }
+
   if (server.exitCode === null && server.signalCode === null) {
     server.kill();
   }
+
   await waitForProcessExit(server);
 }
 
@@ -602,6 +648,7 @@ export async function startFixture(options: { readonly unicode?: boolean } = {})
   const port = await getAvailablePort();
   const p4Port = `127.0.0.1:${port}`;
   isolatedPort = p4Port;
+
   const environment = cleanP4Environment({
     P4CHARSET: options.unicode ? 'utf8' : 'none',
     P4ALIASES: join(operationRoot, 'disabled-aliases'),
@@ -615,6 +662,7 @@ export async function startFixture(options: { readonly unicode?: boolean } = {})
     P4TRUST: trust,
     P4USER: fixtureUser
   });
+
   let server: ChildProcess | undefined;
   let stopped = false;
 
@@ -622,6 +670,7 @@ export async function startFixture(options: { readonly unicode?: boolean } = {})
     if (stopped) {
       return;
     }
+
     stopped = true;
     await stopServer(server, binaries.p4, environment, operationRoot);
     await rm(operationRoot, { force: true, recursive: true, maxRetries: 3, retryDelay: 100 });
@@ -630,9 +679,11 @@ export async function startFixture(options: { readonly unicode?: boolean } = {})
 
   try {
     await Promise.all([mkdir(serverRoot), mkdir(workspace), writeFile(enviro, "", "utf8")]);
+
     if (options.unicode) {
       await Effect.runPromise(Effect.promise(() => run(binaries.p4d, ['-r', serverRoot, '-xi'], { cwd: operationRoot, env: cleanP4Environment() })));
     }
+
     const startServer = (): ChildProcess =>
       spawn(
         binaries.p4d,
@@ -645,6 +696,7 @@ export async function startFixture(options: { readonly unicode?: boolean } = {})
     await waitForServer(binaries.p4, environment, operationRoot);
     server.kill();
     await waitForProcessExit(server);
+
     for (const setting of [
       "security=0",
       "dm.user.hideinvalid=0",
@@ -656,6 +708,7 @@ export async function startFixture(options: { readonly unicode?: boolean } = {})
         env: cleanP4Environment()
       });
     }
+
     server = startServer();
     await waitForServer(binaries.p4, environment, operationRoot);
     await runP4(
@@ -709,12 +762,14 @@ async function runE2E(fixture: Fixture): Promise<void> {
     P4_TS_E2E_SYNC_BASE_CHANGE: String(fixture.baselineChange),
     P4_TS_E2E_WORKSPACE_ROOT: fixture.projectRoot
   });
+
   report("RUN ", "running the canonical E2E scenarios against the disposable fixture");
   await runVisible(process.execPath, ["test", "tests/e2e"], coreRoot, environment);
 }
 
 async function main(): Promise<void> {
   const fixture = await startFixture();
+
   try {
     await runE2E(fixture);
   } finally {

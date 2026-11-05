@@ -38,6 +38,7 @@ export interface P4DeletedChange {
  */
 function changeSpec(description: string): string {
   const lines = description.replace(/\r\n?/g, '\n').replace(/\s+$/, '').split('\n');
+
   return `Change: new\nDescription:\n${lines.map((line) => `\t${line}`).join('\n')}\n`;
 }
 
@@ -58,10 +59,13 @@ export const createChange = operation<CreateChangeOptions, never, P4CreatedChang
     if (options.description.trim() === '') return yield* invalid('description', 'description must not be blank.');
     // `-Mj` would expect the spec in tagged form, so the form goes in as text.
     const output = yield* runPlainCommand({ args: ['change', '-i'], input: changeSpec(options.description) });
+
     for (const message of output.messages) yield* sink.message(message);
     const stdout = new TextDecoder().decode(output.stdout);
     const change = createdChangeNumber(stdout);
+
     if (change === null) return yield* malformed('change -i did not report a new changelist.', stdout);
+
     return { change, messages: output.messages };
   }), 'changes');
 
@@ -82,11 +86,13 @@ const DELETE_POLICY: P4MessagePolicy = { changelist_not_empty: 'fail' };
 export const deleteChange = operation<DeleteChangeOptions, never, P4DeletedChange>('deleteChange', (options, sink) =>
   Effect.gen(function* () {
     const change = yield* requirePositive(options.change, 'change');
+
     const output = yield* drain(sink, streamCommand({
       args: ['change', '-d', String(change)],
       format: 'json',
       policy: DELETE_POLICY,
       decode: () => null,
     }));
+
     return { change, messages: output.messages };
   }), 'changes');

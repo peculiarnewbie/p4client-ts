@@ -96,16 +96,22 @@ export function toSyncItem(row: Row): P4SyncItem {
     change: integer(row.change, row),
     fileSize: integer(row.fileSize, row),
   };
+
   if (item.depotFile === null && item.action === null) throw malformed('A sync record names no file or action.', row);
+
   return item;
 }
 
 function syncCommand(options: SyncOptions, preview: boolean): P4CommandSpec<SyncRecord> {
   const args = ['sync'];
+
   if (preview) args.push('-n');
+
   if (options.force) args.push('-f');
+
   if (options.keepWorkspaceFiles) args.push('-k');
   args.push(...specList(options.fileSpec));
+
   return {
     args,
     format: 'json',
@@ -125,6 +131,7 @@ function runSync(options: SyncOptions, preview: boolean, sink: P4Sink<P4SyncItem
     let totals: { files: number | null; bytes: number | null } = { files: null, bytes: null };
     // Each file advances the count by one and the bytes by its size.
     const perFile: P4ProgressCounter = { ...counter, advance: () => counter.advance(1, bytes) };
+
     const output = yield* drain(sink, streamCommand(syncCommand(options, preview)), {
       item: (record) => record.item,
       counter: perFile,
@@ -133,9 +140,11 @@ function runSync(options: SyncOptions, preview: boolean, sink: P4Sink<P4SyncItem
           totals = { files: record.totalFileCount, bytes: record.totalFileSize };
           counter.expect(totals.files, totals.bytes);
         }
+
         bytes = record.item.fileSize ?? undefined;
       },
     });
+
     const result: P4SyncResult = {
       items: output.items.map((record) => record.item),
       failures: output.failures.map(itemFailure),
@@ -143,6 +152,7 @@ function runSync(options: SyncOptions, preview: boolean, sink: P4Sink<P4SyncItem
       totalFileCount: totals.files,
       totalFileSize: totals.bytes,
     };
+
     return result;
   });
 }

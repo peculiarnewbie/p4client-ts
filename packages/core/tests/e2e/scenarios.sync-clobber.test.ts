@@ -21,16 +21,19 @@ function removeWorkspaceFiles(directory: string): void {
   for (const entry of readdirSync(directory, { withFileTypes: true, recursive: true })) {
     if (entry.isFile()) chmodSync(join(entry.parentPath, entry.name), 0o666);
   }
+
   rmSync(directory, { recursive: true, force: true });
 }
 
 describe("p4-ts e2e sync with a writable file that is not opened", () => {
   beforeAll(async () => {
     await harness.validateSeededWorkspace();
+
     for (const [relativePath, content] of [[TARGET, "target #1\n"], [OTHER, "other #1\n"]] as const) {
       mkdirSync(dirname(harness.getPath(relativePath)), { recursive: true });
       writeFileSync(harness.getPath(relativePath), content, "utf8");
     }
+
     await harness.run(["add", harness.getPath(TARGET), harness.getPath(OTHER)]);
     await harness.run(["submit", "-d", "p4-ts E2E clobber fixture"]);
 
@@ -91,6 +94,7 @@ describe("p4-ts e2e sync with a writable file that is not opened", () => {
     // The watched form classifies the same row the same way, and streams it as it arrives.
     const handle = workspace.watch.sync({ fileSpec: FILE_SPEC });
     const events: P4OperationEvent<P4SyncItem, P4SyncResult>[] = [];
+
     for await (const event of handle.events) events.push(event);
     const watched = await handle.result;
     expect(watched.failures).toEqual(result.failures);

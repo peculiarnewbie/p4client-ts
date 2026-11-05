@@ -84,9 +84,11 @@ describe('runTagged', () => {
 
   it('applies the policy to the shared classification', async () => {
     const args = ['edit', '//p4ts/main/wire/exclusive.uasset'];
+
     const result = await run(runTagged, { args, policy: { exclusive_open: 'item' } }, replay('exclusive-edit-failure'), {
       allowMutation: true,
     });
+
     expect(result.failures.map((message) => message.reason)).toEqual(['exclusive_open']);
     expect(result.messages.map((message) => message.reason)).toEqual(['locked']);
     await expect(failure(runTagged, { args, policy: { exclusive_open: 'fail' } }, replay('exclusive-edit-failure'), {
@@ -101,12 +103,15 @@ describe('runTagged', () => {
 
   it('times out a command that does not finish', async () => {
     const [timeout] = fixtures('command-timeout');
+
     const hanging = Layer.succeed(P4Executor, {
       run: (invocation) => {
         expect(commandArgs(invocation.args)).toEqual(commandArgs(timeout!.args));
+
         return Stream.never;
       },
     });
+
     const error = await failure(runTagged, { args: ['info'] }, hanging, { timeoutMs: 20 });
     expect(error).toMatchObject({ _tag: 'P4TimeoutError', timeoutMs: 20 });
   });
@@ -121,11 +126,14 @@ describe('runTagged', () => {
   it('forwards stdin and refuses stdin options on a read-only client', async () => {
     const input = '//depot/a\n//depot/b\n';
     const args = ['-x', '-', 'diff', '-se'];
+
     const result = await run(runTagged, { args, input }, scriptedExecutor((invocation) => {
       expect(invocation.input).toBe(input);
       expect(commandArgs(invocation.args)).toEqual([...TAG, ...args]);
+
       return { stdout: '{"depotFile":"//depot/a"}\n' };
     }));
+
     expect(result.items).toHaveLength(1);
     const never = scriptedExecutor(() => { throw new Error('must not run'); });
     expect(await failure(runTagged, { args, input: '-f\n' }, never)).toMatchObject({ _tag: 'P4ReadOnlyError' });
@@ -134,9 +142,11 @@ describe('runTagged', () => {
 
   it('reports studio-server missing files as item failures with their spec', async () => {
     const missing = '//depot/__missing__.txt';
+
     const result = await run(runTagged, {
       args: ['files', '//depot/a', missing], policy: { no_such_file: 'item' },
     }, scriptedExecutor(() => ({ stdout: JSON.stringify({ data: `${missing} - no such file(s).\n`, generic: 17, severity: 2 }) + '\n' })));
+
     expect(result.failures[0]).toMatchObject({ spec: missing, reason: 'no_such_file', message: { reasonSource: 'text' } });
     expect(result.messages).toEqual([]);
   });

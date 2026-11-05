@@ -13,6 +13,7 @@ describe('real Perforce message and pagination regressions', () => {
   it('retains valid files beside missing paths in files, fstat and print', async () => {
     const file = `${config.stream}/src/app/config.json`;
     const missing = `${config.stream}/protocol/__missing__.txt`;
+
     for (const result of [
       await harness.client.listFiles({ fileSpec: [file, missing] }),
       await harness.client.statFiles({ fileSpec: [file, missing] }),
@@ -33,9 +34,11 @@ describe('real Perforce message and pagination regressions', () => {
     const directory = harness.getPath('materialize-output');
     mkdirSync(directory, { recursive: true });
     const options = { directory, maxFiles: 1 };
+
     const printed = await harness.client.materializeDepotFiles({
       ...options, fileSpec: [{ depotFile: depot, revision: 1, change: 42 }],
     });
+
     const output = printed.items[0]!;
     expect(existsSync(output.localPath)).toBe(true);
     expect(readFileSync(output.localPath, 'utf8').replaceAll('\r\n', '\n')).toBe('materialize bytes\n');
@@ -59,6 +62,7 @@ describe('real Perforce message and pagination regressions', () => {
         `${config.stream}/docs/guide/getting-started.md`,
       ],
     });
+
     expect(result.items).toHaveLength(1);
     expect(result.failures[0]).toMatchObject({
       reason: 'unknown_revision',
@@ -73,6 +77,7 @@ describe('real Perforce message and pagination regressions', () => {
     await harness.run(['submit', '-d', 'Protocol empty text fixture']);
     expect((await harness.client.printFile({ file: depot })).content).toHaveLength(0);
     await harness.run(['sync', `${depot}#none`]);
+
     try {
       await expect(harness.client.printFile({ file: depot, revision: 'have' })).rejects.toBeInstanceOf(
         P4CommandError,
@@ -91,25 +96,30 @@ describe('real Perforce message and pagination regressions', () => {
     writeFileSync(local, 'revision one\n');
     await harness.run(['add', local]);
     await harness.run(['submit', '-d', 'Protocol revision one']);
+
     const baseline = (
       await harness.client.listChangelists({ status: 'submitted',
         fileSpec: depot,
         limit: 1,
       })
     ).items[0]?.change;
+
     if (baseline === undefined)
       throw new Error('Missing protocol baseline change.');
     await harness.run(['edit', local]);
     writeFileSync(local, 'revision two\n');
     await harness.run(['submit', '-d', 'Protocol revision two']);
+
     const page = await harness.client.listChangelists({ status: 'submitted',
       fileSpec: depot,
       cursor: Number(baseline),
       limit: 5,
     });
+
     expect(page.items.map((item) => item.change)).toEqual([baseline]);
     await harness.run(['sync', `${depot}#1`]);
     await harness.run(['edit', local]);
+
     try {
       const preview = await harness.client.previewSync({ fileSpec: depot });
       expect(preview.items.length).toBe(0);
@@ -121,9 +131,11 @@ describe('real Perforce message and pagination regressions', () => {
       ).toBe(true);
       const watched = harness.client.watch.sync({ fileSpec: depot });
       const messages: string[] = [];
+
       for await (const event of watched.events) {
         if (event._tag === 'message') messages.push(event.message.reason);
       }
+
       expect(messages).toContain('opened_unchanged');
       expect((await watched.result).items.length).toBe(0);
     } finally {

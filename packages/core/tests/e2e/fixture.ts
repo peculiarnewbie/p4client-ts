@@ -32,9 +32,12 @@ export function loadFixture(config: E2EConfig): E2EFixture {
   const manifest = readJsonFile<StreamManifest>(
     resolve(config.testStreamPackageRoot, "stream-manifest.json")
   );
+
   const seedRoot = resolve(config.testStreamPackageRoot, manifest.seedRoot);
+
   const sentinels = SENTINEL_PATHS.map((relativePath) => {
     const seedPath = join(seedRoot, relativePath);
+
     return {
       relativePath,
       workspacePath: join(config.workspaceRoot, relativePath),
@@ -56,6 +59,7 @@ export function assertSeededWorkspace(fixture: E2EFixture): void {
     }
 
     const actualContent = readFileSync(sentinel.workspacePath, "utf8");
+
     if (actualContent !== sentinel.expectedContent) {
       mismatches.push(`Workspace file does not match seeded content: ${sentinel.relativePath}`);
     }

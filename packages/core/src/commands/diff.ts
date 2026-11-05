@@ -78,7 +78,9 @@ type WorkspaceDiffRow =
 
 function toWorkspaceDiffRow(row: Row): WorkspaceDiffRow | null {
   if (typeof row.data === 'string') return { _tag: 'body', text: row.data };
+
   if (row.depotFile !== undefined) return { _tag: 'header', localFile: localPath(row.clientFile, row), type: text(row.type) };
+
   return null;
 }
 
@@ -93,14 +95,17 @@ function runDiff(
   return Effect.gen(function* () {
     const plan = yield* planFor(options);
     const base = { depotFile, source: plan.source, fromRevision: plan.fromRevision, toRevision: plan.toRevision };
+
     if (options.allowBinary === false && isBinaryP4Type(options.type)) {
       return {
         ...base, localFile, unifiedDiff: '', isBinary: true, additions: 0, deletions: 0, messages: [],
       };
     }
+
     let unifiedDiff: string;
     let messages: P4Message[];
     let reportedLocal: P4LocalPath | null = null;
+
     if (plan.command === 'diff') {
       // `-Mj diff` sends the file as a data row, then the hunks (without ---/+++ headers) as `data` rows.
       const output = yield* runCommand({ args: ['diff', ...plan.args], format: 'json', decode: toWorkspaceDiffRow });
@@ -114,10 +119,13 @@ function runDiff(
         // An external diff tool may exit 1 when the files differ.
         acceptExit: (code, stdout) => code === 1 && hasUnifiedHunk(utf8.decode(stdout)),
       });
+
       unifiedDiff = utf8.decode(output.stdout);
       messages = [...output.messages, ...output.failures];
     }
+
     const { additions, deletions } = summarizeUnifiedDiff(unifiedDiff);
+
     return {
       ...base,
       localFile: localFile ?? reportedLocal,
@@ -146,12 +154,17 @@ export const diffFile = operation<DiffFileOptions, never, P4FileDiff>('diffFile'
     if (!isDepotPath(options.file)) {
       return yield* invalid('file', `file must be a depot path, received ${options.file}.`);
     }
+
     const localFile = options.localFile;
+
     if (localFile !== undefined && !isLocalPath(localFile)) {
       return yield* invalid('localFile', `localFile must be a local path, received ${localFile}.`);
     }
+
     const result = yield* runDiff(options.file, localFile ?? null, options);
+
     for (const message of result.messages) yield* sink.message(message);
+
     return result;
   }), 'files');
 
@@ -194,11 +207,13 @@ const DEFAULT_CONCURRENCY = 3;
 
 function openedLocalFile(file: P4OpenedFile | undefined): P4LocalPath | null {
   const path = file?.clientFile ?? null;
+
   return path !== null && isLocalPath(path) && !path.startsWith('//') ? path : null;
 }
 
 function summarize(file: P4DescribedFile, opened: P4OpenedFile | undefined): P4ChangelistDiffFileSummary {
   const type = file.type ?? opened?.type ?? null;
+
   return {
     depotFile: file.depotFile,
     localFile: openedLocalFile(opened),
@@ -238,6 +253,7 @@ export const getChangelistDiffSummary = operation<
     const messages: P4Message[] = [];
     let changelist: P4ChangelistDescription;
     let opened: readonly P4OpenedFile[] = [];
+
     if (options.change === 'default') {
       if (shelved) return yield* invalid('shelved', 'Only a numbered changelist can have shelved files.');
       const found = yield* readDefaultChangelist({ client: options.client });
@@ -247,12 +263,14 @@ export const getChangelistDiffSummary = operation<
     } else {
       changelist = yield* runOperation(describeChangelist, { change: options.change, shelved });
       messages.push(...changelist.messages);
+
       if (!shelved && changelist.status === 'pending') {
         const output = yield* runCommand(openedCommand({ change: options.change, client: options.client }));
         opened = output.items;
         messages.push(...output.messages);
       }
     }
+
     for (const message of messages) yield* sink.message(message);
     const byDepotFile = new Map(opened.flatMap((file) => file.depotFile === null ? [] : [[file.depotFile, file] as const]));
     const counter = progressCounter(sink, 'files', changelist.files.length);
@@ -261,6 +279,7 @@ export const getChangelistDiffSummary = operation<
 
     const files = yield* Effect.forEach(changelist.files, (file) => Effect.gen(function* () {
       let summary = summarize(file, byDepotFile.get(file.depotFile));
+
       if (options.includeLineCounts && !summary.isBinary) {
         const diff = yield* runDiff(file.depotFile, summary.localFile, {
           file: file.depotFile,
@@ -269,12 +288,16 @@ export const getChangelistDiffSummary = operation<
           revision: file.revision,
           shelvedChange,
         });
+
         messages.push(...diff.messages);
+
         for (const message of diff.messages) yield* sink.message(message);
         summary = { ...summary, localFile: diff.localFile, additions: diff.additions, deletions: diff.deletions };
       }
+
       yield* sink.item(summary);
       yield* counter.advance(1);
+
       return summary;
     }), { concurrency: options.includeLineCounts ? concurrency : 1 });
 

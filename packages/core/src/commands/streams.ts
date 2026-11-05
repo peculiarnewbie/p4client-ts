@@ -51,6 +51,7 @@ export interface P4StreamList {
 
 function parentStream(value: unknown, row: Row): P4DepotPath | null {
   const parent = text(value);
+
   return parent === null || parent === 'none' ? null : depotPath(parent, row);
 }
 
@@ -64,6 +65,7 @@ function baseName(stream: P4DepotPath): string {
 
 function toStream(row: Row): P4Stream {
   const stream = depotPath(row.Stream, row);
+
   return {
     stream,
     name: text(row.Name) ?? baseName(stream),
@@ -87,12 +89,15 @@ function toStream(row: Row): P4Stream {
 export const listStreams = operation<ListStreamsOptions, P4Stream, P4StreamList>('listStreams', (options, sink) =>
   Effect.gen(function* () {
     const args = ['streams'];
+
     if (options.limit !== undefined) args.push('-m', String(yield* requirePositive(options.limit, 'limit')));
     args.push(...specList(options.fileSpec));
+
     const output = yield* drain(sink, streamCommand({ args, format: 'json', decode: toStream }), {
       item: (stream) => stream,
       counter: progressCounter(sink, 'records'),
     });
+
     return { items: output.items, messages: output.messages };
   }));
 
@@ -128,6 +133,7 @@ function lines(row: Row, field: string): string[] {
 
 function toStreamSpec(row: Row): Omit<P4StreamSpec, 'messages'> {
   const stream = depotPath(row.Stream, row);
+
   return {
     stream,
     name: text(row.Name) ?? baseName(stream),
@@ -154,7 +160,10 @@ export const getStream = operation<GetStreamOptions, never, P4StreamSpec>('getSt
     const output = yield* drain(sink, streamCommand({ args: ['stream', '-o', options.stream], format: 'json', decode: toStreamSpec }), {
       counter: progressCounter(sink, 'records', 1),
     });
+
     const spec = output.items[0];
+
     if (spec === undefined) return yield* malformed('stream -o printed no spec.', output.messages);
+
     return { ...spec, messages: output.messages };
   }));

@@ -39,12 +39,18 @@ export const ISOLATED_P4CONFIG = 'p4client-ts.isolated-no-config';
  */
 export function globalArgs(connection: P4Connection): string[] {
   const args: string[] = [];
+
   if (connection.port) args.push('-p', connection.port);
+
   if (connection.user) args.push('-u', connection.user);
+
   if (connection.client) args.push('-c', connection.client);
+
   if (connection.charset) args.push('-C', connection.charset);
+
   if (connection.host) args.push('-H', connection.host);
   args.push(`-zprog=p4client-ts`, `-zversion=${VERSION}`);
+
   return args;
 }
 
@@ -66,8 +72,10 @@ export function connectionEnv(connection: P4Connection): Record<string, string |
  */
 export function redactArgs(args: readonly string[]): string[] {
   const redacted: string[] = [];
+
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
+
     if (arg === '-P' || arg === '--password') {
       redacted.push(arg, '***');
       index += 1;
@@ -79,5 +87,6 @@ export function redactArgs(args: readonly string[]): string[] {
       redacted.push(arg);
     }
   }
+
   return redacted;
 }
