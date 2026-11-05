@@ -20,11 +20,13 @@
     "packages/www/.astro/**",
     "packages/www/dist/**",
     "packages/www/src/content/docs/api/**",
-    "tools/oxlint/anti-slop/**"
+    "tools/oxlint/anti-slop/**",
+    "tools/oxlint/t3code/**"
   ],
   "jsPlugins": [
     { "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/index.ts" },
-    { "name": "anti-slop-effect", "specifier": "./tools/oxlint/anti-slop/effect/index.ts" }
+    { "name": "anti-slop-effect", "specifier": "./tools/oxlint/anti-slop/effect/index.ts" },
+    { "name": "t3code", "specifier": "./tools/oxlint/t3code/index.ts" }
   ],
   "rules": {
     "oxc/no-accumulating-spread": "error",
@@ -50,6 +52,16 @@
     "anti-slop-effect/no-manual-tag-comparison": "error",
     "anti-slop-effect/no-manual-tagged-construction": "error",
     "anti-slop-effect/no-service-constructor-imports": "error",
-    "anti-slop-effect/prefer-effect-match": "error"
-  }
+    "anti-slop-effect/prefer-effect-match": "error",
+    "t3code/no-inline-schema-compile": "error",
+    "t3code/no-low-value-comments": "error",
+    "t3code/prefer-effect-fn": "error",
+    "t3code/require-suppression-reason": "error"
+  },
+  "overrides": [
+    {
+      "files": ["packages/core/tests/**"],
+      "rules": { "t3code/prefer-effect-fn": "off" }
+    }
+  ]
 }
