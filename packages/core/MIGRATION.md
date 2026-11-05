@@ -1,8 +1,16 @@
 # Migrating 0.13 → 0.14
 
-0.14 adds operations and options; the only breaking change is to
-`materializeDepotFiles` results, which gain fields.
+0.14 adds operations and options. Its breaking changes are to `materializeDepotFiles`
+results, which gain fields, and to three types that are now stricter.
 
+- **Errors are branded.** A plain object with the same fields no longer type-checks as a
+  `P4CommandError` or any other p4client-ts error. Build errors with `new`, and rebuild
+  ones that crossed IPC with `decodeP4Error`. Runtime `_tag` checks are unchanged.
+- **Raw rows are `P4WireFields`.** A `P4CommandSpec.decode` callback, and anything typed
+  `Row`, receives wire values (strings, numbers, booleans, null, bytes, arrays, nested
+  fields) instead of `unknown`. Narrow with `Schema.is` instead of casting.
+- **Numbers must be finite.** Schemas, errors and messages reject `NaN` and infinities, so
+  decoding data that carries them now fails.
 - **Materialized files** carry `bytes` and `method` (`'batch' | 'print'`), and the
   result carries `stats`. Code that compares a result or item with `toEqual`, or
   rebuilds it field by field, needs the new fields. Nothing else changes unless

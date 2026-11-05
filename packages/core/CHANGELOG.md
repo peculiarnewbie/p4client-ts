@@ -4,7 +4,21 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
-## 0.14.0 - unreleased
+## 0.14.0 - 2026-11-05
+
+### Breaking changes
+
+- Every error class is branded, so a plain object with the same fields no longer
+  type-checks as a `P4CommandError` or any other p4client-ts error. Build errors with
+  `new`, or rebuild ones sent over IPC with `decodeP4Error`. Matching on `_tag` at runtime
+  is unchanged.
+- Raw rows are typed. `Row` and the record a `P4CommandSpec.decode` receives are
+  `P4WireFields` (strings, numbers, booleans, null, bytes, arrays and nested fields)
+  instead of `Record<string, unknown>`.
+- Number fields in schemas, errors and messages accept only finite numbers
+  (`Schema.Finite`); `NaN` and infinities fail to decode.
+- `materializeDepotFiles` items carry `bytes` and `method`, and the result carries
+  `stats`. Results compared with `toEqual` need the new fields.
 
 ### Added
 
@@ -26,9 +40,11 @@ This project follows semantic versioning.
   `attempts`, `retryDelayMs` and `writable` options. With `batch`, binary revisions
   stream from batched `p4 -G -x - print` processes and everything else, or anything a
   batch did not deliver intact, is printed per file. A revision requested at several
-  paths is printed once and copied. It runs in bounded spans
-  (`p4client-ts.materializeDepotFiles`, one `p4client-ts.materialize.batch` per batch,
-  `p4client-ts.materialize.printEach`).
+  paths is printed once and copied. Each batch runs in a `p4client-ts.materialize.batch`
+  span and the per-file prints in one `p4client-ts.materialize.printEach` span.
+- Every operation runs in a `p4client-ts.<operation>` span (`Effect.fn`), and
+  `resolveConnection` in `p4client-ts.resolveConnection`. Workspace diffs add one
+  `p4client-ts.diff.file` span per file.
 - Reasons `already_opened`, `exists_in_depot` and `changelist_not_empty`; message
   `6:26` (`%change% unknown.`) is classified as `unknown_changelist`.
 - `P4ProcessEvent` and `P4OperationEvent` are also values: `Data.taggedEnum` constructors
@@ -39,35 +55,22 @@ This project follows semantic versioning.
 
 ### Changed
 
-- Raw rows are typed. `Row` and the record a `P4CommandSpec.decode` receives are
-  `P4WireFields` (strings, numbers, booleans, null, bytes, arrays and nested fields)
-  instead of `Record<string, unknown>`.
-- Every error class is branded, so a plain object with the same fields no longer
-  type-checks as a `P4CommandError` or any other p4client-ts error. Build them with
-  `new`, or rebuild sent errors with `decodeP4Error`.
-- Number fields in schemas, errors and messages accept only finite numbers
-  (`Schema.Finite`); `NaN` and infinities fail to decode.
-- The getting-started guide matches events with `Predicate.isTagged`.
-- Every operation runs in a `p4client-ts.<operation>` span (`Effect.fn`), and
-  `resolveConnection` in `p4client-ts.resolveConnection`. Workspace diffs add one
-  `p4client-ts.diff.file` span per file.
-- The generated TypeDoc API reference is gone. The types and Effect Schemas are the
-  reference, and source comments no longer carry `@param`, `@returns` or `@throws`.
-- Development: anti-slop's Oxlint rules are vendored under `tools/oxlint/anti-slop/`
-  and enforced as errors, and tests and scripts are linted and typechecked with their
-  own `tsconfig.json`.
-- Development: four t3code lint rules (`prefer-effect-fn`, `no-inline-schema-compile`,
-  `require-suppression-reason`, `no-low-value-comments`) are vendored under
-  `tools/oxlint/t3code/` and enforced as errors.
-- Development: the repository builds with the Vite+ toolchain instead of Bun: pnpm,
-  `vp test` (Vitest), the Oxlint that Vite+ bundles (`oxlint.config.ts`), and `vpx` for
-  scripts. The
-  published package is unchanged and still targets Node.js 18 or later.
-- `materializeDepotFiles` items carry `bytes` and `method`, and the result carries
-  `stats`. Results compared with `toEqual` need the new fields.
 - The README rule that clients never write `p4 set` is now that they never do so
   implicitly.
-- Development: Effect-aware Oxlint (`bun run lint`) runs in CI; TypeScript 6.0.3.
+- The generated TypeDoc API reference is gone. The types and Effect Schemas are the
+  reference, and source comments no longer carry `@param`, `@returns` or `@throws`.
+- The guides match events with `Predicate.isTagged`, and every example uses the result it
+  computes.
+
+### Development
+
+- The repository builds with the Vite+ toolchain instead of Bun: pnpm, `vp test`
+  (Vitest), the Oxlint that Vite+ bundles (`oxlint.config.ts`), and `vpx` for scripts. The
+  published package is unchanged and still targets Node.js 18 or later.
+- Effect-aware Oxlint (`pnpm lint`) runs in CI with anti-slop's rules (vendored under
+  `tools/oxlint/anti-slop/`) and four t3code rules (`tools/oxlint/t3code/`) as errors.
+  Tests and scripts are linted and typechecked with their own `tsconfig.json`.
+- TypeScript 6.0.3.
 
 ## 0.13.0 - 2026-10-14
 
