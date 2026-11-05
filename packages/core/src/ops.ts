@@ -1,6 +1,7 @@
 import { annotateFile } from './commands/annotate.js';
+import { createChange, deleteChange } from './commands/change.js';
 import { listChangelists } from './commands/changelists.js';
-import { describeChangelist } from './commands/describe.js';
+import { describeChangelist, describeChangelists } from './commands/describe.js';
 import { diffFile, getChangelistDiffSummary } from './commands/diff.js';
 import { getEnvironment } from './commands/environment.js';
 import {
@@ -14,10 +15,12 @@ import {
   whereFiles,
 } from './commands/files.js';
 import { getFileHistory } from './commands/history.js';
+import { openForAdd, openForEdit, previewOpenForAdd, previewOpenForEdit } from './commands/open.js';
 import { listOpenedFiles } from './commands/opened.js';
 import { printBatch, printFile } from './commands/print.js';
 import { runTagged } from './commands/raw.js';
 import { previewReconcile } from './commands/reconcile.js';
+import { previewRevert, revert } from './commands/revert.js';
 import { getStream, listStreams } from './commands/streams.js';
 import { previewSync, sync } from './commands/sync.js';
 import { listUsers } from './commands/users.js';
@@ -31,7 +34,8 @@ import type { P4Sink } from './engine/operation.js';
  *
  * The `P4` service and the Promise client are derived from this registry, so
  * an operation added here is available in both. Operations that need Node,
- * such as `materializeDepotFiles` and `findWorkspaceForPath`, live in
+ * such as `materializeDepotFiles`, `findWorkspaceForPath` and
+ * `setPersistentWorkspace`, live in
  * `p4client-ts/node`.
  */
 export const ops = {
@@ -40,6 +44,7 @@ export const ops = {
   listChangelists,
   listOpenedFiles,
   describeChangelist,
+  describeChangelists,
   getChangelistDiffSummary,
   diffFile,
   listDepots,
@@ -60,6 +65,14 @@ export const ops = {
   previewSync,
   sync,
   previewReconcile,
+  createChange,
+  deleteChange,
+  previewOpenForEdit,
+  openForEdit,
+  previewOpenForAdd,
+  openForAdd,
+  previewRevert,
+  revert,
   runTagged,
 } as const;
 

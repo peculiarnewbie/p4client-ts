@@ -1,0 +1,32 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "add",
+    "-n",
+    "-c",
+    "15",
+    "-t",
+    "binary+l",
+    "<WORKSPACE>\\wire\\added.uasset"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"action\":\"add\",\"clientFile\":\"<WORKSPACE>\\\\wire\\\\added.uasset\",\"depotFile\":\"//p4ts/main/wire/added.uasset\",\"type\":\"binary+l\",\"workRev\":\"1\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data"
+  ]
+}

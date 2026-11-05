@@ -37,8 +37,9 @@ describe('materializeDepotFiles', () => {
     const result = await run(materializeDepotFiles, { fileSpec: [TEXT], directory: scratch, maxFiles: 1 }, printMaterialize());
     expect(result).toEqual({
       directory: scratch,
-      items: [{ file: TEXT, localPath: textPath }],
+      items: [{ file: TEXT, localPath: textPath, bytes: 16, method: 'print' }],
       messages: [],
+      stats: { files: 1, bytes: 16, batched: 0, printed: 1, batches: 0, retries: 0 },
     } as never);
     expect(existsSync(join(scratch, 'p4ts', 'main', 'wire'))).toBe(true);
   });

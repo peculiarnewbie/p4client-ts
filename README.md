@@ -29,9 +29,13 @@ batch operations add `failures`. `client.watch.<operation>` returns
 `{ events, result }`, with items, messages, failures, progress and a final done event.
 Pass an AbortSignal to cancel. Dispose every client, including clients from `with`.
 
-Mutation is disabled by default. Preview with `previewSync` or `previewReconcile`;
-derive a client with `with({ allowMutation: true })` when applying sync.
-Clients have no caches and never write `p4 set`.
+Mutation is disabled by default. Preview with `previewSync`, `previewReconcile`,
+`previewOpenForEdit`, `previewOpenForAdd` or `previewRevert`; derive a client with
+`with({ allowMutation: true })` to sync, create and delete changelists, open files for
+edit or add, and revert. There is no submit: the user submits pending changelists.
+Clients have no caches and never write `p4 set` implicitly; only the explicit
+`setPersistentWorkspace` in `p4client-ts/node` does, and it changes the user's
+persistent Perforce settings.
 
 The root entry exports the platform-neutral Effect service, operations, types,
 schemas and error codec. Use `p4client-ts/node` for `layerNode` and filesystem helpers,
@@ -39,7 +43,7 @@ schemas and error codec. Use `p4client-ts/node` for `layerNode` and filesystem h
 strict fixture replay and recording.
 
 See the [guides](https://p4client-ts.peculiarnewbie.com/guides/getting-started/)
-and [migration guide](./MIGRATION.md) for the breaking 0.13 changes.
+and [migration guide](./MIGRATION.md) for upgrading from 0.13 and the breaking 0.13 changes.
 
 The Bun monorepo contains `packages/core` (library), `packages/test-stream`
 (live fixtures) and `packages/www` (Astro guides and generated API).

@@ -67,6 +67,8 @@ export const MESSAGE_CATALOG: ReadonlyMap<string, CatalogEntry> = new Map<string
   ['1:4', { reason: 'usage' }],
   // Invalid revision number '%rev%'.
   ['6:17', { reason: 'invalid_revision' }],
+  // %change% unknown. — `change -d`, `edit -c` and `add -c` naming a changelist that does not exist.
+  ['6:26', { reason: 'unknown_changelist' }],
   // %type% '%name%' unknown - use '%command%' command to create it.
   ['6:35', {
     reason: 'unknown_object',

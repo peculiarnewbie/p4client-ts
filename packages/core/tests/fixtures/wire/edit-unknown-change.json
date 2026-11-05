@@ -1,0 +1,29 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "edit",
+    "-c",
+    "999999",
+    "//p4ts/main/blame/blame.txt"
+  ],
+  "exitCode": 1,
+  "stopped": null,
+  "stdout": "{\"code0\":822220826,\"data\":\"Change 999999 unknown.\\n\",\"fmt0\":\"%change% unknown.\",\"generic\":2,\"severity\":3,\"severityformat\":\"error\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "message"
+  ]
+}

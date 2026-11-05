@@ -33,6 +33,7 @@ describe('getEnvironment', () => {
       port: 'ssl:p4:1666',
       serverAddress: String(fixtureRows('info-short-json')[0]?.serverAddress),
       serverVersion: 'P4D/NTX64/2026.1/3089746 (2026/10/07)',
+      serverId: null,
       unicode: true,
       caseInsensitive: true,
       messages: [],

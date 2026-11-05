@@ -295,6 +295,15 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       30_000,
       `${file}\n//p4ts/main/wire/full.uasset\n//p4ts/main/missing.txt\n//p4ts/main/wire/wide.txt\n`,
     );
+    // Batched materialization: binary revisions stream through; text and missing ones fall back.
+    yield* capture(
+      'print-materialize-batch',
+      ['-x', '-', 'print', '-k'],
+      'marshal',
+      {},
+      30_000,
+      `//p4ts/main/wire/full.uasset#1\n//p4ts/main/wire/exclusive.uasset#1\n${file}#1\n//p4ts/main/missing.txt#1\n`,
+    );
     yield* capture('files-mixed', ['files', file, '//p4ts/main/missing.txt']);
     yield* capture('where-mixed', ['where', file, '//other/main/a.txt']);
     yield* capture('fstat-mixed-missing', ['fstat', file, '//p4ts/main/missing.txt']);
@@ -456,11 +465,14 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       undefined,
       secondEnv,
     );
+    // Opened but not yet locked, `edit` names the holder as "also opened by".
+    yield* capture('edit-exclusive-opened', ['edit', '//p4ts/main/wire/exclusive.uasset']);
     yield* write(
       ['lock', '//p4ts/main/wire/exclusive.uasset'],
       undefined,
       secondEnv,
     );
+    yield* capture('edit-preview-exclusive', ['edit', '-n', '//p4ts/main/wire/exclusive.uasset']);
     yield* capture('fstat-exclusive-other', [
       'fstat',
       '//p4ts/main/wire/exclusive.uasset',
@@ -663,6 +675,53 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     yield* write(['submit', '-d', 'Blame revision three']);
     yield* capture('annotate-revisions', ['annotate', '-q', '-c', '//p4ts/main/blame/blame.txt']);
     yield* capture('filelog-revisions', ['filelog', '-l', '-m', '11', '//p4ts/main/blame/blame.txt']);
+    // 0.14 typed mutations: a changelist's whole life, short of submit, which p4client-ts never runs.
+    yield* capture('change-create-invalid', ['change', '-i'], 'plain', {}, 30_000, 'Change: new\n');
+    const created = yield* capture(
+      'change-create',
+      ['change', '-i'],
+      'plain',
+      {},
+      30_000,
+      'Change: new\nDescription:\n\tWire mutation fixture\n\tsecond line\n',
+    );
+    const mutationChange = /Change (\d+) created/.exec(created.stdout)?.[1];
+    if (mutationChange === undefined) {
+      return yield* Effect.fail(new WireScriptError('change -i created no changelist.'));
+    }
+    // wire/text.txt was moved away above; blame.txt was just submitted and synced.
+    const editable = '//p4ts/main/blame/blame.txt';
+    yield* capture('edit-preview', ['edit', '-n', '-c', mutationChange, editable]);
+    yield* capture('edit-change', ['edit', '-c', mutationChange, editable]);
+    yield* capture('edit-already-opened', ['edit', '-c', mutationChange, editable]);
+    yield* capture('edit-not-on-client', ['edit', '//p4ts/main/wire/missing.txt']);
+    yield* capture('edit-unknown-change', ['edit', '-c', '999999', editable]);
+    const added = join(workspace, 'wire/added.uasset');
+    writeFileSync(added, 'added asset\0data');
+    yield* capture('add-preview', ['add', '-n', '-c', mutationChange, '-t', 'binary+l', added]);
+    yield* capture('add-change', ['add', '-c', mutationChange, '-t', 'binary+l', added]);
+    yield* capture('add-existing', ['add', '-c', mutationChange, join(workspace, 'wire/space name.txt')]);
+    yield* capture('change-delete-not-empty', ['change', '-d', mutationChange]);
+    yield* capture('revert-preview', ['revert', '-n', '-c', mutationChange, '//...']);
+    yield* capture('revert-change', ['revert', '-c', mutationChange, '//...']);
+    yield* capture('revert-not-opened', ['revert', '-c', mutationChange, '//...']);
+    rmSync(added, { force: true });
+    yield* capture('change-delete', ['change', '-d', mutationChange]);
+    yield* capture('change-delete-unknown', ['change', '-d', mutationChange]);
+    // Reads behind perforce-sync and Map History: several describes, a range without -l,
+    // and a server-side inventory.
+    yield* capture('describe-many', ['describe', '-s', lastChange, '999999', movedChange]);
+    yield* capture('changes-range-short', ['changes', '-s', 'submitted', `//p4ts/main/wire/...@>${lastChange},@now`]);
+    yield* capture('fstat-server-only', [
+      'fstat',
+      '-Ol',
+      '-Os',
+      '-T',
+      'depotFile headRev headChange headAction headType digest fileSize',
+      `//p4ts/main/wire/...@${movedChange}`,
+    ]);
+    yield* write(['serverid', 'wire-fixture']);
+    yield* capture('info-server-id', ['info', '-s']);
     // Permission failures can be errors or intentionally empty listings, depending on command.
     yield* write(
       ['user', '-f', '-i'],

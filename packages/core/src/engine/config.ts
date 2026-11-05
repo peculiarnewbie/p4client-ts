@@ -15,7 +15,9 @@ export interface P4ClientOptions {
   /** Kill each command after this many milliseconds (at most 2,147,483,647). */
   readonly timeoutMs?: number | undefined;
   /**
-   * Allow commands that change the server or a workspace, such as `sync`.
+   * Allow commands that change the server or a workspace: `sync`, `createChange`,
+   * `deleteChange`, `openForEdit`, `openForAdd`, `revert`, `setPersistentWorkspace`
+   * and mutating `runTagged` commands. Previews (`-n`) never need it.
    * Defaults to `false`: such commands fail with `P4ReadOnlyError` without running.
    */
   readonly allowMutation?: boolean | undefined;

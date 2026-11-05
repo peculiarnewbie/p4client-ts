@@ -1,12 +1,27 @@
 {
+  "add-existing": [
+    "exists_in_depot (text)"
+  ],
   "annotate-empty": [
     "no_such_file (code)"
+  ],
+  "change-delete-not-empty": [
+    "changelist_not_empty (text)"
+  ],
+  "change-delete-unknown": [
+    "unknown_changelist (code)"
+  ],
+  "change-delete": [
+    "unknown (text)"
   ],
   "changes-not-logged-in": [
     "not_logged_in (code)"
   ],
   "changes-ticket-expired": [
     "ticket_expired (code)"
+  ],
+  "describe-many": [
+    "unknown_changelist (code)"
   ],
   "describe-unknown": [
     "unknown_changelist (code)"
@@ -19,6 +34,23 @@
   ],
   "diff2-empty": [
     "no_such_file (code)"
+  ],
+  "edit-already-opened": [
+    "already_opened (text)"
+  ],
+  "edit-exclusive-opened": [
+    "exclusive_open (code)",
+    "unknown (text)"
+  ],
+  "edit-not-on-client": [
+    "not_on_client (code)"
+  ],
+  "edit-preview-exclusive": [
+    "exclusive_open (code)",
+    "locked (text)"
+  ],
+  "edit-unknown-change": [
+    "unknown_changelist (code)"
   ],
   "exclusive-edit-failure": [
     "exclusive_open (code)",
@@ -78,6 +110,9 @@
   "print-marshal-missing": [
     "no_such_file (code)"
   ],
+  "print-materialize-batch": [
+    "no_such_file (code)"
+  ],
   "print-permission": [
     "permission_denied (code)"
   ],
@@ -89,6 +124,9 @@
   ],
   "reconcile-writable": [
     "nothing_to_reconcile (code)"
+  ],
+  "revert-not-opened": [
+    "not_opened (code)"
   ],
   "status-preview": [
     "usage (code)"

@@ -23,6 +23,9 @@ const TEXT_REASONS: ReadonlyArray<readonly [RegExp, P4Reason]> = [
   [/must resolve/i, 'resolve_required'],
   [/exclusive file already opened/i, 'exclusive_open'],
   [/locked by/i, 'locked'],
+  [/currently opened for|can't add \(already opened for/i, 'already_opened'],
+  [/can't add existing file/i, 'exists_in_depot'],
+  [/associated with it and can't be deleted/i, 'changelist_not_empty'],
   [/can't clobber writable file|can't overwrite existing file/i, 'clobber'],
   [/^(?:rename|unlink|remove|read|write|chmod|mkdir|rmdir|lstat|stat|open(?: for (?:read|write))?):\s/i, 'filesystem'],
   [/file\(s\) up-to-date/i, 'up_to_date'],
@@ -66,7 +69,7 @@ export function textReason(text: string): P4Reason {
 /** Reasons that describe an empty or unchanged result rather than a failure. */
 const NOTICE_REASONS = new Set<P4Reason>([
   'no_such_file', 'not_on_client', 'not_opened', 'up_to_date', 'nothing_to_reconcile',
-  'opened_unchanged', 'unknown_revision', 'empty', 'resolve_required', 'locked',
+  'opened_unchanged', 'unknown_revision', 'empty', 'resolve_required', 'locked', 'already_opened',
 ]);
 
 /**
@@ -89,4 +92,30 @@ export function textSeverity(reason: P4Reason, exitCode: number): number {
 export function textSubject(text: string): Readonly<Record<string, string>> {
   const match = /^(?<file>(?:\/\/|[A-Za-z]:[\\/]|\/)[^\r\n]*?) - /.exec(text);
   return match?.groups?.file === undefined ? {} : { file: match.groups.file };
+}
+
+/**
+ * The changelist number in `p4 change -i` output (`Change 42 created.`).
+ *
+ * @param text Command output.
+ * @returns The new changelist number, or `null` when the output names none.
+ */
+export function createdChangeNumber(text: string): number | null {
+  const match = /^Change (\d+) created\b/m.exec(text);
+  return match?.[1] === undefined ? null : Number(match[1]);
+}
+
+/**
+ * Who else has a file open, from the notice `edit` and `add` print after a
+ * refused exclusive open: `<file> - also opened by <user>@<client>` or
+ * `<file> - locked by <user>@<client>`.
+ *
+ * @param text One message.
+ * @returns The file and the holder, or `null` for any other message.
+ */
+export function openHolder(text: string): { readonly file: string; readonly holder: string } | null {
+  const match = /^(?<file>(?:\/\/|[A-Za-z]:[\\/]|\/)[^\r\n]*?) - (?:also opened|locked) by (?<holder>\S+)$/.exec(text.trim());
+  const file = match?.groups?.file;
+  const holder = match?.groups?.holder;
+  return file === undefined || holder === undefined ? null : { file, holder };
 }

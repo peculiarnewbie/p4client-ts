@@ -1,3 +1,35 @@
+# Migrating 0.13 → 0.14
+
+0.14 adds operations and options; the only breaking change is to
+`materializeDepotFiles` results, which gain fields.
+
+- **Materialized files** carry `bytes` and `method` (`'batch' | 'print'`), and the
+  result carries `stats`. Code that compares a result or item with `toEqual`, or
+  rebuilds it field by field, needs the new fields. Nothing else changes unless
+  you pass the new `batch`, `outputPath`, `attempts` or `writable` options.
+- **Running `p4 edit`, `add`, `revert` or `change` yourself:** use `openForEdit`,
+  `openForAdd`, `revert`, `createChange` and `deleteChange` on a client with
+  `allowMutation: true`, and check `failures`. An exclusive file open elsewhere is
+  `{ reason: 'exclusive_open', heldBy: ['user@client'] }`, not an exception.
+  `change -o` / `change -i` spec editing becomes `createChange({ description })`;
+  `-ztag opened -c N` becomes `listOpenedFiles({ change: N })`.
+- **Persistent workspace selection:** the app-owned `p4 set P4CLIENT=…` that 0.13
+  asked for becomes `setPersistentWorkspace({ client })` from `p4client-ts/node`,
+  on a client with `allowMutation: true`. It writes the user's persistent settings,
+  ignoring the client's connection and isolation, so call it only on a user request.
+- **Server-scoped reads that parsed raw output:** `describe -s c1 c2 …` becomes
+  `describeChangelists({ changes })`, whose failures name missing changelists;
+  `changes` without `-l` over a range becomes
+  `listChangelists({ status, fileSpec, limit: 'all', fullDescriptions: false })`;
+  `fstat -Ol -Os -T … @N` becomes
+  `statFiles({ fileSpec, atChange, includeFileSize: true, excludeWorkspaceData: true, fields })`;
+  `info`'s server ID is `getEnvironment({}).serverId`.
+- **Batched `p4 -G -x - print` written to files:** `materializeDepotFiles` with
+  `batch`, an `outputPath` per revision and `concurrency` for the per-file fallback.
+
+New message reasons `already_opened`, `exists_in_depot` and `changelist_not_empty`
+extend `P4Reason`; an exhaustive `switch` over it needs the new cases.
+
 # Migrating 0.11 / 0.12 → 0.13
 
 0.13 replaces the cached `P4Client` with a stateless Effect core and an immutable
@@ -324,9 +356,9 @@ inspects stdin arguments: option lines and mutating commands still require
 Raw tagged results also expose `failures`; a custom item policy requires auditing
 both `.items` and `.failures`.
 
-`with({ connection: { client } })` affects only the new client. An intentional
-persistent active-workspace action must remain app-owned; the library adds no
-persistent `p4 set` switching API.
+`with({ connection: { client } })` affects only the new client. Since 0.14, an
+intentional persistent active-workspace action is `setPersistentWorkspace` from
+`p4client-ts/node`, which writes `p4 set P4CLIENT=…` only when called.
 
 ## Settings resolution and project binding
 

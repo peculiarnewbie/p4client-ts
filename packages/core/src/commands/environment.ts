@@ -22,6 +22,11 @@ export interface P4Environment {
   /** Address the server reports for itself; may not be reachable from here. */
   readonly serverAddress: string | null;
   readonly serverVersion: string | null;
+  /**
+   * The server's ID (`p4 serverid`), or `null` when none is set. Unlike
+   * `serverAddress`, it names the server whichever address reaches it.
+   */
+  readonly serverId: string | null;
   /** Whether the server runs in Unicode mode, which requires a charset. */
   readonly unicode: boolean;
   /** Whether the server compares paths case-insensitively. */
@@ -41,6 +46,8 @@ function toEnvironment(row: Row, port: string | null, messages: P4Message[]): P4
     port,
     serverAddress: text(row.serverAddress),
     serverVersion: text(row.serverVersion),
+    // r26.1 tags it `ServerID`; the `serverID` spelling is accepted as well.
+    serverId: text(row.ServerID) ?? text(row.serverID),
     unicode: row.unicode === 'enabled',
     caseInsensitive: row.caseHandling === 'insensitive',
     messages,

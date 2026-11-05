@@ -1,0 +1,31 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "changes",
+    "-s",
+    "submitted",
+    "//p4ts/main/wire/...@>6,@now"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"change\":\"10\",\"changeType\":\"public\",\"client\":\"p4ts_e2e_client\",\"desc\":\"Wire symlink fixture\",\"path\":\"//p4ts/main/wire/*\",\"status\":\"submitted\",\"time\":\"1793866193\",\"user\":\"p4ts-e2e\"}\n{\"change\":\"9\",\"changeType\":\"public\",\"client\":\"p4ts_e2e_client\",\"desc\":\"Wire move fixture\",\"path\":\"//p4ts/main/wire/*\",\"status\":\"submitted\",\"time\":\"1793866193\",\"user\":\"p4ts-e2e\"}\n{\"change\":\"8\",\"changeType\":\"public\",\"client\":\"wire_second\",\"desc\":\"Second client head\",\"path\":\"//p4ts/main/wire/*\",\"status\":\"submitted\",\"time\":\"1793866191\",\"user\":\"p4ts-e2e\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data",
+    "data",
+    "data"
+  ]
+}
