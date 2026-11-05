@@ -12,7 +12,10 @@ const Record = Schema.Struct({
   exitCode: Schema.optionalKey(Schema.Int),
 });
 
-/** Replay a private log through the guard without running any subprocess. */
+const decodeConfig = Schema.decodeSync(Schema.fromJsonString(Config));
+
+const decodeRecord = Schema.decodeSync(Schema.fromJsonString(Record));
+
 /** What {@link auditProductionLog} found in a production run's log. */
 export interface ProductionLogAudit {
   readonly starts: number;
@@ -22,10 +25,9 @@ export interface ProductionLogAudit {
   readonly commands: { readonly [command: string]: number };
 }
 
+/** Replay a private log through the guard without running any subprocess. */
 export function auditProductionLog(configPath: string): ProductionLogAudit {
-  const config = Schema.decodeSync(Schema.fromJsonString(Config))(
-    readFileSync(configPath, 'utf8'),
-  );
+  const config = decodeConfig(readFileSync(configPath, 'utf8'));
 
   const log = readFileSync(join(config.scratchDir, 'commands.jsonl'), 'utf8');
   let active: string | undefined;
@@ -34,9 +36,7 @@ export function auditProductionLog(configPath: string): ProductionLogAudit {
   const commands: { [command: string]: number } = {};
 
   for (const line of log.trim().split('\n').filter(Boolean)) {
-    const record = Schema.decodeSync(Schema.fromJsonString(Record))(
-      line,
-    );
+    const record = decodeRecord(line);
 
     if (record.event === 'start') {
       if (active || record.args?.[0] !== '-p' || record.args[2] !== '-u') {

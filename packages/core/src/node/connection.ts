@@ -72,32 +72,32 @@ const p4Settings: Effect.Effect<P4Settings, P4Error, P4Executor | P4Config> = Ef
  * @param options Sources to consult.
  * @returns The connection and the source of each value.
  */
-export function resolveConnection(
-  options: ResolveConnectionOptions = {},
-): Effect.Effect<P4ResolvedConnection, P4Error, P4Executor | P4Config> {
-  return Effect.gen(function* () {
-    let settings: P4Settings = {};
-    const sources: Partial<Record<P4SettingField, P4SettingsSource>> = {};
+export const resolveConnection: (
+  options?: ResolveConnectionOptions,
+) => Effect.Effect<P4ResolvedConnection, P4Error, P4Executor | P4Config> = Effect.fn(
+  'p4client-ts.resolveConnection',
+)(function* (options: ResolveConnectionOptions = {}) {
+  let settings: P4Settings = {};
+  const sources: Partial<Record<P4SettingField, P4SettingsSource>> = {};
 
-    for (const source of options.sources ?? DEFAULT_SOURCES) {
-      const found = yield* Match.value(source).pipe(
-        Match.when('p4', () => p4Settings),
-        Match.when('p4v-app-settings', () => readP4vFile('ApplicationSettings.xml', parseP4vApplicationSettingsXml)),
-        Match.when('p4v-connection-map', () => readP4vFile('connectionmap.xml', parseP4vConnectionMapXml)),
-        Match.exhaustive,
-      );
+  for (const source of options.sources ?? DEFAULT_SOURCES) {
+    const found = yield* Match.value(source).pipe(
+      Match.when('p4', () => p4Settings),
+      Match.when('p4v-app-settings', () => readP4vFile('ApplicationSettings.xml', parseP4vApplicationSettingsXml)),
+      Match.when('p4v-connection-map', () => readP4vFile('connectionmap.xml', parseP4vConnectionMapXml)),
+      Match.exhaustive,
+    );
 
-      const merged = fillMissing(settings, found);
-      settings = merged.settings;
+    const merged = fillMissing(settings, found);
+    settings = merged.settings;
 
-      for (const field of merged.contributed) sources[field] = source;
+    for (const field of merged.contributed) sources[field] = source;
 
-      if (settings.port && settings.user && settings.client) break;
-    }
+    if (settings.port && settings.user && settings.client) break;
+  }
 
-    return { connection: toConnection(settings), sources };
-  });
-}
+  return { connection: toConnection(settings), sources };
+});
 
 /** Options for {@link setPersistentWorkspace}. */
 export interface SetPersistentWorkspaceOptions {

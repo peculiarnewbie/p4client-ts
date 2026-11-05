@@ -64,42 +64,45 @@ function toRevertedFile(row: Row): P4RevertedFile {
   };
 }
 
-function runRevert(options: RevertOptions, preview: boolean, sink: P4Sink<P4RevertedFile>) {
-  return Effect.gen(function* () {
-    const args = ['revert'];
+// Untraced: the whole body of revert and previewRevert, which have their own spans.
+const runRevert = Effect.fnUntraced(function* (
+  options: RevertOptions,
+  preview: boolean,
+  sink: P4Sink<P4RevertedFile>,
+) {
+  const args = ['revert'];
 
-    if (preview) args.push('-n');
+  if (preview) args.push('-n');
 
-    if (options.change !== undefined) {
-      args.push('-c', options.change === 'default' ? 'default' : String(yield* requirePositive(options.change, 'change')));
+  if (options.change !== undefined) {
+    args.push('-c', options.change === 'default' ? 'default' : String(yield* requirePositive(options.change, 'change')));
+  }
+
+  const specs = specList(options.fileSpec);
+
+  if (specs.length === 0) {
+    if (options.change === undefined) {
+      return yield* invalid('fileSpec', 'revert needs fileSpec, change, or both; it never reverts everything implicitly.');
     }
 
-    const specs = specList(options.fileSpec);
+    specs.push('//...');
+  }
 
-    if (specs.length === 0) {
-      if (options.change === undefined) {
-        return yield* invalid('fileSpec', 'revert needs fileSpec, change, or both; it never reverts everything implicitly.');
-      }
+  const output = yield* drain(sink, streamCommand({
+    args: [...args, ...specs],
+    format: 'json',
+    policy: REVERT_POLICY,
+    decode: toRevertedFile,
+  }), { item: (file) => file, counter: progressCounter(sink, 'files') });
 
-      specs.push('//...');
-    }
+  const result: P4RevertResult = {
+    items: output.items,
+    failures: output.failures.map(itemFailure),
+    messages: output.messages,
+  };
 
-    const output = yield* drain(sink, streamCommand({
-      args: [...args, ...specs],
-      format: 'json',
-      policy: REVERT_POLICY,
-      decode: toRevertedFile,
-    }), { item: (file) => file, counter: progressCounter(sink, 'files') });
-
-    const result: P4RevertResult = {
-      items: output.items,
-      failures: output.failures.map(itemFailure),
-      messages: output.messages,
-    };
-
-    return result;
-  });
-}
+  return result;
+});
 
 /**
  * Revert open files with `p4 revert`, discarding their changes in the workspace.

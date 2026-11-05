@@ -11,7 +11,7 @@ export interface P4ScriptedOutput {
   readonly exitCode?: number | null | undefined;
 }
 
-/** Options for test executors. */
+/** How {@link scriptedExecutor} and {@link replayExecutor} deliver output. */
 export interface P4TestExecutorOptions {
   /**
    * Deliver stdout in chunks of this many bytes, to exercise readers with

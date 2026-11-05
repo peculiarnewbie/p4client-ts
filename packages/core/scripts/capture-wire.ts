@@ -128,93 +128,92 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       ),
     );
 
-  const capture = (
+  const capture = Effect.fn('captureWire.capture')(function* (
     name: string,
     args: string[],
     mode: Mode = 'json',
     overrides: NodeJS.ProcessEnv = {},
     timeoutMs = 30_000,
     input?: string,
-  ) =>
-    Effect.gen(function* () {
-      const environment = { ...env, ...overrides };
-      assertLocal(fixture, args, environment);
+  ) {
+    const environment = { ...env, ...overrides };
+    assertLocal(fixture, args, environment);
 
-      const actual = [
-        '-p',
-        environment.P4PORT ?? '',
-        '-u',
-        environment.P4USER ?? '',
-        '-c',
-        environment.P4CLIENT ?? '',
-        ...PREFIX[mode],
-        ...args,
-      ];
+    const actual = [
+      '-p',
+      environment.P4PORT ?? '',
+      '-u',
+      environment.P4USER ?? '',
+      '-c',
+      environment.P4CLIENT ?? '',
+      ...PREFIX[mode],
+      ...args,
+    ];
 
-      const result = yield* captureSubprocess(
-        fixture.p4Executable,
-        actual,
-        workspace,
-        environment,
-        timeoutMs,
-        input,
-      );
+    const result = yield* captureSubprocess(
+      fixture.p4Executable,
+      actual,
+      workspace,
+      environment,
+      timeoutMs,
+      input,
+    );
 
-      writeFileSync(
-        join(privateRoot, `${name}.json`),
-        JSON.stringify(result, null, 2),
-      );
-      const stdout = normalize(result.stdout);
-      const stderr = normalize(result.stderr);
+    writeFileSync(
+      join(privateRoot, `${name}.json`),
+      JSON.stringify(result, null, 2),
+    );
+    const stdout = normalize(result.stdout);
+    const stderr = normalize(result.stderr);
 
-      const rows =
-        mode === 'json'
-          ? stdout
-              .trim()
-              .split(/\r?\n/)
-              .filter(Boolean)
-              .map((line) => {
-                try {
-                  const row = decodeJsonRow(line);
+    const rows =
+      mode === 'json'
+        ? stdout
+            .trim()
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map((line) => {
+              try {
+                const row = decodeJsonRow(line);
 
-                  return row.severity !== undefined ||
-                    row.level !== undefined ||
-                    row.code === 'error' ||
-                    row.code === 'info'
-                    ? 'message'
-                    : 'data';
-                } catch {
-                  return 'text';
-                }
-              })
-          : [];
+                return row.severity !== undefined ||
+                  row.level !== undefined ||
+                  row.code === 'error' ||
+                  row.code === 'info'
+                  ? 'message'
+                  : 'data';
+              } catch {
+                return 'text';
+              }
+            })
+        : [];
 
-      writeFileSync(
-        join(destination, `${name}.json`),
-        JSON.stringify(
-          {
-            origin: 'disposable p4d r26.1',
-            mode,
-            cwd: '<WORKSPACE>',
-            charset: environment.P4CHARSET,
-            args: actual.map(normalize),
-            // JSON.stringify leaves `input` out of the fixture when there is none.
-            input: input === undefined ? undefined : normalize(input),
-            exitCode: result.exitCode,
-            stopped: result.stopped,
-            stdout: mode === 'marshal' ? null : stdout,
-            stdoutBase64: mode === 'marshal' ? result.stdoutBase64 : null,
-            stderr,
-            rows,
-          },
-          null,
-          2,
-        ) + '\n',
-      );
-      count += 1;
+    writeFileSync(
+      join(destination, `${name}.json`),
+      JSON.stringify(
+        {
+          origin: 'disposable p4d r26.1',
+          mode,
+          cwd: '<WORKSPACE>',
+          charset: environment.P4CHARSET,
+          args: actual.map(normalize),
+          // JSON.stringify leaves `input` out of the fixture when there is none.
+          input: input === undefined ? undefined : normalize(input),
+          exitCode: result.exitCode,
+          stopped: result.stopped,
+          stdout: mode === 'marshal' ? null : stdout,
+          stdoutBase64: mode === 'marshal' ? result.stdoutBase64 : null,
+          stderr,
+          rows,
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+    count += 1;
 
-      return result;
-    });
+    return result;
+  });
 
   const file = '//p4ts/main/wire/text.txt';
   const local = join(workspace, 'wire/text.txt');

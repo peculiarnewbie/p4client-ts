@@ -108,17 +108,16 @@ function toDescribed(shelved: boolean) {
   };
 }
 
-function describeNumbered(number: number, shelved: boolean) {
-  return Effect.gen(function* () {
-    const args = shelved ? ['describe', '-S', '-s', String(number)] : ['describe', '-s', String(number)];
-    const output = yield* runCommand({ args, format: 'json', decode: toDescribed(shelved) });
-    const described = output.items[0];
+// Untraced: runs inside the describeChangelist span.
+const describeNumbered = Effect.fnUntraced(function* (number: number, shelved: boolean) {
+  const args = shelved ? ['describe', '-S', '-s', String(number)] : ['describe', '-s', String(number)];
+  const output = yield* runCommand({ args, format: 'json', decode: toDescribed(shelved) });
+  const described = output.items[0];
 
-    if (described === undefined) return yield* malformed('describe printed no changelist.', output.messages);
+  if (described === undefined) return yield* malformed('describe printed no changelist.', output.messages);
 
-    return { ...described, messages: output.messages } satisfies P4ChangelistDescription;
-  });
-}
+  return { ...described, messages: output.messages } satisfies P4ChangelistDescription;
+});
 
 /**
  * Describe a changelist: its metadata and files, without diffs.

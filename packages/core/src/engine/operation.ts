@@ -79,7 +79,7 @@ export interface P4Operation<O, I, R> {
 }
 
 /**
- * Define an operation.
+ * Define an operation. Its program runs in a `p4client-ts.<name>` span.
  *
  * @param name Operation name.
  * @param program The program; report through the sink, return the result.
@@ -91,7 +91,11 @@ export function operation<O, I, R>(
   program: (options: O, sink: P4Sink<I>) => Effect.Effect<R, P4Error, P4Context>,
   progressUnit: P4ProgressUnit = 'records',
 ): P4Operation<O, I, R> {
-  return { name, program, progressUnit };
+  const traced = Effect.fn(`p4client-ts.${name}`)(function* (options: O, sink: P4Sink<I>) {
+    return yield* program(options, sink);
+  });
+
+  return { name, program: traced, progressUnit };
 }
 
 const SILENT: P4Sink<unknown> = {

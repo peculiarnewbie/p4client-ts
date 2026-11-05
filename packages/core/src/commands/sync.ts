@@ -129,38 +129,41 @@ interface SyncTotals {
   readonly bytes: number | null;
 }
 
-function runSync(options: SyncOptions, preview: boolean, sink: P4Sink<P4SyncItem>) {
-  return Effect.gen(function* () {
-    const counter = progressCounter(sink, 'files');
-    let bytes: number | undefined;
-    let totals: SyncTotals = { files: null, bytes: null };
-    // Each file advances the count by one and the bytes by its size.
-    const perFile: P4ProgressCounter = { ...counter, advance: () => counter.advance(1, bytes) };
+// Untraced: the whole body of sync and previewSync, which have their own spans.
+const runSync = Effect.fnUntraced(function* (
+  options: SyncOptions,
+  preview: boolean,
+  sink: P4Sink<P4SyncItem>,
+) {
+  const counter = progressCounter(sink, 'files');
+  let bytes: number | undefined;
+  let totals: SyncTotals = { files: null, bytes: null };
+  // Each file advances the count by one and the bytes by its size.
+  const perFile: P4ProgressCounter = { ...counter, advance: () => counter.advance(1, bytes) };
 
-    const output = yield* drain(sink, streamCommand(syncCommand(options, preview)), {
-      item: (record) => record.item,
-      counter: perFile,
-      inspect: (record) => {
-        if (record.totalFileCount !== null && totals.files === null) {
-          totals = { files: record.totalFileCount, bytes: record.totalFileSize };
-          counter.expect(totals.files, totals.bytes);
-        }
+  const output = yield* drain(sink, streamCommand(syncCommand(options, preview)), {
+    item: (record) => record.item,
+    counter: perFile,
+    inspect: (record) => {
+      if (record.totalFileCount !== null && totals.files === null) {
+        totals = { files: record.totalFileCount, bytes: record.totalFileSize };
+        counter.expect(totals.files, totals.bytes);
+      }
 
-        bytes = record.item.fileSize ?? undefined;
-      },
-    });
-
-    const result: P4SyncResult = {
-      items: output.items.map((record) => record.item),
-      failures: output.failures.map(itemFailure),
-      messages: output.messages,
-      totalFileCount: totals.files,
-      totalFileSize: totals.bytes,
-    };
-
-    return result;
+      bytes = record.item.fileSize ?? undefined;
+    },
   });
-}
+
+  const result: P4SyncResult = {
+    items: output.items.map((record) => record.item),
+    failures: output.failures.map(itemFailure),
+    messages: output.messages,
+    totalFileCount: totals.files,
+    totalFileSize: totals.bytes,
+  };
+
+  return result;
+});
 
 /**
  * Preview a sync with `p4 sync -n`: the files it would update, without

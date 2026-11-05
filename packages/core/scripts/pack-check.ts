@@ -17,6 +17,10 @@ const PackedPackage = Schema.Struct({
 // npm 12 keys the report by package name; earlier versions print an array.
 const PackReport = Schema.Union([Schema.Array(PackedPackage), Schema.Record(Schema.String, PackedPackage)]);
 
+const decodeManifest = Schema.decodeSync(Schema.fromJsonString(Manifest));
+
+const decodePackReport = Schema.decodeSync(Schema.fromJsonString(PackReport));
+
 /**
  * Validate npm's actual file list against every declared runtime and type entry.
  * @param directory Package directory; defaults to the core package.
@@ -24,9 +28,7 @@ const PackReport = Schema.Union([Schema.Array(PackedPackage), Schema.Record(Sche
  * @throws When npm fails or a declared entry is absent from its package file list.
  */
 export function checkPackage(directory = fileURLToPath(new URL('..', import.meta.url))): number {
-  const manifest = Schema.decodeSync(Schema.fromJsonString(Manifest))(
-    readFileSync(join(directory, 'package.json'), 'utf8'),
-  );
+  const manifest = decodeManifest(readFileSync(join(directory, 'package.json'), 'utf8'));
 
   // npm.cmd needs cmd.exe on Windows. All shell arguments here are constant.
   const packed = process.platform === 'win32'
@@ -38,7 +40,7 @@ export function checkPackage(directory = fileURLToPath(new URL('..', import.meta
   if (packed.error) throw packed.error;
 
   if (packed.status !== 0) throw new Error(`npm pack failed: ${packed.stderr}`);
-  const report = Schema.decodeSync(Schema.fromJsonString(PackReport))(packed.stdout);
+  const report = decodePackReport(packed.stdout);
   const reports: ReadonlyArray<typeof PackedPackage.Type> = Array.isArray(report) ? report : Object.values(report);
 
   if (reports.length !== 1) throw new Error('Expected exactly one npm pack report.');

@@ -238,14 +238,14 @@ describe('setPersistentWorkspace', () => {
   });
 });
 
+const decodeChangeRow = Schema.decodeSync(Schema.fromJsonString(Schema.Struct({ change: Schema.String })));
+
 describe('describeChangelists', () => {
   it('describes past a changelist that does not exist, which describe stops at', async () => {
     const [many] = fixtures('describe-many');
     const [moved] = fixtures('describe-move');
 
-    const movedRow = Schema.decodeSync(Schema.fromJsonString(Schema.Struct({ change: Schema.String })))(
-      moved!.stdout!.split('\n')[0]!,
-    );
+    const movedRow = decodeChangeRow(moved!.stdout!.split('\n')[0]!);
 
     const responses = new Map([
       [JSON.stringify([...TAG, 'describe', '-s', '6', '999999', movedRow.change]), fixtureStdout(many!)],

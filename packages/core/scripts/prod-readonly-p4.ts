@@ -32,6 +32,10 @@ const Config = Schema.Struct({
 /** Explicit connection settings; keep instances in the gitignored capture directory. */
 export type ProductionReadConfig = typeof Config.Type;
 
+const decodeConfig = Schema.decodeEffect(Config);
+
+const decodeConfigJson = Schema.decodeEffect(Schema.fromJsonString(Config));
+
 // Only reviewed flags are accepted. A flag's value cannot become another command or option.
 const FLAGS = new Map<string, ReadonlyMap<string, boolean>>(Object.entries({
   info: {},
@@ -358,7 +362,7 @@ export function runProductionRead(
 ): Promise<ProductionCapture> {
   return Effect.runPromise(
     Effect.gen(function* () {
-      const settings = yield* Schema.decodeEffect(Config)(config);
+      const settings = yield* decodeConfig(config);
       const scratch = resolve(settings.scratchDir);
       const temp = realpathSync(tmpdir());
 
@@ -486,9 +490,7 @@ if (import.meta.main) {
         );
       const contents = yield* Effect.promise(() => Bun.file(configPath).text());
 
-      const config = yield* Schema.decodeEffect(
-        Schema.fromJsonString(Config),
-      )(contents);
+      const config = yield* decodeConfigJson(contents);
 
       const capture = yield* Effect.promise(() =>
         runProductionRead(config, args),

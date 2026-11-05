@@ -18,6 +18,10 @@ const messages = [...corpus].flatMap(([name, fixture]) =>
 
 const coded = messages.filter(({ message }) => message.code !== null);
 
+const decodeGolden = Schema.decodeSync(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Array(Schema.String))),
+);
+
 describe('message catalog against the wire corpus', () => {
   it('finds coded messages in the corpus', () => {
     expect(coded.length).toBeGreaterThan(30);
@@ -53,9 +57,7 @@ describe('message catalog against the wire corpus', () => {
   });
 
   it('classifies every corpus message as recorded in _reasons.json', () => {
-    const golden = Schema.decodeSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Array(Schema.String))))(
-      readFileSync(join(WIRE_ROOT, '_reasons.json'), 'utf8'),
-    );
+    const golden = decodeGolden(readFileSync(join(WIRE_ROOT, '_reasons.json'), 'utf8'));
 
     expect(Object.fromEntries(corpusReasons())).toEqual(golden);
   });

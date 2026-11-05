@@ -257,26 +257,27 @@ function fsTry<A>(path: string, run: () => Promise<A>): Effect.Effect<A, P4Mater
 /** `p4 print` leaves read-only files, which Windows will not replace; a missing file is fine. */
 const makeWritable = (path: string) => Effect.promise(() => chmod(path, 0o666).catch(() => undefined));
 
-/** Move a verified staging file to the group's first output and copy it to the rest. */
-function place(group: Group, staged: string, writable: boolean): Effect.Effect<void, P4MaterializationError> {
-  return Effect.gen(function* () {
-    const [first, ...copies] = group.targets;
+/**
+ * Move a verified staging file to the group's first output and copy it to the rest.
+ * Untraced: it runs once per file, inside the materializeDepotFiles span.
+ */
+const place = Effect.fnUntraced(function* (group: Group, staged: string, writable: boolean) {
+  const [first, ...copies] = group.targets;
 
-    if (first === undefined) return;
-    yield* makeWritable(first.outputPath);
-    yield* fsTry(first.outputPath, () => rename(staged, first.outputPath));
+  if (first === undefined) return;
+  yield* makeWritable(first.outputPath);
+  yield* fsTry(first.outputPath, () => rename(staged, first.outputPath));
 
-    if (writable) yield* makeWritable(first.outputPath);
+  if (writable) yield* makeWritable(first.outputPath);
 
-    for (const copy of copies) {
-      yield* fsTry(dirname(copy.outputPath), () => mkdir(dirname(copy.outputPath), { recursive: true }));
-      yield* makeWritable(copy.outputPath);
-      yield* fsTry(copy.outputPath, () => copyFile(first.outputPath, copy.outputPath));
+  for (const copy of copies) {
+    yield* fsTry(dirname(copy.outputPath), () => mkdir(dirname(copy.outputPath), { recursive: true }));
+    yield* makeWritable(copy.outputPath);
+    yield* fsTry(copy.outputPath, () => copyFile(first.outputPath, copy.outputPath));
 
-      if (writable) yield* makeWritable(copy.outputPath);
-    }
-  });
-}
+    if (writable) yield* makeWritable(copy.outputPath);
+  }
+});
 
 /** A group written to every one of its outputs. */
 interface Written {
@@ -373,7 +374,8 @@ function printBatch(
       });
     });
 
-    const start = (record: BatchStat) => Effect.gen(function* () {
+    // Untraced: runs once per batched file, inside the batch's span.
+    const start = Effect.fnUntraced(function* (record: BatchStat) {
       const group = wanted.get(record.key);
 
       if (group === undefined || done.has(record.key)) return;
@@ -503,6 +505,11 @@ export const materializeDepotFiles =
   P4MaterializeResult
 >('materializeDepotFiles', (options, sink) =>
   Effect.gen(function* () {
+    yield* Effect.annotateCurrentSpan({
+      'p4.files': options.fileSpec.length,
+      'p4.batch': options.batch !== undefined && options.batch !== false,
+    });
+
     const maxFiles = yield* requirePositive(options.maxFiles, 'maxFiles');
     const concurrency = yield* requirePositive(options.concurrency ?? 4, 'concurrency');
     const attempts = yield* requirePositive(options.attempts ?? 1, 'attempts');
@@ -533,7 +540,8 @@ export const materializeDepotFiles =
     const messages: P4Message[] = [];
     const stats = { files: 0, bytes: 0, batched: 0, printed: 0, batches: 0, retries: 0 };
 
-    const accept = (written: Written) => Effect.gen(function* () {
+    // Untraced: runs once per written file, inside the materializeDepotFiles span.
+    const accept = Effect.fnUntraced(function* (written: Written) {
       for (const target of written.group.targets) {
         const item: P4MaterializedFile = {
           file: target.file,
@@ -609,8 +617,4 @@ export const materializeDepotFiles =
       messages,
       stats: { ...stats },
     };
-  }).pipe(
-    Effect.withSpan('p4client-ts.materializeDepotFiles', {
-      attributes: { 'p4.files': options.fileSpec.length, 'p4.batch': options.batch !== undefined && options.batch !== false },
-    }),
-  ), 'files') as P4MaterializeOperation;
+  }), 'files') as P4MaterializeOperation;

@@ -9,8 +9,6 @@ import { hasUnifiedHunk, isBinaryP4Type, resolveDiffPlan, summarizeUnifiedDiff }
 import { openedCommand } from './opened.js';
 import { isWireString } from '../wire/value.js';
 import { invalid, localPath, requirePositive, text } from './shared.js';
-import type { P4Context } from '../engine/operation.js';
-import type { P4Error } from '../errors.js';
 import type { P4DepotPath, P4FileAction, P4LocalPath } from '../schemas.js';
 import type { P4Message } from '../wire/message.js';
 import type { P4ChangelistDescription, P4DescribedFile } from './describe.js';
@@ -92,56 +90,54 @@ function toWorkspaceDiffRow(row: Row): WorkspaceDiffRow | null {
 const utf8 = new TextDecoder('utf-8');
 
 /** Run a diff once its options are validated. */
-function runDiff(
+const runDiff = Effect.fn('p4client-ts.diff.file')(function* (
   depotFile: P4DepotPath,
   localFile: P4LocalPath | null,
   options: DiffFileOptions,
-): Effect.Effect<P4FileDiff, P4Error, P4Context> {
-  return Effect.gen(function* () {
-    const plan = yield* planFor(options);
-    const base = { depotFile, source: plan.source, fromRevision: plan.fromRevision, toRevision: plan.toRevision };
+) {
+  const plan = yield* planFor(options);
+  const base = { depotFile, source: plan.source, fromRevision: plan.fromRevision, toRevision: plan.toRevision };
 
-    if (options.allowBinary === false && isBinaryP4Type(options.type)) {
-      return {
-        ...base, localFile, unifiedDiff: '', isBinary: true, additions: 0, deletions: 0, messages: [],
-      };
-    }
-
-    let unifiedDiff: string;
-    let messages: P4Message[];
-    let reportedLocal: P4LocalPath | null = null;
-
-    if (plan.command === 'diff') {
-      // `-Mj diff` sends the file as a data row, then the hunks (without ---/+++ headers) as `data` rows.
-      const output = yield* runCommand({ args: ['diff', ...plan.args], format: 'json', decode: toWorkspaceDiffRow });
-      unifiedDiff = output.items.map((row) => (Predicate.isTagged(row, 'body') ? row.text : '')).join('');
-      reportedLocal = output.items.find((row) => Predicate.isTagged(row, 'header'))?.localFile ?? null;
-      messages = [...output.messages, ...output.failures];
-    } else {
-      // `-Mj`/`-G diff2` send only a header, so the hunks come from plain output.
-      const output = yield* runPlainCommand({
-        args: ['diff2', ...plan.args],
-        // An external diff tool may exit 1 when the files differ.
-        acceptExit: (code, stdout) => code === 1 && hasUnifiedHunk(utf8.decode(stdout)),
-      });
-
-      unifiedDiff = utf8.decode(output.stdout);
-      messages = [...output.messages, ...output.failures];
-    }
-
-    const { additions, deletions } = summarizeUnifiedDiff(unifiedDiff);
-
+  if (options.allowBinary === false && isBinaryP4Type(options.type)) {
     return {
-      ...base,
-      localFile: localFile ?? reportedLocal,
-      unifiedDiff,
-      isBinary: false,
-      additions,
-      deletions,
-      messages,
+      ...base, localFile, unifiedDiff: '', isBinary: true, additions: 0, deletions: 0, messages: [],
     };
-  });
-}
+  }
+
+  let unifiedDiff: string;
+  let messages: P4Message[];
+  let reportedLocal: P4LocalPath | null = null;
+
+  if (plan.command === 'diff') {
+    // `-Mj diff` sends the file as a data row, then the hunks (without ---/+++ headers) as `data` rows.
+    const output = yield* runCommand({ args: ['diff', ...plan.args], format: 'json', decode: toWorkspaceDiffRow });
+    unifiedDiff = output.items.map((row) => (Predicate.isTagged(row, 'body') ? row.text : '')).join('');
+    reportedLocal = output.items.find((row) => Predicate.isTagged(row, 'header'))?.localFile ?? null;
+    messages = [...output.messages, ...output.failures];
+  } else {
+    // `-Mj`/`-G diff2` send only a header, so the hunks come from plain output.
+    const output = yield* runPlainCommand({
+      args: ['diff2', ...plan.args],
+      // An external diff tool may exit 1 when the files differ.
+      acceptExit: (code, stdout) => code === 1 && hasUnifiedHunk(utf8.decode(stdout)),
+    });
+
+    unifiedDiff = utf8.decode(output.stdout);
+    messages = [...output.messages, ...output.failures];
+  }
+
+  const { additions, deletions } = summarizeUnifiedDiff(unifiedDiff);
+
+  return {
+    ...base,
+    localFile: localFile ?? reportedLocal,
+    unifiedDiff,
+    isBinary: false,
+    additions,
+    deletions,
+    messages,
+  };
+});
 
 /**
  * Diff one file as a unified diff.

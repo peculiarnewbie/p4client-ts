@@ -61,6 +61,11 @@ export type P4LocalPath = typeof P4LocalPathSchema.Type;
 /** A validated file action token, such as `edit` or `move/add`. */
 export type P4FileAction = typeof P4FileActionSchema.Type;
 
+const decodeDepotPath = Schema.decodeSync(P4DepotPathSchema);
+const decodeClientPath = Schema.decodeSync(P4ClientPathSchema);
+const decodeLocalPath = Schema.decodeSync(P4LocalPathSchema);
+const decodeFileAction = Schema.decodeSync(P4FileActionSchema);
+
 /** Validated depot path constructor. @throws {Schema.SchemaError} For invalid depot syntax. */
 export const P4DepotPath = {
   /**
@@ -70,7 +75,7 @@ export const P4DepotPath = {
    * @throws {Schema.SchemaError} When validation fails.
    */
   make(value: string): P4DepotPath {
-    return Schema.decodeSync(P4DepotPathSchema)(value);
+    return decodeDepotPath(value);
   },
 };
 
@@ -83,7 +88,7 @@ export const P4ClientPath = {
    * @throws {Schema.SchemaError} When validation fails.
    */
   make(value: string): P4ClientPath {
-    return Schema.decodeSync(P4ClientPathSchema)(value);
+    return decodeClientPath(value);
   },
 };
 
@@ -96,7 +101,7 @@ export const P4LocalPath = {
    * @throws {Schema.SchemaError} When validation fails.
    */
   make(value: string): P4LocalPath {
-    return Schema.decodeSync(P4LocalPathSchema)(value);
+    return decodeLocalPath(value);
   },
 };
 
@@ -109,6 +114,6 @@ export const P4FileAction = {
    * @throws {Schema.SchemaError} When validation fails.
    */
   make(value: string): P4FileAction {
-    return Schema.decodeSync(P4FileActionSchema)(value);
+    return decodeFileAction(value);
   },
 };

@@ -99,6 +99,10 @@ export type P4Error = typeof P4ErrorSchema.Type;
 /** Serializable form of a {@link P4Error}. */
 export type P4EncodedError = typeof P4ErrorSchema.Encoded;
 
+const encodeError = Schema.encodeSync(P4ErrorSchema);
+
+const decodeError = Schema.decodeUnknownSync(P4ErrorSchema);
+
 /**
  * Encode an error as plain data, for example to send it over Electron IPC,
  * which drops the fields of `Error` subclasses.
@@ -107,7 +111,7 @@ export type P4EncodedError = typeof P4ErrorSchema.Encoded;
  * @returns Plain data accepted by {@link decodeP4Error}.
  */
 export function encodeP4Error(error: P4Error): P4EncodedError {
-  return Schema.encodeSync(P4ErrorSchema)(error);
+  return encodeError(error);
 }
 
 /**
@@ -122,7 +126,7 @@ export function decodeP4Error(
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- input from IPC is unknown until parsed here
   encoded: unknown,
 ): P4Error {
-  return Schema.decodeUnknownSync(P4ErrorSchema)(encoded);
+  return decodeError(encoded);
 }
 
 const MAX_RETAINED = 64 * 1024;

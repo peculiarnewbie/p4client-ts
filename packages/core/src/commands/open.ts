@@ -120,45 +120,48 @@ function withHolders(failures: P4ItemFailure[], messages: P4Message[]): P4OpenFa
   }));
 }
 
-function runOpen(command: 'edit' | 'add', args: string[], fileSpec: FileSpecs, sink: P4Sink<P4FileOpen>) {
-  return Effect.gen(function* () {
-    const specs = specList(fileSpec);
+// Untraced: the body of the open operations, which have their own spans.
+const runOpen = Effect.fnUntraced(function* (
+  command: 'edit' | 'add',
+  args: string[],
+  fileSpec: FileSpecs,
+  sink: P4Sink<P4FileOpen>,
+) {
+  const specs = specList(fileSpec);
 
-    if (specs.length === 0) return yield* invalid('fileSpec', `${command} needs at least one file.`);
+  if (specs.length === 0) return yield* invalid('fileSpec', `${command} needs at least one file.`);
 
-    const output = yield* drain(sink, streamCommand({
-      args: [command, ...args, ...specs],
-      format: 'json',
-      policy: OPEN_POLICY,
-      decode: toFileOpen,
-    }), { item: (file) => file, counter: progressCounter(sink, 'files') });
+  const output = yield* drain(sink, streamCommand({
+    args: [command, ...args, ...specs],
+    format: 'json',
+    policy: OPEN_POLICY,
+    decode: toFileOpen,
+  }), { item: (file) => file, counter: progressCounter(sink, 'files') });
 
-    const result: P4OpenResult = {
-      items: output.items,
-      failures: withHolders(output.failures.map(itemFailure), output.messages),
-      messages: output.messages,
-    };
+  const result: P4OpenResult = {
+    items: output.items,
+    failures: withHolders(output.failures.map(itemFailure), output.messages),
+    messages: output.messages,
+  };
 
-    return result;
-  });
-}
+  return result;
+});
 
 function editArgs(options: OpenForEditOptions, preview: boolean) {
   return Effect.map(changeArgs(options.change), (change) => [...(preview ? ['-n'] : []), ...change]);
 }
 
-function addArgs(options: OpenForAddOptions, preview: boolean) {
-  return Effect.gen(function* () {
-    const args = [...(preview ? ['-n'] : []), ...yield* changeArgs(options.change)];
+// Untraced: validates arguments inside the openForAdd and previewOpenForAdd spans.
+const addArgs = Effect.fnUntraced(function* (options: OpenForAddOptions, preview: boolean) {
+  const args = [...(preview ? ['-n'] : []), ...yield* changeArgs(options.change)];
 
-    if (options.type !== undefined) {
-      if (!/^[A-Za-z0-9+]+$/.test(options.type)) return yield* invalid('type', `Invalid file type "${options.type}".`);
-      args.push('-t', options.type);
-    }
+  if (options.type !== undefined) {
+    if (!/^[A-Za-z0-9+]+$/.test(options.type)) return yield* invalid('type', `Invalid file type "${options.type}".`);
+    args.push('-t', options.type);
+  }
 
-    return args;
-  });
-}
+  return args;
+});
 
 /**
  * Open files for edit with `p4 edit`, making them writable.
