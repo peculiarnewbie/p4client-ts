@@ -53,7 +53,7 @@
   "scripts": {
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.type-tests.json && tsc -p tsconfig.scripts.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/types && tsc -p tests && tsc -p scripts",
     "wire:capture": "bun scripts/capture-wire.ts",
     "test": "bun test tests/*.test.ts tests/unit/",
     "test:e2e": "bun scripts/test-perforce-e2e.ts",
