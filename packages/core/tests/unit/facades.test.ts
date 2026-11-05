@@ -46,15 +46,15 @@ describe('Phase 5 facades', () => {
   it('derives both service and Promise method keys from ops', async () => {
     assert<Equal<Exclude<keyof P4Service, 'watch'>, keyof typeof ops>>();
     assert<Equal<keyof P4Service['watch'], keyof typeof ops>>();
-    assert<Equal<Exclude<keyof P4PromiseClient, 'watch' | 'with' | 'dispose' | 'resolveConnection' | 'workspaceRootExists' | 'findWorkspaceForPath' | 'materializeDepotFiles'>, keyof typeof ops>>();
-    assert<Equal<Exclude<keyof P4PromiseWatch, 'findWorkspaceForPath' | 'materializeDepotFiles'>, keyof typeof ops>>();
+    assert<Equal<Exclude<keyof P4PromiseClient, 'watch' | 'with' | 'dispose' | 'resolveConnection' | 'workspaceRootExists' | 'findWorkspaceForPath' | 'materializeDepotFiles' | 'setPersistentWorkspace'>, keyof typeof ops>>();
+    assert<Equal<Exclude<keyof P4PromiseWatch, 'findWorkspaceForPath' | 'materializeDepotFiles' | 'setPersistentWorkspace'>, keyof typeof ops>>();
     const service = await Effect.runPromise(P4.pipe(
       Effect.provide(serviceLayer(scriptedExecutor(() => ({ stdout: row })))),
     ));
     const client = clientFor(scriptedExecutor(() => ({ stdout: row })));
     try {
       expect(Object.keys(service).filter((key) => key !== 'watch').sort()).toEqual(Object.keys(ops).sort());
-      expect(Object.keys(client.watch).sort()).toEqual([...Object.keys(ops), 'findWorkspaceForPath', 'materializeDepotFiles'].sort());
+      expect(Object.keys(client.watch).sort()).toEqual([...Object.keys(ops), 'findWorkspaceForPath', 'materializeDepotFiles', 'setPersistentWorkspace'].sort());
       expect((await Effect.runPromise(service.runTagged({ args: ['info'] }))).items).toHaveLength(1);
     } finally { await client.dispose(); }
   });

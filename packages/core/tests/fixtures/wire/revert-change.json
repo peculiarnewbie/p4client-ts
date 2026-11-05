@@ -1,0 +1,30 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "revert",
+    "-c",
+    "15",
+    "//..."
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"action\":\"abandoned\",\"clientFile\":\"<WORKSPACE>\\\\wire\\\\added.uasset\",\"depotFile\":\"//p4ts/main/wire/added.uasset\",\"haveRev\":\"none\",\"oldAction\":\"add\"}\n{\"action\":\"reverted\",\"clientFile\":\"<WORKSPACE>\\\\blame\\\\blame.txt\",\"depotFile\":\"//p4ts/main/blame/blame.txt\",\"haveRev\":\"3\",\"oldAction\":\"edit\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data",
+    "data"
+  ]
+}

@@ -32,8 +32,17 @@ export interface ListChangelistsOptions {
    * or team view: `client` limits the list to one workspace's changelists.
    */
   readonly fileSpec?: FileSpecs | undefined;
-  /** Page size. Defaults to 50. */
-  readonly limit?: number | undefined;
+  /**
+   * Page size. Defaults to 50. `'all'` lists every match in one page, without
+   * `-m`, for bounded ranges such as `//depot/...@>100,@200`.
+   */
+  readonly limit?: number | 'all' | undefined;
+  /**
+   * Read full descriptions (`changes -l`). Defaults to `true`. With `false`,
+   * Perforce truncates each description to its first 31 characters, which is
+   * much less output for long lists that only need numbers and times.
+   */
+  readonly fullDescriptions?: boolean | undefined;
   /**
    * Inclusive upper changelist bound (`p4 changes <spec>@N`). Pass the previous
    * page's `nextCursor` unchanged: it already subtracts one from the last change.
@@ -53,7 +62,7 @@ export interface P4Changelist<S extends P4ChangelistStatus = P4ChangelistStatus>
   readonly status: S;
   readonly user: string | null;
   readonly client: string | null;
-  /** The full description. */
+  /** The description; truncated to 31 characters when `fullDescriptions` is `false`. */
   readonly description: string | null;
   /** Creation (pending) or submission (submitted) time, as ISO 8601. */
   readonly createdAt: string | null;
@@ -118,10 +127,12 @@ function scopedSpecs(specs: string[], cursor: number | undefined) {
  */
 export const listChangelists = operation<ListChangelistsOptions, P4Changelist, P4ChangelistPage>('listChangelists', (options, sink) =>
   Effect.gen(function* () {
-    const limit = yield* requirePositive(options.limit ?? DEFAULT_LIMIT, 'limit');
+    const limit = options.limit === 'all' ? null : yield* requirePositive(options.limit ?? DEFAULT_LIMIT, 'limit');
     const cursor = options.cursor === undefined ? undefined : yield* requireNonNegative(options.cursor, 'cursor');
     const specs = yield* scopedSpecs(specList(options.fileSpec), cursor);
-    const args = ['changes', '-s', options.status, '-l', '-m', String(limit + 1)];
+    const args = ['changes', '-s', options.status];
+    if (options.fullDescriptions ?? true) args.push('-l');
+    if (limit !== null) args.push('-m', String(limit + 1));
     if (options.user !== undefined) args.push('-u', options.user);
     if (options.client !== undefined) args.push('-c', options.client);
     args.push(...specs);
@@ -133,8 +144,8 @@ export const listChangelists = operation<ListChangelistsOptions, P4Changelist, P
     // Several scopes can each report the same changelist.
     const unique = [...new Map(output.items.map((item) => [item.change, item])).values()]
       .sort((left, right) => right.change - left.change);
-    const hasMore = unique.length > limit;
-    const numbered = unique.slice(0, limit);
+    const hasMore = limit !== null && unique.length > limit;
+    const numbered = limit === null ? unique : unique.slice(0, limit);
     const oldest = numbered.at(-1)?.change ?? null;
     const page: P4Changelist[] = [...numbered];
     const messages = [...output.messages];

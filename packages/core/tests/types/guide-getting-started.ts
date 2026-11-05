@@ -33,6 +33,20 @@ try {
   await writable.dispose();
 }
 
+const changes = client.with({ allowMutation: true });
+try {
+  const { change } = await changes.createChange({ description: 'Update the level config' });
+  const opened = await changes.openForEdit({ fileSpec: '//depot/main/Config/Level.ini', change });
+  const held = opened.failures.find((failure) => failure.reason === 'exclusive_open');
+  if (held !== undefined || opened.items.length === 0) {
+    await changes.revert({ change });
+    await changes.deleteChange({ change });
+    throw new Error(`Checked out by ${held?.heldBy.join(', ') ?? 'nobody'}.`);
+  }
+} finally {
+  await changes.dispose();
+}
+
 const controller = new AbortController();
 const handle = client.watch.previewSync({
   fileSpec: '//depot/main/...',

@@ -4,6 +4,7 @@ import { resolveOptions, mergeOptions } from '../engine/config.js';
 import { createAsyncEventQueue } from '../internal/async-queue.js';
 import {
   layerNode, resolveConnection, findWorkspaceForPath, workspaceRootExists, materializeDepotFiles,
+  setPersistentWorkspace,
 } from '../node/index.js';
 import { runOperation, watchOperation } from '../engine/operation.js';
 import { ops } from '../ops.js';
@@ -24,12 +25,13 @@ import type {
 } from '../engine/operation.js';
 import type { P4InvalidArgumentError } from '../errors.js';
 
-const nodeOps = { findWorkspaceForPath, materializeDepotFiles };
+const nodeOps = { findWorkspaceForPath, materializeDepotFiles, setPersistentWorkspace };
 const promiseOps = { ...ops, ...nodeOps };
 /** Neutral and Node operations exposed as Promise and watch methods. */
 export type P4PromiseOps = P4Ops & {
   readonly findWorkspaceForPath: typeof findWorkspaceForPath;
   readonly materializeDepotFiles: typeof materializeDepotFiles;
+  readonly setPersistentWorkspace: typeof setPersistentWorkspace;
 };
 
 /** Cancellation options accepted by every Promise method. */

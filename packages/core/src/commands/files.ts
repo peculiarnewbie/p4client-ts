@@ -427,6 +427,11 @@ export interface StatFilesOptions {
   readonly fields?: readonly string[] | undefined;
   /** Also read `fileSize` and `digest` (`fstat -Ol`), which the server must compute. */
   readonly includeFileSize?: boolean | undefined;
+  /**
+   * Leave out workspace data (`fstat -Os`): `localFile`, have and open state
+   * read as `null`. Much less work for server-side inventories.
+   */
+  readonly excludeWorkspaceData?: boolean | undefined;
   /** Stat the files as they were at this submitted changelist. */
   readonly atChange?: number | undefined;
   /** Most files to return (`fstat -m`). */
@@ -527,6 +532,7 @@ export const statFiles = operation<StatFilesOptions, P4FileStat, P4FileStatList>
     if (scoped.length === 0) return { items: [], messages: [], failures: [] };
     const args = ['fstat'];
     if (options.includeFileSize) args.push('-Ol');
+    if (options.excludeWorkspaceData) args.push('-Os');
     if (limit !== undefined) args.push('-m', String(limit));
     if (options.fields !== undefined && options.fields.length > 0) {
       args.push('-T', [...new Set(['depotFile', ...options.fields])].join(' '));

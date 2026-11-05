@@ -1,0 +1,39 @@
+{
+  "origin": "disposable p4d r26.1",
+  "mode": "json",
+  "cwd": "<WORKSPACE>",
+  "charset": "utf8",
+  "args": [
+    "-p",
+    "<LOCAL_PORT>",
+    "-u",
+    "p4ts-e2e",
+    "-c",
+    "p4ts_e2e_client",
+    "-Mj",
+    "-z",
+    "tag",
+    "fstat",
+    "-Ol",
+    "-Os",
+    "-T",
+    "depotFile headRev headChange headAction headType digest fileSize",
+    "//p4ts/main/wire/...@9"
+  ],
+  "exitCode": 0,
+  "stopped": null,
+  "stdout": "{\"depotFile\":\"//p4ts/main/wire/clobber.txt\",\"digest\":\"F9C2B572C9797A49E6F89D921ACC95CA\",\"fileSize\":\"13\",\"headAction\":\"edit\",\"headChange\":\"8\",\"headRev\":\"2\",\"headType\":\"text\"}\n{\"depotFile\":\"//p4ts/main/wire/deleted.txt\",\"headAction\":\"delete\",\"headChange\":\"6\",\"headRev\":\"2\",\"headType\":\"text\"}\n{\"depotFile\":\"//p4ts/main/wire/exclusive.uasset\",\"digest\":\"1BA8C6F5889E68E4B78456B7CB39661E\",\"fileSize\":\"20\",\"headAction\":\"add\",\"headChange\":\"4\",\"headRev\":\"1\",\"headType\":\"binary+l\"}\n{\"depotFile\":\"//p4ts/main/wire/full.uasset\",\"digest\":\"2AF6C8A4998581A1D0236583701152CF\",\"fileSize\":\"16\",\"headAction\":\"add\",\"headChange\":\"4\",\"headRev\":\"1\",\"headType\":\"binary+F\"}\n{\"depotFile\":\"//p4ts/main/wire/literal%40%23%25.txt\",\"digest\":\"6D8954AF8CDE2686C19E57C932CACDCE\",\"fileSize\":\"18\",\"headAction\":\"add\",\"headChange\":\"4\",\"headRev\":\"1\",\"headType\":\"text\"}\n{\"depotFile\":\"//p4ts/main/wire/renamed.txt\",\"digest\":\"64782508BE6BBB8B63A26A5618632559\",\"fileSize\":\"23\",\"headAction\":\"move/add\",\"headChange\":\"9\",\"headRev\":\"1\",\"headType\":\"text\"}\n{\"depotFile\":\"//p4ts/main/wire/space name.txt\",\"digest\":\"95999D60D7ADBDAD61BF02B8766CEBA9\",\"fileSize\":\"12\",\"headAction\":\"add\",\"headChange\":\"4\",\"headRev\":\"1\",\"headType\":\"text\"}\n{\"depotFile\":\"//p4ts/main/wire/text.txt\",\"headAction\":\"move/delete\",\"headChange\":\"9\",\"headRev\":\"3\",\"headType\":\"text\"}\n{\"depotFile\":\"//p4ts/main/wire/wide.txt\",\"digest\":\"4F72137B5FEAD4820E00DAA63008F3B5\",\"fileSize\":\"10\",\"headAction\":\"add\",\"headChange\":\"4\",\"headRev\":\"1\",\"headType\":\"utf16\"}\n",
+  "stdoutBase64": null,
+  "stderr": "",
+  "rows": [
+    "data",
+    "data",
+    "data",
+    "data",
+    "data",
+    "data",
+    "data",
+    "data",
+    "data"
+  ]
+}
