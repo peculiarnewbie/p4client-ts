@@ -4,6 +4,42 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
+## 0.14.0 - unreleased
+
+### Added
+
+- Typed mutations, all behind `allowMutation: true`: `createChange`, `deleteChange`,
+  `openForEdit`, `openForAdd` and `revert`, with `previewOpenForEdit`,
+  `previewOpenForAdd` and `previewRevert` (`-n`), which need no mutation. There is no
+  submit operation.
+- An exclusive (`+l`) file open in another workspace is a per-item failure with reason
+  `exclusive_open` and `heldBy` (`user@client`), so a caller can stop before writing.
+- `setPersistentWorkspace({ client })` in `p4client-ts/node`: an explicit, opt-in
+  `p4 set P4CLIENT=…` that writes the user's persistent settings. Nothing else does.
+- `describeChangelists({ changes })` describes several changelists in one command and
+  reports missing ones as `unknown_changelist` failures. `describe` stops at the first
+  missing changelist, so the rest are described by a further command.
+- `listChangelists` accepts `limit: 'all'` and `fullDescriptions: false` (no `-l`).
+- `statFiles` accepts `excludeWorkspaceData` (`fstat -Os`); `getEnvironment` reports
+  `serverId`.
+- `materializeDepotFiles` takes an `outputPath` and `type` per revision, and `batch`,
+  `attempts`, `retryDelayMs` and `writable` options. With `batch`, binary revisions
+  stream from batched `p4 -G -x - print` processes and everything else, or anything a
+  batch did not deliver intact, is printed per file. A revision requested at several
+  paths is printed once and copied. It runs in bounded spans
+  (`p4client-ts.materializeDepotFiles`, one `p4client-ts.materialize.batch` per batch,
+  `p4client-ts.materialize.printEach`).
+- Reasons `already_opened`, `exists_in_depot` and `changelist_not_empty`; message
+  `6:26` (`%change% unknown.`) is classified as `unknown_changelist`.
+
+### Changed
+
+- `materializeDepotFiles` items carry `bytes` and `method`, and the result carries
+  `stats`. Results compared with `toEqual` need the new fields.
+- The README rule that clients never write `p4 set` is now that they never do so
+  implicitly.
+- Development: Effect-aware Oxlint (`bun run lint`) runs in CI; TypeScript 6.0.3.
+
 ## 0.13.0 - 2026-10-14
 
 ### Breaking changes
