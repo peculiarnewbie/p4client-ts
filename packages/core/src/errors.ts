@@ -17,7 +17,7 @@ export class P4CommandError extends Schema.TaggedError<P4CommandError>()('P4Comm
   command: Schema.String,
   /** Arguments it ran with, credentials redacted. */
   args: Schema.Array(Schema.String),
-  exitCode: Schema.Number,
+  exitCode: Schema.Finite,
   messages: Schema.Array(P4MessageSchema),
   /** Diagnostic output on stderr, truncated to 64 KiB. */
   stderr: Schema.String,
@@ -28,7 +28,7 @@ export class P4TimeoutError extends Schema.TaggedError<P4TimeoutError>()('P4Time
   message: Schema.String,
   command: Schema.String,
   args: Schema.Array(Schema.String),
-  timeoutMs: Schema.Number,
+  timeoutMs: Schema.Finite,
   /** Output received before the process was killed, each truncated to 64 KiB. */
   stdout: Schema.String,
   stderr: Schema.String,

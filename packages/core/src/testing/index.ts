@@ -1,4 +1,6 @@
 import { P4 } from '../P4.js';
+import type { Layer } from 'effect';
+import type { P4TestOps } from '../P4.js';
 
 export * from './executor.js';
 
@@ -13,4 +15,4 @@ export type { P4TestOps } from '../P4.js';
  * @param partialOps Effect methods and optional watched methods to mock.
  * @returns A P4 layer with no CLI or configuration requirements.
  */
-export const layerTest = P4.layerTest;
+export const layerTest = (partialOps: P4TestOps): Layer.Layer<P4> => P4.layerTest(partialOps);

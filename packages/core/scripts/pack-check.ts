@@ -24,7 +24,7 @@ const PackReport = Schema.Union([Schema.Array(PackedPackage), Schema.Record(Sche
  * @throws When npm fails or a declared entry is absent from its package file list.
  */
 export function checkPackage(directory = fileURLToPath(new URL('..', import.meta.url))): number {
-  const manifest = Schema.decodeUnknownSync(Schema.fromJsonString(Manifest))(
+  const manifest = Schema.decodeSync(Schema.fromJsonString(Manifest))(
     readFileSync(join(directory, 'package.json'), 'utf8'),
   );
 
@@ -38,7 +38,7 @@ export function checkPackage(directory = fileURLToPath(new URL('..', import.meta
   if (packed.error) throw packed.error;
 
   if (packed.status !== 0) throw new Error(`npm pack failed: ${packed.stderr}`);
-  const report = Schema.decodeUnknownSync(Schema.fromJsonString(PackReport))(packed.stdout);
+  const report = Schema.decodeSync(Schema.fromJsonString(PackReport))(packed.stdout);
   const reports: ReadonlyArray<typeof PackedPackage.Type> = Array.isArray(report) ? report : Object.values(report);
 
   if (reports.length !== 1) throw new Error('Expected exactly one npm pack report.');

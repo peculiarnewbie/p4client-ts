@@ -6,7 +6,7 @@ import type { P4TaggedResult } from '../../src/index.js';
 import type { P4Error } from '../../src/errors.js';
 
 // This file is compiled by typecheck, not executed by the unit test runner.
-const Row = Schema.Struct({ revision: Schema.NumberFromString });
+const Row = Schema.Struct({ revision: Schema.FiniteFromString });
 const client = createP4Client();
 
 const commandRows: Promise<P4TaggedResult<{ readonly revision: number }>> = client.runTagged({
@@ -22,10 +22,10 @@ const unsafeRaw: Promise<P4TaggedResult<{ revision: number }>> = rawCommand;
 const encoded: Promise<P4TaggedResult<{ revision: string }>> = commandRows;
 
 // @ts-expect-error Typed commands require a schema.
-client.runTagged<{ revision: number }>({ args: ['files'] });
+void client.runTagged<{ revision: number }>({ args: ['files'] });
 
 // @ts-expect-error Typed commands cannot infer a narrower type than the schema produces.
-client.runTagged<{ revision: string }>({ args: ['files'], schema: Row });
+void client.runTagged<{ revision: string }>({ args: ['files'], schema: Row });
 
 const watch = client.watch.runTagged({ args: ['files'], schema: Row });
 const watchedResult: Promise<P4TaggedResult<{ readonly revision: number }>> = watch.result;

@@ -138,7 +138,7 @@ export function validateProductionRead(
   args: readonly string[],
   scratchDir: string,
 ): string {
-  if (args.some((arg) => /[\0\r\n]/.test(arg) || /^-x/.test(arg)))
+  if (args.some((arg) => /[\0\r\n]/.test(arg) || arg.startsWith('-x')))
     refuse('argument files or control characters');
   let offset = 0;
 
@@ -358,7 +358,7 @@ export function runProductionRead(
 ): Promise<ProductionCapture> {
   return Effect.runPromise(
     Effect.gen(function* () {
-      const settings = yield* Schema.decodeUnknownEffect(Config)(config);
+      const settings = yield* Schema.decodeEffect(Config)(config);
       const scratch = resolve(settings.scratchDir);
       const temp = realpathSync(tmpdir());
 
@@ -486,7 +486,7 @@ if (import.meta.main) {
         );
       const contents = yield* Effect.promise(() => Bun.file(configPath).text());
 
-      const config = yield* Schema.decodeUnknownEffect(
+      const config = yield* Schema.decodeEffect(
         Schema.fromJsonString(Config),
       )(contents);
 

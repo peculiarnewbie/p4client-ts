@@ -12,6 +12,7 @@ import {
 } from '../../../src/engine/operation.js';
 import { P4CommandError } from '../../../src/errors.js';
 import { replayExecutor, scriptedExecutor } from '../../../src/testing/executor.js';
+import { isWireString } from '../../../src/wire/value.js';
 import { corpus } from '../../support/corpus.js';
 import type { P4Context } from '../../../src/engine/operation.js';
 import type { P4Executor } from '../../../src/exec/executor.js';
@@ -33,7 +34,7 @@ const files = operation('files', (_: { readonly specs: readonly string[] }, sink
   const output = yield* drain(sink, streamCommand({
     args: ['files', ..._.specs],
     format: 'json',
-    decode: (row) => String(row.depotFile),
+    decode: (row) => (isWireString(row.depotFile) ? row.depotFile : null),
   }), { item: (file) => file, counter });
 
   return { items: output.items, messages: output.messages };

@@ -66,7 +66,7 @@ describe('cutover wire regressions retained from the legacy suite', () => {
   }
 
   it('rejects malformed opened paths and numeric revisions, while accepting #none', async () => {
-    const rows = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({
+    const rows = Schema.decodeSync(Schema.fromJsonString(Schema.Struct({
       opened: Schema.Record(Schema.String, Schema.Json),
       sync: Schema.Record(Schema.String, Schema.Json),
     })))(readFileSync(join(WIRE_ROOT, 'synthetic-malformed.json'), 'utf8'));

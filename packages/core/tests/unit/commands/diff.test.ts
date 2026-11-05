@@ -166,7 +166,7 @@ describe('diff2 output formats', () => {
     for (const output of [json, marshal]) {
       expect(output.items).toHaveLength(1);
       expect(output.items[0]).toMatchObject({ status: 'content', rev: '1', rev2: '2' });
-      expect(Object.values(output.items[0]!).some((value) => String(value).includes('@@'))).toBe(false);
+      expect(JSON.stringify(output.items[0]).includes('@@')).toBe(false);
     }
   });
 

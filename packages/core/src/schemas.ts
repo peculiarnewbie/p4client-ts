@@ -19,8 +19,8 @@ export const P4FileActionSchema = Schema.String.check(
 
 /** Decode a decimal CLI integer or JSON number without truncation or precision loss. */
 export const P4NonNegativeIntegerSchema = Schema.Union([
-  Schema.String.check(Schema.isPattern(/^\d+$/)).pipe(Schema.decodeTo(Schema.NumberFromString)),
-  Schema.Number
+  Schema.String.check(Schema.isPattern(/^\d+$/)).pipe(Schema.decodeTo(Schema.FiniteFromString)),
+  Schema.Finite
 ]).check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
 
 /** Decode a positive revision or numbered changelist from CLI output. */
@@ -70,7 +70,7 @@ export const P4DepotPath = {
    * @throws {Schema.SchemaError} When validation fails.
    */
   make(value: string): P4DepotPath {
-    return Schema.decodeUnknownSync(P4DepotPathSchema)(value);
+    return Schema.decodeSync(P4DepotPathSchema)(value);
   },
 };
 
@@ -83,7 +83,7 @@ export const P4ClientPath = {
    * @throws {Schema.SchemaError} When validation fails.
    */
   make(value: string): P4ClientPath {
-    return Schema.decodeUnknownSync(P4ClientPathSchema)(value);
+    return Schema.decodeSync(P4ClientPathSchema)(value);
   },
 };
 
@@ -96,7 +96,7 @@ export const P4LocalPath = {
    * @throws {Schema.SchemaError} When validation fails.
    */
   make(value: string): P4LocalPath {
-    return Schema.decodeUnknownSync(P4LocalPathSchema)(value);
+    return Schema.decodeSync(P4LocalPathSchema)(value);
   },
 };
 
@@ -109,6 +109,6 @@ export const P4FileAction = {
    * @throws {Schema.SchemaError} When validation fails.
    */
   make(value: string): P4FileAction {
-    return Schema.decodeUnknownSync(P4FileActionSchema)(value);
+    return Schema.decodeSync(P4FileActionSchema)(value);
   },
 };

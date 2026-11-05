@@ -46,7 +46,7 @@ describe('runTagged', () => {
   });
 
   it('fails with P4ParseError, naming the command, for a record the schema rejects', async () => {
-    const schema = Schema.Struct({ userName: Schema.Number });
+    const schema = Schema.Struct({ userName: Schema.Finite });
     const error = await failure(runTagged, { args: ['info'], schema }, replay('info-json'));
     expectFailure(error, P4ParseError, { command: 'p4' });
     expect(Predicate.isTagged(error, 'P4ParseError') ? error.args : null).toContain('info');

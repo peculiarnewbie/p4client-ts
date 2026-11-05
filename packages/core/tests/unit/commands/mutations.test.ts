@@ -243,7 +243,7 @@ describe('describeChangelists', () => {
     const [many] = fixtures('describe-many');
     const [moved] = fixtures('describe-move');
 
-    const movedRow = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ change: Schema.String })))(
+    const movedRow = Schema.decodeSync(Schema.fromJsonString(Schema.Struct({ change: Schema.String })))(
       moved!.stdout!.split('\n')[0]!,
     );
 

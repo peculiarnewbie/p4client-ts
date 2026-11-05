@@ -2,7 +2,6 @@ import { Effect, Schema } from 'effect';
 import {
   chmodSync,
   mkdirSync,
-  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -120,14 +119,12 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     overrides: NodeJS.ProcessEnv = {},
   ) =>
     run(args, input, overrides).pipe(
-      Effect.flatMap((result) =>
-        result.exitCode === 0
-          ? Effect.succeed(result)
-          : Effect.fail(
-              new WireScriptError(
-                `Disposable seed failed: ${args[0]}: ${result.stderr || result.stdout}`,
-              ),
-            ),
+      Effect.filterOrFail(
+        (result) => result.exitCode === 0,
+        (result) =>
+          new WireScriptError(
+            `Disposable seed failed: ${args[0]}: ${result.stderr || result.stdout}`,
+          ),
       ),
     );
 

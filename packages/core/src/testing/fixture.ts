@@ -18,7 +18,7 @@ export const P4WireFixtureSchema = Schema.Struct({
   args: Schema.Array(Schema.String),
   /** Text written to stdin, for `-x -` argument lists. */
   input: Schema.optionalKey(Schema.String),
-  exitCode: Schema.Number,
+  exitCode: Schema.Finite,
   stopped: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** Output as text; `null` for marshal captures, whose output is binary. */
   stdout: Schema.NullOr(Schema.String),

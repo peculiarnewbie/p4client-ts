@@ -3,7 +3,7 @@ import { describe, expect, it } from 'bun:test';
 import { annotateFile } from '../../../src/commands/annotate.js';
 import { followMoves, getFileHistory } from '../../../src/commands/history.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';
-import { argvCase, argvTable, failure, fixtureTime, fixtures, replay, run, watch } from './support.js';
+import { argvCase, argvTable, failure, fixtureTime, replay, run, watch } from './support.js';
 import { asAction } from '../../support/values.js';
 import type { P4FileRevision } from '../../../src/commands/history.js';
 import { asDepotPath } from '../../support/values.js';

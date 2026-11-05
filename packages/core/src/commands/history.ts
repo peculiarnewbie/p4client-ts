@@ -103,7 +103,7 @@ function revisionNumber(value: Field, row: Row): number {
   if (raw === '#none') return 0;
   const match = raw === null ? null : /^#(\d+)$/.exec(raw);
 
-  if (match?.[1] === undefined) throw malformed(`Expected a revision such as #3, received ${String(value)}.`, row);
+  if (match?.[1] === undefined) throw malformed(`Expected a revision such as #3, received ${JSON.stringify(value) ?? 'nothing'}.`, row);
 
   return Number(match[1]);
 }

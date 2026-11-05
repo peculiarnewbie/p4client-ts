@@ -3,7 +3,7 @@ import { getEnvironment } from '../../../src/commands/environment.js';
 import { listOpenedFiles } from '../../../src/commands/opened.js';
 import { listWorkspaces } from '../../../src/commands/workspaces.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';
-import { argvCase, argvTable, failure, fixtureRows, fixtureTime, fixtures, replay, run, watch } from './support.js';
+import { argvCase, argvTable, failure, fixtureTime, fixtures, replay, run, watch } from './support.js';
 import { P4CommandError } from '../../../src/errors.js';
 import { expectFailure } from '../../support/assert.js';
 import { asDepotPath } from '../../support/values.js';
@@ -34,7 +34,7 @@ describe('getEnvironment', () => {
       client: 'p4ts_e2e_client',
       clientHost: 'p4ts_e2e_client',
       port: 'ssl:p4:1666',
-      serverAddress: String(fixtureRows('info-short-json')[0]?.serverAddress),
+      serverAddress: 'kubernetes.docker.internal:57754',
       serverVersion: 'P4D/NTX64/2026.1/3089746 (2026/10/07)',
       serverId: null,
       unicode: true,

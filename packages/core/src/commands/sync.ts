@@ -15,7 +15,6 @@ import type { P4ProgressCounter, P4Sink } from '../engine/operation.js';
 import type { P4ClientPath, P4DepotPath, P4FileAction, P4LocalPath } from '../schemas.js';
 import type { P4Message } from '../wire/message.js';
 import type { P4MessagePolicy } from '../wire/policy.js';
-import type { P4Reason } from '../wire/reasons.js';
 import type { FileSpecs, P4ItemFailure, Row } from './shared.js';
 
 /** Options for {@link previewSync} and {@link sync}. */

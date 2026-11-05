@@ -11,7 +11,7 @@ import { runNodeProcess } from '../../src/node/index.js';
 import { createP4Client, createP4ClientFromLayer, withP4Client } from '../../src/promise/index.js';
 import { layerTest, readWireFixtures, replayExecutor, scriptedExecutor } from '../../src/testing/index.js';
 import type { P4ClientOptions } from '../../src/engine/config.js';
-import type { P4Invocation, P4ProcessEvent } from '../../src/exec/executor.js';
+import type { P4Invocation } from '../../src/exec/executor.js';
 import type { P4Service } from '../../src/P4.js';
 import type { P4PromiseClient, P4PromiseWatch } from '../../src/promise/index.js';
 import { expectFailure, rejectionOf } from '../support/assert.js';
@@ -124,7 +124,7 @@ describe('Phase 5 facades', () => {
     const client = clientFor(scriptedExecutor(() => ({ stdout: row })));
 
     try {
-      const schema = Schema.Struct({ revision: Schema.NumberFromString });
+      const schema = Schema.Struct({ revision: Schema.FiniteFromString });
       const result = await client.runTagged({ args: ['info'], schema });
       expect(result.items).toEqual([{ revision: 3 }]);
       const handle = client.watch.runTagged({ args: ['info'], schema });
@@ -328,7 +328,7 @@ describe('Phase 5 facades', () => {
     const client = clientFor(executor);
 
     try {
-      const handle = client.watch.runTagged({ args: ['info'], schema: Schema.Struct({ pid: Schema.Number }) });
+      const handle = client.watch.runTagged({ args: ['info'], schema: Schema.Struct({ pid: Schema.Finite }) });
 
       for await (const event of handle.events) {
         if (Predicate.isTagged(event, 'item')) {

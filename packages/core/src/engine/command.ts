@@ -386,7 +386,7 @@ function processStream<A>(
     return timeoutMs === undefined
       ? events
       : events.pipe(Stream.interruptWhen(
-        Effect.sleep(timeoutMs).pipe(Effect.andThen(Effect.suspend(() => Effect.fail(reader.timeoutError(timeoutMs))))),
+        Effect.sleep(timeoutMs).pipe(Effect.andThen(Effect.failSync(() => reader.timeoutError(timeoutMs)))),
       ));
   }));
 }

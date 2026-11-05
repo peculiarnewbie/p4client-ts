@@ -23,7 +23,7 @@ export interface ProductionLogAudit {
 }
 
 export function auditProductionLog(configPath: string): ProductionLogAudit {
-  const config = Schema.decodeUnknownSync(Schema.fromJsonString(Config))(
+  const config = Schema.decodeSync(Schema.fromJsonString(Config))(
     readFileSync(configPath, 'utf8'),
   );
 
@@ -34,7 +34,7 @@ export function auditProductionLog(configPath: string): ProductionLogAudit {
   const commands: { [command: string]: number } = {};
 
   for (const line of log.trim().split('\n').filter(Boolean)) {
-    const record = Schema.decodeUnknownSync(Schema.fromJsonString(Record))(
+    const record = Schema.decodeSync(Schema.fromJsonString(Record))(
       line,
     );
 

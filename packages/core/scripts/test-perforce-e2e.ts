@@ -135,7 +135,7 @@ function report(status: string, message: string): void {
 const decodeChangeRow = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ change: Schema.String })));
 
 /** The port of a listening TCP server's address; `server.address()` is a string for pipes. */
-const decodeListeningPort = Schema.decodeUnknownOption(Schema.Struct({ port: Schema.Number }));
+const decodeListeningPort = Schema.decodeUnknownOption(Schema.Struct({ port: Schema.Finite }));
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);

@@ -17,11 +17,11 @@ import type { P4Reason } from './reasons.js';
 
 /** Unpacked `code0` fields of a message. */
 export const P4MessageCodeSchema = Schema.Struct({
-  severity: Schema.Number,
-  argc: Schema.Number,
-  generic: Schema.Number,
-  subsystem: Schema.Number,
-  subcode: Schema.Number,
+  severity: Schema.Finite,
+  argc: Schema.Finite,
+  generic: Schema.Finite,
+  subsystem: Schema.Finite,
+  subcode: Schema.Finite,
 });
 
 /**

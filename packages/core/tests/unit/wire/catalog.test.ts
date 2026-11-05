@@ -53,7 +53,7 @@ describe('message catalog against the wire corpus', () => {
   });
 
   it('classifies every corpus message as recorded in _reasons.json', () => {
-    const golden = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Array(Schema.String))))(
+    const golden = Schema.decodeSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Array(Schema.String))))(
       readFileSync(join(WIRE_ROOT, '_reasons.json'), 'utf8'),
     );
 
