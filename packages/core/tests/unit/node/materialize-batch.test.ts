@@ -129,7 +129,7 @@ describe('materializeDepotFiles batches', () => {
     // One batch first, then the per-file prints, which run concurrently in any order.
     const [batch, ...perFile] = run.argv.map((args) => args.at(-1));
     expect(batch).toBe('-k');
-    expect(perFile.toSorted()).toEqual(['//p4ts/main/missing.txt#1', '//p4ts/main/wire/text.txt#1']);
+    expect([...perFile].sort()).toEqual(['//p4ts/main/missing.txt#1', '//p4ts/main/wire/text.txt#1']);
     expect(leftovers(directory)).toEqual([]);
   });
 
