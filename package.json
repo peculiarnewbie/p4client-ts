@@ -33,7 +33,7 @@
     "astro": "^6.4.8",
     "effect": "4.1.2",
     "effect-solutions": "0.5.3",
-    "tsrs": "0.20.1-ts7.1.0-beta",
+    "tsrs": "0.21.0-ts7.1.0-beta",
     "typescript": "^6.0.3",
     "vite-plus": "1.4.0"
   }
