@@ -1,9 +1,12 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { getEnvironment } from '../../../src/commands/environment.js';
 import { listOpenedFiles } from '../../../src/commands/opened.js';
 import { listWorkspaces } from '../../../src/commands/workspaces.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';
-import { argvCase, argvTable, failure, fixtureRows, fixtureTime, fixtures, replay, run, watch } from './support.js';
+import { argvCase, argvTable, failure, fixtureTime, fixtures, replay, run, watch } from './support.js';
+import { P4CommandError } from '../../../src/errors.js';
+import { expectFailure } from '../../support/assert.js';
+import { asDepotPath } from '../../support/values.js';
 
 const TAG = ['-Mj', '-z', 'tag'];
 
@@ -31,7 +34,7 @@ describe('getEnvironment', () => {
       client: 'p4ts_e2e_client',
       clientHost: 'p4ts_e2e_client',
       port: 'ssl:p4:1666',
-      serverAddress: String(fixtureRows('info-short-json')[0]?.serverAddress),
+      serverAddress: 'kubernetes.docker.internal:57754',
       serverVersion: 'P4D/NTX64/2026.1/3089746 (2026/10/07)',
       serverId: null,
       unicode: true,
@@ -43,13 +46,14 @@ describe('getEnvironment', () => {
   it('fails when the server cannot be reached', async () => {
     const stderr = fixtures('server-unreachable')[0]!.stderr;
     const error = await failure(getEnvironment, {}, scriptedExecutor(() => ({ stderr, exitCode: 1 })));
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'server_unreachable' });
+    expectFailure(error, P4CommandError, { reason: 'server_unreachable' });
   });
 
   it('reports no workspace when the server knows none', async () => {
     const environment = await run(getEnvironment, {}, scriptedExecutor(() => ({
       stdout: '{"userName":"arif","clientName":"*unknown*"}\n',
     })));
+
     expect(environment).toMatchObject({ user: 'arif', client: null, port: null });
   });
 });
@@ -62,7 +66,7 @@ describe('listWorkspaces', () => {
       owner: 'p4ts-e2e',
       root: '<WORKSPACE>',
       host: null,
-      stream: '//p4ts/main' as never,
+      stream: asDepotPath('//p4ts/main'),
       description: null,
       accessedAt: fixtureTime('clients', 'Access'),
       updatedAt: fixtureTime('clients', 'Update'),
@@ -91,7 +95,7 @@ describe('listOpenedFiles', () => {
 
   it('keeps reserved characters escaped in depot paths', async () => {
     const [file] = (await run(listOpenedFiles, { fileSpec: '//p4ts/main/wire/literal%40%23%25.txt' }, replay('opened-reserved'))).items;
-    expect(file?.depotFile).toBe('//p4ts/main/wire/literal%40%23%25.txt' as never);
+    expect(file?.depotFile).toBe(asDepotPath('//p4ts/main/wire/literal%40%23%25.txt'));
   });
 
   it('streams each file and counts progress', async () => {

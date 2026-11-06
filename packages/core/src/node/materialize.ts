@@ -1,4 +1,4 @@
-import { Duration, Effect, Schedule, Schema, Stream } from 'effect';
+import { Data, Duration, Effect, Predicate, Schedule, Schema, Stream } from 'effect';
 import { randomUUID } from 'node:crypto';
 import { chmod, copyFile, mkdir, mkdtemp, open, rename, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep, join } from 'node:path';
@@ -8,6 +8,7 @@ import { operation, progressCounter } from '../engine/operation.js';
 import { P4MaterializationError } from '../errors.js';
 import { P4LocalPathSchema } from '../schemas.js';
 import { requirePositive } from '../commands/shared.js';
+import { isWireString } from '../wire/value.js';
 import type { FileHandle } from 'node:fs/promises';
 import type { P4Operation, P4Sink, P4Context } from '../engine/operation.js';
 import type { P4Error } from '../errors.js';
@@ -15,6 +16,7 @@ import type { P4KeywordMode } from '../commands/print.js';
 import type { P4LocalPath } from '../schemas.js';
 import type { P4Message } from '../wire/message.js';
 import type { P4MessagePolicy } from '../wire/policy.js';
+import type { P4WireFields, P4WireValue } from '../wire/value.js';
 
 /** An exact depot revision to write to disk. */
 export interface P4MaterializeSpec {
@@ -146,6 +148,7 @@ const BATCH_POLICY: P4MessagePolicy = {
 
 /** Types whose `-G` bytes are the file exactly: binary, with any modifiers. */
 const BATCHABLE_TYPE = /^u?binary(?:\+[A-Za-z0-9]+)?$/;
+
 /** Actions with no content; left to the per-file print, which reports them. */
 const NO_CONTENT_ACTION = /delete|purge|archive/;
 
@@ -153,27 +156,24 @@ const toLocalPath = Schema.decodeUnknownSync(P4LocalPathSchema);
 
 function inside(directory: string, outputPath: string, error: () => P4MaterializationError): string {
   const below = relative(directory, outputPath);
+
   if (below.length === 0 || below === '..' || below.startsWith(`..${sep}`) || isAbsolute(below)) throw error();
+
   return outputPath;
 }
 
-/**
- * Where a depot file is written beneath a directory: `<directory>/<depot>/<path…>`.
- *
- * @param directory Absolute destination directory.
- * @param depotFile Depot path without a revision.
- * @returns The absolute output path.
- * @throws {P4MaterializationError} With reason `invalid_depot_path` for a path
- * that is not depot syntax, has empty, `.` or `..` segments, or escapes the directory.
- */
+/** Where a depot file is written beneath a directory: `<directory>/<depot>/<path…>`. */
 export function materializedFilePath(directory: string, depotFile: string): string {
   const invalidPath = (message: string) =>
     new P4MaterializationError({ message, reason: 'invalid_depot_path', path: depotFile });
+
   if (!depotFile.startsWith('//') || /[#@]/.test(depotFile)) throw invalidPath(`Invalid depot path: ${depotFile}`);
   const segments = depotFile.slice(2).split('/');
+
   if (segments.length < 2 || segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')) {
     throw invalidPath(`Invalid depot path: ${depotFile}`);
   }
+
   return inside(directory, resolve(directory, ...segments), () =>
     invalidPath(`Depot path escapes the materialization directory: ${depotFile}`));
 }
@@ -181,7 +181,9 @@ export function materializedFilePath(directory: string, depotFile: string): stri
 /** Where one requested revision goes; its depot path is validated either way, since it is printed. */
 function outputPathOf(directory: string, file: P4MaterializeSpec): string {
   const depotLayout = materializedFilePath(directory, file.depotFile);
+
   if (file.outputPath === undefined) return depotLayout;
+
   return inside(directory, resolve(directory, file.outputPath), () => new P4MaterializationError({
     message: `Output path is outside the materialization directory: ${file.outputPath}`,
     reason: 'invalid_destination',
@@ -200,15 +202,19 @@ function planGroups(directory: string, files: readonly P4MaterializeSpec[]): Eff
   return Effect.suspend(() => {
     const seen = new Set<string>();
     const groups = new Map<string, Group>();
+
     for (const [index, file] of files.entries()) {
       let outputPath: string;
+
       try {
         outputPath = outputPathOf(directory, file);
       } catch (error) {
         if (error instanceof P4MaterializationError) return Effect.fail(error);
         throw error;
       }
+
       const target = process.platform === 'win32' ? outputPath.toLowerCase() : outputPath;
+
       if (seen.has(target)) {
         return Effect.fail(new P4MaterializationError({
           message: `Multiple revisions resolve to the same output path: ${file.depotFile}`,
@@ -216,12 +222,14 @@ function planGroups(directory: string, files: readonly P4MaterializeSpec[]): Eff
           path: file.depotFile,
         }));
       }
+
       seen.add(target);
       const key = `${file.depotFile}#${file.revision}`;
       const group = groups.get(key) ?? { key, type: file.type, targets: [] };
       group.targets.push({ index, file, outputPath });
       groups.set(key, group);
     }
+
     return Effect.succeed([...groups.values()]);
   });
 }
@@ -241,22 +249,27 @@ function fsTry<A>(path: string, run: () => Promise<A>): Effect.Effect<A, P4Mater
 /** `p4 print` leaves read-only files, which Windows will not replace; a missing file is fine. */
 const makeWritable = (path: string) => Effect.promise(() => chmod(path, 0o666).catch(() => undefined));
 
-/** Move a verified staging file to the group's first output and copy it to the rest. */
-function place(group: Group, staged: string, writable: boolean): Effect.Effect<void, P4MaterializationError> {
-  return Effect.gen(function* () {
-    const [first, ...copies] = group.targets;
-    if (first === undefined) return;
-    yield* makeWritable(first.outputPath);
-    yield* fsTry(first.outputPath, () => rename(staged, first.outputPath));
-    if (writable) yield* makeWritable(first.outputPath);
-    for (const copy of copies) {
-      yield* fsTry(dirname(copy.outputPath), () => mkdir(dirname(copy.outputPath), { recursive: true }));
-      yield* makeWritable(copy.outputPath);
-      yield* fsTry(copy.outputPath, () => copyFile(first.outputPath, copy.outputPath));
-      if (writable) yield* makeWritable(copy.outputPath);
-    }
-  });
-}
+/**
+ * Move a verified staging file to the group's first output and copy it to the rest.
+ * Untraced: it runs once per file, inside the materializeDepotFiles span.
+ */
+const place = Effect.fnUntraced(function* (group: Group, staged: string, writable: boolean) {
+  const [first, ...copies] = group.targets;
+
+  if (first === undefined) return;
+  yield* makeWritable(first.outputPath);
+  yield* fsTry(first.outputPath, () => rename(staged, first.outputPath));
+
+  if (writable) yield* makeWritable(first.outputPath);
+
+  for (const copy of copies) {
+    yield* fsTry(dirname(copy.outputPath), () => mkdir(dirname(copy.outputPath), { recursive: true }));
+    yield* makeWritable(copy.outputPath);
+    yield* fsTry(copy.outputPath, () => copyFile(first.outputPath, copy.outputPath));
+
+    if (writable) yield* makeWritable(copy.outputPath);
+  }
+});
 
 /** A group written to every one of its outputs. */
 interface Written {
@@ -266,36 +279,44 @@ interface Written {
 }
 
 type BatchStat = { readonly _tag: 'stat'; readonly key: string; readonly type: string; readonly action: string; readonly fileSize: number | null };
+
 type BatchRecord = BatchStat | { readonly _tag: 'chunk'; readonly data: Uint8Array };
 
-function toBatchRecord(row: Readonly<Record<string, unknown>>): BatchRecord | null {
+const BatchRecord = Data.taggedEnum<BatchRecord>();
+
+/** A string field of a batch `stat` record, or `''`. */
+const statText = (value: P4WireValue | undefined): string => (isWireString(value) ? value : '');
+
+function toBatchRecord(row: P4WireFields): BatchRecord | null {
   if (row.code === 'stat') {
-    return {
-      _tag: 'stat',
-      key: `${String(row.depotFile)}#${String(row.rev)}`,
-      type: typeof row.type === 'string' ? row.type : '',
-      action: typeof row.action === 'string' ? row.action : '',
-      fileSize: typeof row.fileSize === 'string' && /^\d+$/.test(row.fileSize) ? Number(row.fileSize) : null,
-    };
+    const fileSize = statText(row.fileSize);
+
+    return BatchRecord.stat({
+      key: `${statText(row.depotFile)}#${statText(row.rev)}`,
+      type: statText(row.type),
+      action: statText(row.action),
+      fileSize: /^\d+$/.test(fileSize) ? Number(fileSize) : null,
+    });
   }
-  if ((row.code === 'binary' || row.code === 'text') && row.data instanceof Uint8Array) return { _tag: 'chunk', data: row.data };
+
+  if ((row.code === 'binary' || row.code === 'text') && row.data instanceof Uint8Array) {
+    return BatchRecord.chunk({ data: row.data });
+  }
+
   return null;
 }
 
 /** Failures after which a batch's unwritten revisions are printed per file, rather than failing the call. */
 function isCommandFailure(error: P4Error): boolean {
-  return error._tag === 'P4CommandError' || error._tag === 'P4ParseError'
-    || error._tag === 'P4TimeoutError' || error._tag === 'P4SpawnError';
+  return Predicate.isTagged(error, 'P4CommandError') || Predicate.isTagged(error, 'P4ParseError')
+    || Predicate.isTagged(error, 'P4TimeoutError') || Predicate.isTagged(error, 'P4SpawnError');
 }
 
 /**
- * One `p4 -G -x - print -k` over a batch, writing each binary revision from
- * the marshalled stream to a staging file beside its output.
- *
- * A file is accepted only when its records ended cleanly (the next file's
- * `stat`, or a successful exit) and its byte count equals the stat record's
- * `fileSize`. A message mid-file, a non-binary type, a broken stream or a
- * failed command leaves the revision unwritten, for the per-file print.
+ * One `p4 -G -x - print -k` over a batch, staging each binary revision beside its output.
+ * A file is accepted only if its records ended cleanly and its bytes match the stat's `fileSize`;
+ * anything else (a message mid-file, a non-binary type, a broken stream, a failed command) is
+ * left for the per-file print.
  */
 function printBatch(
   groups: readonly Group[],
@@ -313,30 +334,41 @@ function printBatch(
     const discard = Effect.suspend(() => {
       const file = current;
       current = null;
+
       return file === null ? Effect.void : Effect.promise(async () => {
         await file.handle.close().catch(() => undefined);
         await rm(file.staged, { force: true }).catch(() => undefined);
       });
     });
+
     const finish = Effect.suspend(() => {
       const file = current;
       current = null;
+
       if (file === null) return Effect.void;
+
       return Effect.gen(function* () {
         yield* Effect.promise(() => file.handle.close().catch(() => undefined));
+
         if (file.expected === null || file.size !== file.expected) {
           yield* Effect.promise(() => rm(file.staged, { force: true }).catch(() => undefined));
+
           return;
         }
+
         yield* place(file.group, file.staged, writable);
         done.add(file.group.key);
         bytes += file.size * file.group.targets.length;
         yield* accept({ group: file.group, bytes: file.size, method: 'batch' });
       });
     });
-    const start = (record: BatchStat) => Effect.gen(function* () {
+
+    // Untraced: runs once per batched file, inside the batch's span.
+    const start = Effect.fnUntraced(function* (record: BatchStat) {
       const group = wanted.get(record.key);
+
       if (group === undefined || done.has(record.key)) return;
+
       if (!BATCHABLE_TYPE.test(record.type) || NO_CONTENT_ACTION.test(record.action)) return;
       const folder = dirname(group.targets[0]!.outputPath);
       yield* fsTry(folder, () => mkdir(folder, { recursive: true }));
@@ -345,15 +377,20 @@ function printBatch(
       const handle = yield* fsTry(staged, () => open(staged, 'w'));
       current = { group, handle, staged, size: 0, expected: record.fileSize };
     });
+
     const write = (data: Uint8Array) => Effect.suspend(() => {
       const file = current;
+
       if (file === null) return Effect.void;
+
       return fsTry(file.staged, async () => {
         for (let offset = 0; offset < data.length;) {
           const { bytesWritten } = await file.handle.write(data, offset, data.length - offset);
+
           if (bytesWritten <= 0) throw new Error('No bytes written.');
           offset += bytesWritten;
         }
+
         file.size += data.length;
       });
     });
@@ -368,8 +405,9 @@ function printBatch(
     }).pipe(
       Stream.runForEach((event): Effect.Effect<void, P4MaterializationError> => {
         // A message may concern the file being written, so that file is not trusted.
-        if (event._tag !== 'data') return discard;
-        return event.value._tag === 'stat' ? Effect.andThen(finish, start(event.value)) : write(event.value.data);
+        if (!Predicate.isTagged(event, 'data')) return discard;
+
+        return Predicate.isTagged(event.value, 'stat') ? Effect.andThen(finish, start(event.value)) : write(event.value.data);
       }),
       Effect.andThen(finish),
       Effect.catchIf(isCommandFailure, () => Effect.annotateCurrentSpan('p4.failed', true)),
@@ -382,8 +420,9 @@ function printBatch(
 
 /** Failures worth another attempt: the connection or the process, not the request. */
 function isTransient(error: P4Error): boolean {
-  if (error._tag === 'P4SpawnError' || error._tag === 'P4TimeoutError') return true;
-  return error._tag === 'P4CommandError'
+  if (Predicate.isTagged(error, 'P4SpawnError') || Predicate.isTagged(error, 'P4TimeoutError')) return true;
+
+  return Predicate.isTagged(error, 'P4CommandError')
     && (error.category === 'connection' || error.category === 'fault' || error.category === 'unknown');
 }
 
@@ -392,59 +431,54 @@ function printOne(group: Group, keywordArgs: readonly string[], writable: boolea
   return Effect.scoped(Effect.gen(function* () {
     const folder = dirname(group.targets[0]!.outputPath);
     yield* fsTry(folder, () => mkdir(folder, { recursive: true }));
+
     const temporary = yield* Effect.acquireRelease(
       fsTry(folder, () => mkdtemp(join(folder, '.p4-materialize-'))),
       (path) => Effect.promise(() => rm(path, { recursive: true, force: true })),
     );
+
     const staged = join(temporary, 'content');
+
     const output = yield* runPlainCommand({
       args: ['print', '-q', ...keywordArgs, '-o', staged, group.key],
       policy: POLICY,
     });
+
     const missingOutput = () => new P4MaterializationError({
       message: `Print produced no file for ${group.key}.`,
       reason: 'missing_output',
       path: group.key,
     });
+
     const written = yield* Effect.tryPromise({ try: () => stat(staged), catch: missingOutput });
+
     if (!written.isFile()) return yield* missingOutput();
     yield* place(group, staged, writable);
+
     return { size: written.size, messages: output.messages };
   }));
 }
 
 /**
- * Write exact depot revisions beneath an existing directory, without holding
- * their content in memory. Nothing is synced and the workspace is untouched.
- *
- * Each revision lands at its `outputPath`, or `<directory>/<depot>/<path…>`.
- * By default every revision is one `p4 print -q -o` (`-k` unless keywords
- * are expanded), `concurrency` at a time. With `batch`, binary revisions are
- * streamed from batched `p4 -G -x - print` processes instead, and only what a
- * batch did not deliver intact is printed per file. A revision requested for
- * several output paths is printed once and copied.
- *
- * A revision that does not exist fails the call with `P4CommandError`; a
- * deleted revision fails with `P4MaterializationError` (`missing_output`).
- * Existing destination files are replaced only after a verified print to a
- * staging file beside them.
- *
- * Progress counts files written against the number requested. The call runs
- * in a `p4client-ts.materializeDepotFiles` span, with one
- * `p4client-ts.materialize.batch` span per batch and one
- * `p4client-ts.materialize.printEach` span for every per-file print together.
- *
- * @returns The destination directory, each file's local path and the counts.
- * @throws {P4MaterializationError} When the file count exceeds `maxFiles`, a
- * depot or output path is invalid or two resolve to one output path, the directory is unusable, or print produces no file.
- * @throws {P4InvalidArgumentError} When `maxFiles`, `concurrency`, `attempts`, a batch size or a revision is not a positive integer.
+ * Write exact depot revisions to `outputPath` or `<directory>/<depot path>`, streaming, without
+ * syncing. Each is a `p4 print -o`; with `batch`, binary ones come from batched `-G` prints.
+ * A missing revision fails with `P4CommandError`, a deleted one with `P4MaterializationError`.
+ * Files are replaced only after a verified staging print. Batches and per-file prints have spans.
  */
-export const materializeDepotFiles = operation<
+export const materializeDepotFiles =
+  // SAFETY: every item's `file` is one of options.fileSpec, passed through unchanged, so a caller's
+  // spec type F comes back on each item and on the result.
+  operation<
   MaterializeDepotFilesOptions,
   P4MaterializedFile,
   P4MaterializeResult
 >('materializeDepotFiles', (options, sink) =>
   Effect.gen(function* () {
+    yield* Effect.annotateCurrentSpan({
+      'p4.files': options.fileSpec.length,
+      'p4.batch': options.batch !== undefined && options.batch !== false,
+    });
+
     const maxFiles = yield* requirePositive(options.maxFiles, 'maxFiles');
     const concurrency = yield* requirePositive(options.concurrency ?? 4, 'concurrency');
     const attempts = yield* requirePositive(options.attempts ?? 1, 'attempts');
@@ -452,6 +486,7 @@ export const materializeDepotFiles = operation<
     const batchFiles = batch === null ? 1 : yield* requirePositive(batch.files ?? 100, 'batch.files');
     const batchProcesses = batch === null ? 1 : yield* requirePositive(batch.processes ?? 4, 'batch.processes');
     const batchMinFiles = batch === null ? 1 : yield* requirePositive(batch.minFiles ?? 1, 'batch.minFiles');
+
     if (options.fileSpec.length > maxFiles) {
       return yield* new P4MaterializationError({
         message: `Refusing to materialize ${options.fileSpec.length} files; maxFiles is ${maxFiles}.`,
@@ -459,10 +494,12 @@ export const materializeDepotFiles = operation<
         path: null,
       });
     }
+
     for (const file of options.fileSpec) yield* requirePositive(file.revision, 'revision');
     const config = yield* P4Config;
     const directory = resolve(config.cwd ?? process.cwd(), options.directory);
     const info = yield* Effect.tryPromise({ try: () => stat(directory), catch: () => destinationError(directory) });
+
     if (!info.isDirectory()) return yield* destinationError(directory);
     const groups = yield* planGroups(directory, options.fileSpec);
     const writable = options.writable ?? false;
@@ -471,7 +508,9 @@ export const materializeDepotFiles = operation<
     const items: Array<P4MaterializedFile | undefined> = Array.from({ length: options.fileSpec.length });
     const messages: P4Message[] = [];
     const stats = { files: 0, bytes: 0, batched: 0, printed: 0, batches: 0, retries: 0 };
-    const accept = (written: Written) => Effect.gen(function* () {
+
+    // Untraced: runs once per written file, inside the materializeDepotFiles span.
+    const accept = Effect.fnUntraced(function* (written: Written) {
       for (const target of written.group.targets) {
         const item: P4MaterializedFile = {
           file: target.file,
@@ -479,9 +518,11 @@ export const materializeDepotFiles = operation<
           bytes: written.bytes,
           method: written.method,
         };
+
         items[target.index] = item;
         stats.files += 1;
         stats.bytes += written.bytes;
+
         if (written.method === 'batch') stats.batched += 1;
         else stats.printed += 1;
         yield* sink.item(item);
@@ -491,10 +532,12 @@ export const materializeDepotFiles = operation<
 
     let perFile = groups;
     const batchable = batch === null ? [] : groups.filter((group) => group.type === undefined || BATCHABLE_TYPE.test(group.type));
+
     if (batchable.length > 0 && batchable.length >= batchMinFiles) {
       // Spread a small print over every process: one batch streams its files one after another.
       const size = Math.max(1, Math.min(batchFiles, Math.ceil(batchable.length / batchProcesses)));
       const chunks: Group[][] = [];
+
       for (let start = 0; start < batchable.length; start += size) chunks.push(batchable.slice(start, start + size));
       stats.batches = chunks.length;
       yield* Effect.forEach(chunks, (chunk) => printBatch(chunk, writable, accept), { concurrency: batchProcesses, discard: true });
@@ -505,6 +548,7 @@ export const materializeDepotFiles = operation<
     const retryDelay = Duration.millis(options.retryDelayMs ?? 1_000);
     yield* Effect.forEach(perFile, (group) => Effect.gen(function* () {
       let failures = 0;
+
       const printed = yield* printOne(group, keywordArgs, writable).pipe(
         Effect.tapError(() => Effect.sync(() => {
           failures += 1;
@@ -515,8 +559,10 @@ export const materializeDepotFiles = operation<
           while: isTransient,
         }),
       );
+
       stats.retries += failures;
       messages.push(...printed.messages);
+
       for (const message of printed.messages) yield* sink.message(message);
       yield* accept({ group, bytes: printed.size, method: 'print' });
     }), { concurrency, discard: true }).pipe(
@@ -533,14 +579,11 @@ export const materializeDepotFiles = operation<
       'p4.batches': stats.batches,
       'p4.retries': stats.retries,
     });
+
     return {
       directory: toLocalPath(directory),
       items: items.filter((item): item is P4MaterializedFile => item !== undefined),
       messages,
       stats: { ...stats },
     };
-  }).pipe(
-    Effect.withSpan('p4client-ts.materializeDepotFiles', {
-      attributes: { 'p4.files': options.fileSpec.length, 'p4.batch': options.batch !== undefined && options.batch !== false },
-    }),
-  ), 'files') as P4MaterializeOperation;
+  }), 'files') as P4MaterializeOperation;

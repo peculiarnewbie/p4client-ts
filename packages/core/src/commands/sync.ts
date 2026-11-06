@@ -15,7 +15,6 @@ import type { P4ProgressCounter, P4Sink } from '../engine/operation.js';
 import type { P4ClientPath, P4DepotPath, P4FileAction, P4LocalPath } from '../schemas.js';
 import type { P4Message } from '../wire/message.js';
 import type { P4MessagePolicy } from '../wire/policy.js';
-import type { P4Reason } from '../wire/reasons.js';
 import type { FileSpecs, P4ItemFailure, Row } from './shared.js';
 
 /** Options for {@link previewSync} and {@link sync}. */
@@ -81,12 +80,7 @@ interface SyncRecord {
   readonly totalFileSize: number | null;
 }
 
-/**
- * Convert a `sync` record.
- *
- * @param row One data record.
- * @returns The synced file.
- */
+/** Convert a `sync` record. */
 export function toSyncItem(row: Row): P4SyncItem {
   const item: P4SyncItem = {
     depotFile: optionalDepotPath(row.depotFile, row),
@@ -96,16 +90,22 @@ export function toSyncItem(row: Row): P4SyncItem {
     change: integer(row.change, row),
     fileSize: integer(row.fileSize, row),
   };
+
   if (item.depotFile === null && item.action === null) throw malformed('A sync record names no file or action.', row);
+
   return item;
 }
 
 function syncCommand(options: SyncOptions, preview: boolean): P4CommandSpec<SyncRecord> {
   const args = ['sync'];
+
   if (preview) args.push('-n');
+
   if (options.force) args.push('-f');
+
   if (options.keepWorkspaceFiles) args.push('-k');
   args.push(...specList(options.fileSpec));
+
   return {
     args,
     format: 'json',
@@ -118,34 +118,47 @@ function syncCommand(options: SyncOptions, preview: boolean): P4CommandSpec<Sync
   };
 }
 
-function runSync(options: SyncOptions, preview: boolean, sink: P4Sink<P4SyncItem>) {
-  return Effect.gen(function* () {
-    const counter = progressCounter(sink, 'files');
-    let bytes: number | undefined;
-    let totals: { files: number | null; bytes: number | null } = { files: null, bytes: null };
-    // Each file advances the count by one and the bytes by its size.
-    const perFile: P4ProgressCounter = { ...counter, advance: () => counter.advance(1, bytes) };
-    const output = yield* drain(sink, streamCommand(syncCommand(options, preview)), {
-      item: (record) => record.item,
-      counter: perFile,
-      inspect: (record) => {
-        if (record.totalFileCount !== null && totals.files === null) {
-          totals = { files: record.totalFileCount, bytes: record.totalFileSize };
-          counter.expect(totals.files, totals.bytes);
-        }
-        bytes = record.item.fileSize ?? undefined;
-      },
-    });
-    const result: P4SyncResult = {
-      items: output.items.map((record) => record.item),
-      failures: output.failures.map(itemFailure),
-      messages: output.messages,
-      totalFileCount: totals.files,
-      totalFileSize: totals.bytes,
-    };
-    return result;
-  });
+/** The totals `sync` reports with its first file, once known. */
+interface SyncTotals {
+  readonly files: number | null;
+  readonly bytes: number | null;
 }
+
+// Untraced: the whole body of sync and previewSync, which have their own spans.
+const runSync = Effect.fnUntraced(function* (
+  options: SyncOptions,
+  preview: boolean,
+  sink: P4Sink<P4SyncItem>,
+) {
+  const counter = progressCounter(sink, 'files');
+  let bytes: number | undefined;
+  let totals: SyncTotals = { files: null, bytes: null };
+  // Each file advances the count by one and the bytes by its size.
+  const perFile: P4ProgressCounter = { ...counter, advance: () => counter.advance(1, bytes) };
+
+  const output = yield* drain(sink, streamCommand(syncCommand(options, preview)), {
+    item: (record) => record.item,
+    counter: perFile,
+    inspect: (record) => {
+      if (record.totalFileCount !== null && totals.files === null) {
+        totals = { files: record.totalFileCount, bytes: record.totalFileSize };
+        counter.expect(totals.files, totals.bytes);
+      }
+
+      bytes = record.item.fileSize ?? undefined;
+    },
+  });
+
+  const result: P4SyncResult = {
+    items: output.items.map((record) => record.item),
+    failures: output.failures.map(itemFailure),
+    messages: output.messages,
+    totalFileCount: totals.files,
+    totalFileSize: totals.bytes,
+  };
+
+  return result;
+});
 
 /**
  * Preview a sync with `p4 sync -n`: the files it would update, without
@@ -153,23 +166,14 @@ function runSync(options: SyncOptions, preview: boolean, sink: P4Sink<P4SyncItem
  *
  * Progress is determinate: Perforce announces the file count and size with
  * the first file. Files that could not be synced are `failures`, not errors.
- *
- * @returns The files a sync would update, and those it could not.
  */
 export const previewSync = operation<SyncOptions, P4SyncItem, P4SyncResult>('previewSync', (options, sink) =>
   runSync(options, true, sink), 'files');
 
 /**
- * Sync workspace files with `p4 sync`.
- *
- * This changes the workspace, so the client must be created with
- * `allowMutation: true`; otherwise it fails with `P4ReadOnlyError`. Progress
- * is determinate, in files and bytes. A file that cannot be written (a
- * writable file in the way, an operating-system error) is reported in
- * `failures` and does not fail the sync.
- *
- * @returns The files synced, and those that could not be.
- * @throws {P4ReadOnlyError} When the client does not allow mutation.
+ * Sync workspace files with `p4 sync`. Without `allowMutation` it fails with `P4ReadOnlyError`.
+ * Progress is in files and bytes. A file that cannot be written (a writable file in the way, an
+ * operating-system error) is reported in `failures` and does not fail the sync.
  */
 export const sync = operation<SyncOptions, P4SyncItem, P4SyncResult>('sync', (options, sink) =>
   runSync(options, false, sink), 'files');

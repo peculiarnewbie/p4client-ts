@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,6 +8,7 @@ import {
 } from '../scripts/prod-readonly-p4.js';
 
 const scratch = join(tmpdir(), 'p4-guard-unit');
+
 const forbidden = [
   'submit',
   'edit',
@@ -62,6 +63,7 @@ describe('production read guard', () => {
       );
     });
   }
+
   for (const args of [
     ['sync', '//depot/main/a'],
     ['sync', '-f', '-n', '-m', '1', '//depot/main/a'],
@@ -97,6 +99,7 @@ describe('production read guard', () => {
       expect(() => validateProductionRead(args, scratch)).toThrow('refused');
     });
   }
+
   it('allows reviewed reads with bounded output', () => {
     for (const args of [
       ['info'],
@@ -115,10 +118,11 @@ describe('production read guard', () => {
       ['reconcile', '-n', '//depot/main/a'],
       ['status', '-n', '//depot/main/a'],
     ])
-      expect(validateProductionRead(args, scratch)).toBeString();
+      expect(validateProductionRead(args, scratch)).toBeTypeOf('string');
   });
   it('refuses forbidden commands before launching an executable', async () => {
     const root = mkdtempSync(join(tmpdir(), 'p4-guard-'));
+
     try {
       await expect(
         runProductionRead(
@@ -137,6 +141,7 @@ describe('production read guard', () => {
   });
   it('passes identity explicitly and logs subprocess exit codes', async () => {
     const root = mkdtempSync(join(tmpdir(), 'p4-guard-'));
+
     // Instead exercise a safe executable's own argument error; it proves an exit is logged without p4.
     try {
       const result = await runProductionRead(
@@ -148,11 +153,14 @@ describe('production read guard', () => {
         },
         ['info'],
       );
+
       expect(result.exitCode).not.toBe(0);
+
       const records = readFileSync(join(root, 'commands.jsonl'), 'utf8')
         .trim()
         .split('\n')
         .map((line) => JSON.parse(line));
+
       expect(records[0].args).toEqual(['-p', 'invalid', '-u', 'user1', 'info']);
       expect(records[1].exitCode).toBe(result.exitCode);
     } finally {
@@ -161,6 +169,7 @@ describe('production read guard', () => {
   });
   it('releases the shared lock and logs a failed launch', async () => {
     const root = mkdtempSync(join(tmpdir(), 'p4-guard-'));
+
     try {
       await expect(
         runProductionRead(
@@ -176,10 +185,12 @@ describe('production read guard', () => {
       expect(existsSync(join(tmpdir(), 'p4client-prod-readonly.lock'))).toBe(
         false,
       );
+
       const records = readFileSync(join(root, 'commands.jsonl'), 'utf8')
         .trim()
         .split('\n')
         .map((line) => JSON.parse(line));
+
       expect(records.map((record) => record.event)).toEqual(['start', 'exit']);
       expect(records[1].exitCode).toBe(1);
     } finally {

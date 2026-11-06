@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from 'bun:test';
+import { afterAll, describe, expect, it } from 'vite-plus/test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,12 +7,15 @@ import { scriptedExecutor } from '../../../src/testing/executor.js';
 import { invocations, run } from '../commands/support.js';
 
 const scratch = mkdtempSync(join(tmpdir(), 'p4ts-workspace-'));
+
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 const project = join(scratch, 'Project');
 const nested = join(project, 'Plugins', 'Tool');
 const alternate = join(scratch, 'Alternate');
+
 mkdirSync(join(nested, 'Source'), { recursive: true });
+
 mkdirSync(join(alternate, 'Content'), { recursive: true });
 
 const clients = [
@@ -23,10 +26,13 @@ const clients = [
 
 const executor = scriptedExecutor((invocation) => {
   const spec = invocation.args.indexOf('-o');
+
   if (spec >= 0) {
     const client = invocation.args[spec + 1];
+
     return { stdout: `${JSON.stringify(client === 'elsewhere' ? { Client: client, AltRoots0: alternate } : { Client: client })}\n` };
   }
+
   return { stdout: clients.map((row) => JSON.stringify(row)).join('\n') };
 });
 
@@ -53,8 +59,10 @@ describe('findWorkspaceForPath', () => {
     const found = await run(findWorkspaceForPath, { path, altRoots: true }, executor);
     expect(found.match).toMatchObject({ root: alternate, relativePath: 'Content' });
     expect(found.match?.workspace.client).toBe('elsewhere');
+
     const commands = await invocations(findWorkspaceForPath, { path: join(nested, 'Source'), altRoots: true, user: 'arif' }, (args) =>
       args.includes('-o') ? {} : { stdout: clients.map((row) => JSON.stringify(row)).join('\n') });
+
     expect(commands).toEqual([
       ['-Mj', '-z', 'tag', 'clients', '-u', 'arif'],
       ['-Mj', '-z', 'tag', 'client', '-o', 'elsewhere'],

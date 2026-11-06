@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'bun:test';
-import { Effect, Layer } from 'effect';
+import { describe, expect, it } from 'vite-plus/test';
+import { Effect, Layer, Predicate } from 'effect';
 import { diffFile, getChangelistDiffSummary } from '../../../src/commands/diff.js';
 import {
   fileAtRevision,
@@ -9,11 +9,14 @@ import {
   submittedDiffRevisions,
   summarizeUnifiedDiff,
 } from '../../../src/commands/diff-text.js';
+import { expectFailure } from '../../support/assert.js';
 import { runCommand } from '../../../src/engine/command.js';
 import { configLayer } from '../../../src/engine/config.js';
-import { P4InvalidArgumentError } from '../../../src/errors.js';
+import { P4CommandError, P4InvalidArgumentError } from '../../../src/errors.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';
 import { argvCase, argvTable, failure, fixtures, replay, run, watch } from './support.js';
+import { asAction, asDepotPath, asLocalPath } from '../../support/values.js';
+import type { P4WireFields } from '../../../src/wire/value.js';
 import type { P4CommandSpec } from '../../../src/engine/command.js';
 
 const TAG = ['-Mj', '-z', 'tag'];
@@ -77,8 +80,8 @@ describe('diffFile', () => {
   it('reads a workspace diff from -Mj data rows', async () => {
     const diff = await run(diffFile, { file: TEXT }, replay('diff-opened-json'));
     expect(diff).toEqual({
-      depotFile: TEXT,
-      localFile: '<WORKSPACE>\\wire\\text.txt',
+      depotFile: asDepotPath(TEXT),
+      localFile: asLocalPath('<WORKSPACE>\\wire\\text.txt'),
       source: 'workspace',
       fromRevision: null,
       toRevision: null,
@@ -87,14 +90,14 @@ describe('diffFile', () => {
       additions: 2,
       deletions: 2,
       messages: [],
-    } as never);
+    });
     // Plain `diff` adds ---/+++ headers with local paths but counts the same lines.
     expect(summarizeUnifiedDiff(fixtures('diff-opened')[0]!.stdout ?? '')).toEqual({ additions: 2, deletions: 2 });
   });
 
   it('keeps a caller-supplied local path', async () => {
     const diff = await run(diffFile, { file: TEXT, localFile: 'C:\\ws\\text.txt' }, replay('diff-opened-json'));
-    expect(diff.localFile).toBe('C:\\ws\\text.txt' as never);
+    expect(diff.localFile).toBe(asLocalPath('C:\\ws\\text.txt'));
   });
 
   it('returns an empty diff for a file that is not opened', async () => {
@@ -106,13 +109,14 @@ describe('diffFile', () => {
   it('diffs two depot revisions with plain diff2', async () => {
     const diff = await run(diffFile, { file: TEXT, fromRevision: 1, toRevision: 2 }, replay('diff2-normal'));
     expect(diff).toMatchObject({ source: 'depot', fromRevision: 1, toRevision: 2, additions: 1, deletions: 2 });
-    expect(diff.unifiedDiff).toStartWith('==== //p4ts/main/wire/text.txt#1 (text)');
+    expect(diff.unifiedDiff.startsWith('==== //p4ts/main/wire/text.txt#1 (text)')).toBe(true);
   });
 
   it('diffs a shelved file against its base revision', async () => {
     const diff = await run(diffFile, {
       file: TEXT, changelistStatus: 'shelved', shelvedChange: 7, action: 'edit', revision: 1,
     }, replay('diff2-shelved'));
+
     expect(diff).toMatchObject({ fromRevision: 1, toRevision: '@=7', additions: 1, deletions: 1 });
     expect(parseUnifiedDiff(diff.unifiedDiff)).toEqual([{
       oldStart: 1, oldLines: 2, newStart: 1, newLines: 2, lines: [' one', '-two', '+changed line', ''],
@@ -123,33 +127,31 @@ describe('diffFile', () => {
     const error = await failure(diffFile, {
       file: TEXT, fromRevision: 'invalid', toRevision: 1,
     }, replay('diff2-bad-revision-plain'));
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'invalid_revision' });
+
+    expectFailure(error, P4CommandError, { reason: 'invalid_revision' });
   });
 
   it('accepts exit 1 from an external diff tool only with hunks', async () => {
     const options = { file: '//d/a.txt', fromRevision: 1, toRevision: 2 } as const;
     const differs = await run(diffFile, options, scriptedExecutor(() => ({ stdout: '@@ -1 +1 @@\n-a\n+b\n', exitCode: 1 })));
     expect(differs).toMatchObject({ additions: 1, deletions: 1 });
-    expect(await failure(diffFile, options, scriptedExecutor(() => ({ exitCode: 1 })))).toMatchObject({ _tag: 'P4CommandError' });
+    expectFailure(await failure(diffFile, options, scriptedExecutor(() => ({ exitCode: 1 }))), P4CommandError);
   });
 
   it('returns an empty binary diff without running p4', async () => {
     const diff = await run(diffFile, { file: '//d/a.uasset', allowBinary: false, type: 'binary+F' }, scriptedExecutor(() => {
       throw new Error('p4 must not run');
     }));
+
     expect(diff).toMatchObject({ isBinary: true, unifiedDiff: '', source: 'workspace', messages: [] });
   });
 
   it('rejects incomplete or impossible revisions', async () => {
     const none = scriptedExecutor(() => ({}));
-    expect(await failure(diffFile, { file: TEXT, fromRevision: 1 }, none))
-      .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'toRevision' });
-    expect(await failure(diffFile, { file: TEXT, changelistStatus: 'shelved' }, none))
-      .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'shelvedChange' });
-    expect(await failure(diffFile, { file: TEXT, changelistStatus: 'submitted', action: 'edit', revision: 1 }, none))
-      .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'revision' });
-    expect(await failure(diffFile, { file: 'wire/text.txt' }, none))
-      .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'file' });
+    expectFailure(await failure(diffFile, { file: TEXT, fromRevision: 1 }, none), P4InvalidArgumentError, { option: 'toRevision' });
+    expectFailure(await failure(diffFile, { file: TEXT, changelistStatus: 'shelved' }, none), P4InvalidArgumentError, { option: 'shelvedChange' });
+    expectFailure(await failure(diffFile, { file: TEXT, changelistStatus: 'submitted', action: 'edit', revision: 1 }, none), P4InvalidArgumentError, { option: 'revision' });
+    expectFailure(await failure(diffFile, { file: 'wire/text.txt' }, none), P4InvalidArgumentError, { option: 'file' });
   });
 });
 
@@ -157,13 +159,14 @@ describe('diff2 output formats', () => {
   // Why depot diffs stay plain: -Mj and -G diff2 report only which files differ.
   it('-Mj and -G diff2 send a header without hunks', async () => {
     const args = ['diff2', '-du', `${TEXT}#1`, `${TEXT}#2`];
-    const decode = (row: Readonly<Record<string, unknown>>) => row;
+    const decode = (row: P4WireFields) => row;
     const json = await collect({ args, format: 'json', decode }, 'diff2-normal-json');
     const marshal = await collect({ args, format: 'marshal', decode }, 'diff2-normal-marshal');
+
     for (const output of [json, marshal]) {
       expect(output.items).toHaveLength(1);
       expect(output.items[0]).toMatchObject({ status: 'content', rev: '1', rev2: '2' });
-      expect(Object.values(output.items[0]!).some((value) => String(value).includes('@@'))).toBe(false);
+      expect(JSON.stringify(output.items[0]).includes('@@')).toBe(false);
     }
   });
 
@@ -171,6 +174,7 @@ describe('diff2 output formats', () => {
     const output = await collect({
       args: ['diff2', '-du', '//p4ts/main/missing.txt#1', '//p4ts/main/missing.txt#2'], format: 'json', decode: (row) => row,
     }, 'diff2-empty');
+
     expect([output.items, output.messages.map((message) => message.reason)]).toEqual([[], ['no_such_file']]);
   });
 });
@@ -180,23 +184,25 @@ describe('getChangelistDiffSummary', () => {
     const summary = await run(getChangelistDiffSummary, {
       change: 'default', includeLineCounts: true,
     }, replay('opened-default', 'diff-opened-json'));
+
     expect(summary.changelist).toMatchObject({ change: 'default', status: 'pending', user: 'p4ts-e2e' });
     expect(summary.files).toEqual([{
-      depotFile: TEXT,
-      localFile: '<WORKSPACE>\\wire\\text.txt',
-      action: 'edit',
+      depotFile: asDepotPath(TEXT),
+      localFile: asLocalPath('<WORKSPACE>\\wire\\text.txt'),
+      action: asAction('edit'),
       type: 'text',
       revision: 1,
       isBinary: false,
       additions: 2,
       deletions: 2,
-    }] as never);
+    }]);
   });
 
   it('summarizes shelved files against the shelf', async () => {
     const summary = await run(getChangelistDiffSummary, {
       change: 7, shelved: true, includeLineCounts: true,
     }, replay('describe-shelved', 'diff2-shelved'));
+
     expect(summary.changelist.status).toBe('shelved');
     expect(summary.files.map((file) => [String(file.depotFile), file.additions, file.deletions, file.localFile])).toEqual([
       [TEXT, 1, 1, null],
@@ -207,24 +213,24 @@ describe('getChangelistDiffSummary', () => {
     const events = await watch(getChangelistDiffSummary, { change: 6 }, replay('describe-submitted'));
     expect(events.map((event) => event._tag)).toEqual(['item', 'progress', 'done']);
     const done = events.at(-1);
-    if (done?._tag !== 'done') throw new Error('expected done');
+
+    if (!Predicate.isTagged(done, 'done')) throw new Error('expected done');
     expect(done.result.files).toEqual([{
-      depotFile: '//p4ts/main/wire/deleted.txt',
+      depotFile: asDepotPath('//p4ts/main/wire/deleted.txt'),
       localFile: null,
-      action: 'delete',
+      action: asAction('delete'),
       type: 'text',
       revision: 2,
       isBinary: false,
       additions: null,
       deletions: null,
-    }] as never);
-    const progress = events.find((event) => event._tag === 'progress');
+    }]);
+    const progress = events.find((event) => Predicate.isTagged(event, 'progress'));
     expect(progress).toMatchObject({ progress: { completed: 1, total: 1, unit: 'files' } });
   });
 
   it('rejects shelved files of the default changelist', async () => {
-    expect(await failure(getChangelistDiffSummary, { change: 'default', shelved: true }, scriptedExecutor(() => ({}))))
-      .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'shelved' });
+    expectFailure(await failure(getChangelistDiffSummary, { change: 'default', shelved: true }, scriptedExecutor(() => ({}))), P4InvalidArgumentError, { option: 'shelved' });
   });
 });
 

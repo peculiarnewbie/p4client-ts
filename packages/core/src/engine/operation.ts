@@ -1,4 +1,4 @@
-import { Clock, Effect, Queue, Stream } from 'effect';
+import { Clock, Data, Effect, Predicate, Queue, Stream } from 'effect';
 import type {
   P4MaterializeOperation, P4MaterializeSpec, MaterializeDepotFilesOptions, P4MaterializedFile, P4MaterializeResult,
 } from '../node/materialize.js';
@@ -48,6 +48,13 @@ export type P4OperationEvent<I, R> =
   /** The operation's result; always the last event. */
   | { readonly _tag: 'done'; readonly result: R };
 
+interface P4OperationEventDefinition extends Data.TaggedEnum.WithGenerics<2> {
+  readonly taggedEnum: P4OperationEvent<this['A'], this['B']>;
+}
+
+/** Constructors for {@link P4OperationEvent}, for test doubles that emit operation events. */
+export const P4OperationEvent = Data.taggedEnum<P4OperationEventDefinition>();
+
 /** Where an operation reports what it finds while it runs. */
 export interface P4Sink<I> {
   readonly item: (item: I) => Effect.Effect<void>;
@@ -71,20 +78,17 @@ export interface P4Operation<O, I, R> {
   readonly program: (options: O, sink: P4Sink<I>) => Effect.Effect<R, P4Error, P4Context>;
 }
 
-/**
- * Define an operation.
- *
- * @param name Operation name.
- * @param program The program; report through the sink, return the result.
- * @param progressUnit Unit used before the first program progress update. Defaults to records.
- * @returns The operation.
- */
+/** Define an operation. Its program runs in a `p4client-ts.<name>` span. */
 export function operation<O, I, R>(
   name: string,
   program: (options: O, sink: P4Sink<I>) => Effect.Effect<R, P4Error, P4Context>,
   progressUnit: P4ProgressUnit = 'records',
 ): P4Operation<O, I, R> {
-  return { name, program, progressUnit };
+  const traced = Effect.fn(`p4client-ts.${name}`)(function* (options: O, sink: P4Sink<I>) {
+    return yield* program(options, sink);
+  });
+
+  return { name, program: traced, progressUnit };
 }
 
 const SILENT: P4Sink<unknown> = {
@@ -94,13 +98,7 @@ const SILENT: P4Sink<unknown> = {
   progress: () => Effect.void,
 };
 
-/**
- * Run an operation for its result.
- *
- * @param op The operation.
- * @param options Its options.
- * @returns The result.
- */
+/** Run an operation for its result. */
 export function runOperation<F extends P4MaterializeSpec>(
   op: P4MaterializeOperation,
   options: MaterializeDepotFilesOptions<F>,
@@ -127,14 +125,7 @@ export interface P4WatchOptions {
   readonly progressIntervalMs?: number | undefined;
 }
 
-/**
- * Run an operation as a stream of what it reports, ending with its result.
- *
- * @param op The operation.
- * @param options Its options.
- * @param watch Heartbeat options.
- * @returns Items, messages, failures and progress in the order they happen, then `done`.
- */
+/** Run an operation as a stream of what it reports, ending with its result. */
 export function watchOperation<F extends P4MaterializeSpec>(
   op: P4MaterializeOperation,
   options: MaterializeDepotFilesOptions<F>,
@@ -157,32 +148,40 @@ export function watchOperation<O, I, R>(
 ): Stream.Stream<P4OperationEvent<I, R>, P4Error, P4Context> {
   return Stream.callback<P4OperationEvent<I, R>, P4Error, P4Context>((queue) => Effect.gen(function* () {
     const started = yield* Clock.currentTimeMillis;
+
     let latest: P4ProgressUpdate = {
       completed: 0, total: null, unit: op.progressUnit, bytesCompleted: null, bytesTotal: null,
     };
+
     let reportedAt = started;
     const emit = (event: P4OperationEvent<I, R>) => Queue.offer(queue, event).pipe(Effect.asVoid);
+
     const report = (update: P4ProgressUpdate) => Effect.flatMap(Clock.currentTimeMillis, (now) => {
       latest = update;
       reportedAt = now;
-      return emit({ _tag: 'progress', progress: { ...update, elapsedMs: now - started } });
+
+      return emit(P4OperationEvent.progress({ progress: { ...update, elapsedMs: now - started } }));
     });
+
     const sink: P4Sink<I> = {
-      item: (item) => emit({ _tag: 'item', item }),
-      message: (message) => emit({ _tag: 'message', message }),
-      failure: (failure) => emit({ _tag: 'failure', failure }),
+      item: (item) => emit(P4OperationEvent.item({ item })),
+      message: (message) => emit(P4OperationEvent.message({ message })),
+      failure: (failure) => emit(P4OperationEvent.failure({ failure })),
       progress: report,
     };
+
     const interval = watch.progressIntervalMs;
+
     if (interval !== undefined && interval > 0) {
       yield* Effect.forkScoped(Effect.forever(Effect.sleep(interval).pipe(
         Effect.andThen(Clock.currentTimeMillis),
         Effect.flatMap((now) => (now - reportedAt >= interval ? report(latest) : Effect.void)),
       )));
     }
+
     // A failure must reach the queue explicitly: left in the callback's effect, it hangs the stream.
     yield* op.program(options, sink).pipe(
-      Effect.flatMap((result) => emit({ _tag: 'done', result })),
+      Effect.flatMap((result) => emit(P4OperationEvent.done({ result }))),
       Effect.matchCauseEffect({
         onFailure: (cause) => Effect.sync(() => Queue.failCauseUnsafe(queue, cause)),
         onSuccess: () => Effect.sync(() => Queue.endUnsafe(queue)),
@@ -201,20 +200,14 @@ export interface P4ProgressCounter {
   readonly snapshot: () => P4ProgressUpdate;
 }
 
-/**
- * Create a progress counter.
- *
- * @param sink Where progress is reported.
- * @param unit What is counted.
- * @param total Units expected, when known.
- * @returns The counter.
- */
+/** Count units toward an optional total, reporting each advance through the sink. */
 export function progressCounter(
   sink: Pick<P4Sink<never>, 'progress'>,
   unit: P4ProgressUnit,
   total: number | null = null,
 ): P4ProgressCounter {
   let state: P4ProgressUpdate = { completed: 0, total, unit, bytesCompleted: null, bytesTotal: null };
+
   return {
     expect: (expected, bytesTotal) => {
       state = { ...state, total: expected, bytesTotal: bytesTotal === undefined ? state.bytesTotal : bytesTotal };
@@ -225,6 +218,7 @@ export function progressCounter(
         completed: state.completed + count,
         bytesCompleted: bytes === undefined ? state.bytesCompleted : (state.bytesCompleted ?? 0) + bytes,
       };
+
       return sink.progress(state);
     }),
     snapshot: () => state,
@@ -244,11 +238,6 @@ export interface P4DrainOptions<A, I> {
 /**
  * Run a command's events to completion, reporting messages, failures and
  * items to a sink, and collect its output.
- *
- * @param sink Where the operation reports.
- * @param events A command stream, such as `streamCommand(spec)`.
- * @param options How data is reported.
- * @returns The collected output.
  */
 export function drain<A, I>(
   sink: P4Sink<I>,
@@ -257,20 +246,26 @@ export function drain<A, I>(
 ): Effect.Effect<P4CommandOutput<A>, P4Error, P4Context> {
   return Effect.suspend(() => {
     const output: P4CommandOutput<A> = { items: [], messages: [], failures: [] };
+
     return events.pipe(
       Stream.runForEach((event): Effect.Effect<void> => {
-        if (event._tag === 'message') {
+        if (Predicate.isTagged(event, 'message')) {
           output.messages.push(event.message);
+
           return sink.message(event.message);
         }
-        if (event._tag === 'failure') {
+
+        if (Predicate.isTagged(event, 'failure')) {
           output.failures.push(event.message);
+
           return sink.failure(itemFailure(event.message));
         }
+
         output.items.push(event.value);
         options.inspect?.(event.value);
         const item = options.item?.(event.value) ?? null;
         const reported = item === null ? Effect.void : sink.item(item);
+
         return options.counter === undefined ? reported : Effect.andThen(reported, options.counter.advance());
       }),
       Effect.as(output),

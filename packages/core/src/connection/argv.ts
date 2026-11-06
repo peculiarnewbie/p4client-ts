@@ -31,43 +31,36 @@ export const ISOLATED_P4ENVIRO = 'p4client-ts.isolated-no-enviro';
 /** P4CONFIG names a file searched for in each parent directory; this one never exists. */
 export const ISOLATED_P4CONFIG = 'p4client-ts.isolated-no-config';
 
-/**
- * Global options for a connection, plus program identification for server logs.
- *
- * @param connection Explicit connection values.
- * @returns Arguments to place before the subcommand.
- */
+/** Global options for a connection, plus program identification for server logs. */
 export function globalArgs(connection: P4Connection): string[] {
   const args: string[] = [];
+
   if (connection.port) args.push('-p', connection.port);
+
   if (connection.user) args.push('-u', connection.user);
+
   if (connection.client) args.push('-c', connection.client);
+
   if (connection.charset) args.push('-C', connection.charset);
+
   if (connection.host) args.push('-H', connection.host);
   args.push(`-zprog=p4client-ts`, `-zversion=${VERSION}`);
+
   return args;
 }
 
-/**
- * Environment changes a connection requires.
- *
- * @param connection Explicit connection values.
- * @returns Variables to set; isolation points `P4CONFIG` and `P4ENVIRO` at files that never exist.
- */
+/** Environment changes a connection requires. */
 export function connectionEnv(connection: P4Connection): Record<string, string | undefined> {
   return connection.isolated ? { P4CONFIG: ISOLATED_P4CONFIG, P4ENVIRO: ISOLATED_P4ENVIRO } : {};
 }
 
-/**
- * Copy an argument vector with password-like values replaced by `***`.
- *
- * @param args Arguments as passed to `p4`.
- * @returns Arguments safe to log or return in errors.
- */
+/** Copy an argument vector with password-like values replaced by `***`. */
 export function redactArgs(args: readonly string[]): string[] {
   const redacted: string[] = [];
+
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
+
     if (arg === '-P' || arg === '--password') {
       redacted.push(arg, '***');
       index += 1;
@@ -79,5 +72,6 @@ export function redactArgs(args: readonly string[]): string[] {
       redacted.push(arg);
     }
   }
+
   return redacted;
 }

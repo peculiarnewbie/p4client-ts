@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'bun:test';
+import { Predicate } from 'effect';
+import { describe, expect, it } from 'vite-plus/test';
 import {
   listDepotDirs,
   listDepotFiles,
@@ -9,6 +10,9 @@ import {
   statFiles,
   whereFiles,
 } from '../../../src/commands/files.js';
+import { P4CommandError, P4InvalidArgumentError, P4ParseError } from '../../../src/errors.js';
+import { expectFailure } from '../../support/assert.js';
+import { asAction, asClientPath, asDepotPath, asLocalPath } from '../../support/values.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';
 import { argvCase, argvTable, failure, fixtureTime, fixtures, replay, run, watch } from './support.js';
 
@@ -62,11 +66,11 @@ describe('listDepots', () => {
     const depots = await run(listDepots, {}, replay('depots'));
     expect(depots.items).toEqual([
       {
-        name: 'depot', depotPath: '//depot' as never, type: 'local', map: 'depot/...',
+        name: 'depot', depotPath: asDepotPath('//depot'), type: 'local', map: 'depot/...',
         description: 'Default depot', createdAt: fixtureTime('depots', 'time', (row) => row.name === 'depot'),
       },
       {
-        name: 'p4ts', depotPath: '//p4ts' as never, type: 'stream', map: 'p4ts/...',
+        name: 'p4ts', depotPath: asDepotPath('//p4ts'), type: 'stream', map: 'p4ts/...',
         description: 'Disposable p4-ts E2E conformance depot.', createdAt: fixtureTime('depots', 'time', (row) => row.name === 'p4ts'),
       },
     ]);
@@ -86,8 +90,8 @@ describe('listDepotDirs', () => {
   it('bounds the directories locally and reports only those returned', async () => {
     const events = await watch(listDepotDirs, { depotPath: '//p4ts/main', limit: 2 }, replay('dirs'));
     const done = events.at(-1);
-    expect(done?._tag === 'done' && done.result).toMatchObject({ hasMore: true, items: [{ name: 'docs' }, { name: 'src' }] });
-    expect(events.filter((event) => event._tag === 'item')).toHaveLength(2);
+    expect(Predicate.isTagged(done, 'done') && done.result).toMatchObject({ hasMore: true, items: [{ name: 'docs' }, { name: 'src' }] });
+    expect(events.filter((event) => Predicate.isTagged(event, 'item'))).toHaveLength(2);
   });
 
   it('lists nothing for a missing directory', async () => {
@@ -97,7 +101,7 @@ describe('listDepotDirs', () => {
 
   it('rejects a path with a wildcard', async () => {
     const error = await failure(listDepotDirs, { depotPath: '//depot/...' }, scriptedExecutor(() => ({})));
-    expect(error).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'depotPath' });
+    expectFailure(error, P4InvalidArgumentError, { option: 'depotPath' });
   });
 });
 
@@ -108,10 +112,10 @@ describe('listDepotFiles', () => {
     expect(files.items.filter((file) => file.isDeletedAtHead).map((file) => file.name)).toEqual(['deleted.txt']);
     expect(files.items.filter((file) => file.isBinary).map((file) => file.name)).toEqual(['exclusive.uasset', 'full.uasset']);
     expect(files.items[0]).toEqual({
-      depotFile: '//p4ts/main/wire/clobber.txt' as never,
+      depotFile: asDepotPath('//p4ts/main/wire/clobber.txt'),
       name: 'clobber.txt',
       revision: 1,
-      action: 'add' as never,
+      action: asAction('add'),
       type: 'text',
       change: 4,
       submittedAt: fixtureTime('files', 'time'),
@@ -136,13 +140,14 @@ describe('listDepotFiles', () => {
     const files = await run(listDepotFiles, { depotPath: '//d', deletedFiles: 'only', limit: 1 }, scriptedExecutor(() => ({
       stdout: fileRows(['//d/a', 'delete'], ['//d/b', 'edit'], ['//d/c', 'move/delete']),
     })));
+
     expect(files.items.map((file) => file.name)).toEqual(['a']);
     expect(files.hasMore).toBe(true);
   });
 
   it('rejects a revision in the directory', async () => {
     const error = await failure(listDepotFiles, { depotPath: '//depot/main@3' }, scriptedExecutor(() => ({})));
-    expect(error).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'depotPath' });
+    expectFailure(error, P4InvalidArgumentError, { option: 'depotPath' });
   });
 });
 
@@ -178,23 +183,26 @@ describe('listFiles', () => {
 
   it('fails on an invalid revision', async () => {
     const error = await failure(listFiles, { fileSpec: '//p4ts/main/wire/text.txt#invalid' }, replay('files-bad-revision'));
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'invalid_revision' });
+    expectFailure(error, P4CommandError, { reason: 'invalid_revision' });
   });
 
   it('pages with one extra row', async () => {
     const files = await run(listFiles, { fileSpec: '//d/...', limit: 2 }, scriptedExecutor(() => ({
       stdout: fileRows(['//d/a', 'add'], ['//d/b', 'add'], ['//d/c', 'add']),
     })));
+
     expect(files.items.map((file) => file.name)).toEqual(['a', 'b']);
     expect(files.hasMore).toBe(true);
   });
 
   it('still fails when the session is not usable', async () => {
     const [expired] = fixtures('changes-ticket-expired');
+
     const error = await failure(listFiles, { fileSpec: ['//d/a', '//d/b'] }, scriptedExecutor(() => ({
       stdout: expired!.stdout ?? '', stderr: expired!.stderr, exitCode: expired!.exitCode,
     })));
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'ticket_expired' });
+
+    expectFailure(error, P4CommandError, { reason: 'ticket_expired' });
   });
 });
 
@@ -203,7 +211,7 @@ describe('listDepotFilesAtChange', () => {
     const files = await run(listDepotFilesAtChange, { file: '//p4ts/main/wire/*', change: 6, limit: 49 }, replay('files-existing'));
     expect(files.items).toHaveLength(7);
     expect(files.items[0]).toEqual({
-      depotFile: '//p4ts/main/wire/clobber.txt' as never, revision: 1, change: 4, action: 'add' as never, type: 'text',
+      depotFile: asDepotPath('//p4ts/main/wire/clobber.txt'), revision: 1, change: 4, action: asAction('add'), type: 'text',
     });
     expect(files).toMatchObject({ hasMore: false, messages: [] });
   });
@@ -212,24 +220,26 @@ describe('listDepotFilesAtChange', () => {
     const events = await watch(listDepotFilesAtChange, { file: '//d/...', change: 9, limit: 1 }, scriptedExecutor(() => ({
       stdout: fileRows(['//d/a', 'add'], ['//d/b', 'edit']),
     })));
-    expect(events.filter((event) => event._tag === 'item')).toHaveLength(1);
-    expect(events.filter((event) => event._tag === 'progress').at(-1)).toMatchObject({
+
+    expect(events.filter((event) => Predicate.isTagged(event, 'item'))).toHaveLength(1);
+    expect(events.filter((event) => Predicate.isTagged(event, 'progress')).at(-1)).toMatchObject({
       progress: { completed: 2, total: 1, unit: 'files' },
     });
     const done = events.at(-1);
-    expect(done?._tag === 'done' && done.result).toMatchObject({ hasMore: true, items: [{ depotFile: '//d/a' }] });
+    expect(Predicate.isTagged(done, 'done') && done.result).toMatchObject({ hasMore: true, items: [{ depotFile: '//d/a' }] });
   });
 
   it('fails on a revision without a type', async () => {
     const error = await failure(listDepotFilesAtChange, { file: '//d/...', change: 9, limit: 1 }, scriptedExecutor(() => ({
       stdout: '{"depotFile":"//d/a","rev":"1","change":"4","action":"add"}\n',
     })));
-    expect(error).toMatchObject({ _tag: 'P4ParseError' });
+
+    expectFailure(error, P4ParseError);
   });
 
   it('rejects a path with a revision', async () => {
     const error = await failure(listDepotFilesAtChange, { file: '//d/...#3', change: 9, limit: 1 }, scriptedExecutor(() => ({})));
-    expect(error).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'file' });
+    expectFailure(error, P4InvalidArgumentError, { option: 'file' });
   });
 });
 
@@ -241,10 +251,10 @@ describe('statFiles', () => {
       isDeletedAtHead: true, haveRevision: null, isOutOfDate: false,
     });
     expect(stats.items[0]).toEqual({
-      depotFile: '//p4ts/main/wire/clobber.txt' as never,
-      localFile: '<WORKSPACE>\\wire\\clobber.txt' as never,
+      depotFile: asDepotPath('//p4ts/main/wire/clobber.txt'),
+      localFile: asLocalPath('<WORKSPACE>\\wire\\clobber.txt'),
       isMapped: true,
-      headAction: 'add' as never,
+      headAction: asAction('add'),
       headType: 'text',
       headRevision: 1,
       headChange: 4,
@@ -276,10 +286,12 @@ describe('statFiles', () => {
 
   it('fails on a record without a depot path', async () => {
     const [capture] = fixtures('fstat-fields-without-path');
+
     const error = await failure(statFiles, { fileSpec: '//p4ts/main/wire/text.txt' }, scriptedExecutor(() => ({
       stdout: capture!.stdout ?? '',
     })));
-    expect(error).toMatchObject({ _tag: 'P4ParseError' });
+
+    expectFailure(error, P4ParseError);
   });
 
   it('reads other workspaces that have the file open and locked', async () => {
@@ -306,6 +318,7 @@ describe('statFiles', () => {
     const stats = await run(statFiles, {
       fileSpec: ['//p4ts/main/wire/text.txt#999999', '//p4ts/main/docs/guide/getting-started.md'],
     }, replay('fstat-mixed-revision'));
+
     expect(stats.items.map((stat) => String(stat.depotFile))).toEqual(['//p4ts/main/docs/guide/getting-started.md']);
     expect(reasons(stats.failures)).toEqual(['unknown_revision']);
   });
@@ -322,9 +335,9 @@ describe('whereFiles', () => {
     const mapped = await run(whereFiles, { fileSpec: '//p4ts/main/wire/text.txt' }, replay('where'));
     expect(mapped).toEqual({
       items: [{
-        depotFile: '//p4ts/main/wire/text.txt' as never,
-        clientFile: '//p4ts_e2e_client/wire/text.txt' as never,
-        localFile: '<WORKSPACE>\\wire\\text.txt' as never,
+        depotFile: asDepotPath('//p4ts/main/wire/text.txt'),
+        clientFile: asClientPath('//p4ts_e2e_client/wire/text.txt'),
+        localFile: asLocalPath('<WORKSPACE>\\wire\\text.txt'),
         isExcluded: false,
       }],
       messages: [],
@@ -357,8 +370,9 @@ describe('whereFiles', () => {
     const mapped = await run(whereFiles, { fileSpec: '//d/x/a.txt' }, scriptedExecutor(() => ({
       stdout: '{"depotFile":"-//d/x/a.txt","clientFile":"-//ws/x/a.txt","path":"-C:\\\\ws\\\\x\\\\a.txt","unmap":""}\n',
     })));
+
     expect(mapped.items).toEqual([{
-      depotFile: '//d/x/a.txt' as never, clientFile: '//ws/x/a.txt' as never, localFile: 'C:\\ws\\x\\a.txt' as never, isExcluded: true,
+      depotFile: asDepotPath('//d/x/a.txt'), clientFile: asClientPath('//ws/x/a.txt'), localFile: asLocalPath('C:\\ws\\x\\a.txt'), isExcluded: true,
     }]);
   });
 });
@@ -367,9 +381,9 @@ describe('listHaveFiles', () => {
   it('lists the revisions the workspace has', async () => {
     const have = await run(listHaveFiles, { fileSpec: '//p4ts/main/wire/text.txt' }, replay('have'));
     expect(have.items).toEqual([{
-      depotFile: '//p4ts/main/wire/text.txt' as never,
-      clientFile: '//p4ts_e2e_client/wire/text.txt' as never,
-      localFile: '<WORKSPACE>\\wire\\text.txt' as never,
+      depotFile: asDepotPath('//p4ts/main/wire/text.txt'),
+      clientFile: asClientPath('//p4ts_e2e_client/wire/text.txt'),
+      localFile: asLocalPath('<WORKSPACE>\\wire\\text.txt'),
       haveRevision: 1,
       syncedAt: fixtureTime('have', 'syncTime'),
     }]);
@@ -394,12 +408,15 @@ describe('code-less studio missing-file diagnostics', () => {
     const file = '//depot/valid.txt';
     const missing = '//depot/__missing__.txt';
     const diagnostic = JSON.stringify({ data: `${missing} - no such file(s).\n`, generic: 17, severity: 2 });
+
     const listed = await run(listFiles, { fileSpec: [file, missing] }, scriptedExecutor(() => ({
       stdout: fileRows([file, 'add']) + '\n' + diagnostic + '\n',
     })));
+
     const stats = await run(statFiles, { fileSpec: [file, missing] }, scriptedExecutor(() => ({
       stdout: JSON.stringify({ depotFile: file, headRev: '1', headAction: 'add', headType: 'text' }) + '\n' + diagnostic + '\n',
     })));
+
     for (const result of [listed, stats]) {
       expect(result.items).toHaveLength(1);
       expect(result.failures[0]).toMatchObject({ spec: missing, reason: 'no_such_file' });

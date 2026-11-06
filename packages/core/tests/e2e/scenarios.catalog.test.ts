@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -31,10 +31,12 @@ describe("p4-ts e2e catalog and history", () => {
     const files = await harness.client.listDepotFiles({ depotPath: "//p4ts/main/src/app" });
     const stats = await harness.client.statFiles({ fileSpec: CONFIG_DEPOT_FILE });
     const mappings = await harness.client.whereFiles({ fileSpec: CONFIG_DEPOT_FILE });
+
     const history = await harness.client.getFileHistory({
       file: CONFIG_DEPOT_FILE,
       limit: 10
     });
+
     const users = await harness.client.listUsers({ users: [config.user] });
     const streams = await harness.client.listStreams({ fileSpec: "//p4ts/..." });
     const annotation = await harness.client.annotateFile({ file: CONFIG_DEPOT_FILE });
@@ -67,6 +69,7 @@ describe("p4-ts e2e catalog and history", () => {
 
   it("merges a real rename chain and bounds the merged total", async () => {
     let chain: { sourceDepotFile: string; targetDepotFile: string };
+
     try {
       chain = await harness.seedRenameChain();
     } finally {
@@ -77,9 +80,11 @@ describe("p4-ts e2e catalog and history", () => {
       file: chain.targetDepotFile,
       followBranches: true
     });
+
     const unfollowed = await harness.client.getFileHistory({
       file: chain.targetDepotFile
     });
+
     const bounded = await harness.client.getFileHistory({
       file: chain.targetDepotFile,
       followBranches: true,
@@ -118,6 +123,7 @@ describe("p4-ts e2e catalog and history", () => {
       change: config.syncBaseChange,
       limit: 50
     });
+
     const configFile = historical.items.find((file) => file.depotFile === CONFIG_DEPOT_FILE);
 
     expect(historical.hasMore).toBe(false);
@@ -128,12 +134,14 @@ describe("p4-ts e2e catalog and history", () => {
     }
 
     const directory = await mkdtemp(join(tmpdir(), "p4-ts-e2e-materialize-"));
+
     try {
       const materialized = await harness.client.materializeDepotFiles({
         directory,
         fileSpec: [configFile],
         maxFiles: 1
       });
+
       const content = await readFile(materialized.items[0]!.localPath, "utf8");
 
       expect(materialized.items.length).toBe(1);

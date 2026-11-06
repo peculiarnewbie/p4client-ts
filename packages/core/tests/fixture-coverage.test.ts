@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-const testsRoot = import.meta.dir;
+const testsRoot = import.meta.dirname;
 const wireRoot = join(testsRoot, 'fixtures/wire');
 
 /**
@@ -20,16 +20,20 @@ const UNREFERENCED = new Set([
 function testSources(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
+
     if (entry.isDirectory()) return relative(testsRoot, path) === 'fixtures' ? [] : testSources(path);
+
     // This file names every allowlisted capture, so it cannot count as a reference.
-    return entry.name.endsWith('.ts') && path !== import.meta.path ? [readFileSync(path, 'utf8')] : [];
+    return entry.name.endsWith('.ts') && path !== import.meta.filename ? [readFileSync(path, 'utf8')] : [];
   });
 }
 
 const fixtures = readdirSync(wireRoot)
   .filter((name) => name.endsWith('.json') && !name.startsWith('_'))
   .map((name) => name.slice(0, -'.json'.length));
+
 const sources = testSources(testsRoot).join('\n');
+
 const isReferenced = (name: string): boolean =>
   sources.includes(`'${name}'`) || sources.includes(`"${name}"`) || sources.includes(`${name}.json`);
 

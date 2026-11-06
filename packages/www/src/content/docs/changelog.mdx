@@ -5,7 +5,15 @@ description: Release notes for p4client-ts.
 
 All notable changes to `p4client-ts` are documented here.
 
-## 0.14.0 - unreleased
+## 0.14.0 - 2026-11-05
+
+### Breaking changes
+
+- Error classes are branded: a plain object no longer type-checks as a p4client-ts error.
+  Use `new` or `decodeP4Error`.
+- `Row` and `P4CommandSpec.decode` records are `P4WireFields`, not `Record<string, unknown>`.
+- Number fields accept only finite numbers.
+- Materialized items carry `bytes` and `method`; the result carries `stats`.
 
 ### Added
 
@@ -18,11 +26,13 @@ All notable changes to `p4client-ts` are documented here.
   `statFiles` `excludeWorkspaceData`; `getEnvironment().serverId`.
 - `materializeDepotFiles` output paths, batched binary printing with per-file fallback,
   retries, `writable`, `stats` and bounded spans.
+- A `p4client-ts.<operation>` span for every operation.
+- `P4ProcessEvent` and `P4OperationEvent` constructors, and named result and wire types.
 
 ### Changed
 
-- Materialized items carry `bytes` and `method`; the result carries `stats`.
 - Clients never write `p4 set` implicitly.
+- No generated API reference: the types and Effect Schemas are the reference.
 
 ## 0.13.0 - 2026-10-14
 

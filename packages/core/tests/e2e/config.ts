@@ -14,27 +14,33 @@ export interface E2EConfig {
 
 function readRequiredEnv(name: string): string {
   const value = process.env[name]?.trim();
+
   if (!value) {
-    throw new Error(`The canonical E2E runner did not provide ${name}. Run "bun run test:e2e".`);
+    throw new Error(`The canonical E2E runner did not provide ${name}. Run "pnpm test:e2e".`);
   }
+
   return value;
 }
 
 function readRequiredPositiveIntegerEnv(name: string): number {
   const value = Number(readRequiredEnv(name));
+
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new Error(`${name} must be a positive safe integer.`);
   }
+
   return value;
 }
 
 export function loadE2EConfig(): E2EConfig {
-  const repoRoot = resolve(import.meta.dir, "../../../../");
+  const repoRoot = resolve(import.meta.dirname, "../../../../");
   const client = readRequiredEnv("P4CLIENT");
   const p4Port = readRequiredEnv('P4PORT');
+
   if (p4Port !== readRequiredEnv('P4_TS_E2E_ISOLATED_PORT') || !/^127\.0\.0\.1:\d+$/.test(p4Port)) {
     throw new Error('Refusing E2E commands outside the disposable localhost server.');
   }
+
   return {
     workspaceRoot: readRequiredEnv("P4_TS_E2E_WORKSPACE_ROOT"),
     client,

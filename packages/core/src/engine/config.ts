@@ -39,32 +39,23 @@ const MAX_TIMEOUT_MS = 2_147_483_647;
 /** The options commands run with. Change them for part of a program with {@link withOptions}. */
 export class P4Config extends Context.Service<P4Config, P4ResolvedOptions>()('p4client-ts/P4Config') {}
 
-/**
- * Validate a timeout.
- *
- * @param timeoutMs Timeout in milliseconds, or `undefined` for none.
- * @returns The timeout.
- * @throws {P4InvalidArgumentError} When it is not a positive number within the timer limit.
- */
+/** Validate a timeout. */
 export function requireTimeout(timeoutMs: number | undefined): number | undefined {
   if (timeoutMs === undefined) return undefined;
+
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) {
     throw new P4InvalidArgumentError({
       message: `timeoutMs must be a positive number of milliseconds no greater than ${MAX_TIMEOUT_MS}.`,
       option: 'timeoutMs',
     });
   }
+
   return timeoutMs;
 }
 
 /**
  * Apply options on top of resolved ones. Omitted fields inherit; explicit `undefined`
  * clears cwd and timeoutMs, and resets executable to `p4`. Connection fields merge individually.
- *
- * @param base Options in effect.
- * @param patch Options to change.
- * @returns The combined options.
- * @throws {P4InvalidArgumentError} When the timeout is invalid.
  */
 export function mergeOptions(base: P4ResolvedOptions, patch: P4ClientOptions): P4ResolvedOptions {
   return {
@@ -86,41 +77,30 @@ const DEFAULTS: P4ResolvedOptions = {
   allowMutation: false,
 };
 
-/**
- * Resolve client options.
- *
- * @param options Options to resolve.
- * @returns The options with defaults applied.
- * @throws {P4InvalidArgumentError} When the timeout is invalid.
- */
+/** Resolve client options. */
 export function resolveOptions(options: P4ClientOptions = {}): P4ResolvedOptions {
   return mergeOptions(DEFAULTS, options);
 }
 
-/**
- * A layer providing client options.
- *
- * @param options Options for every command run with this layer.
- * @returns A layer that fails with `P4InvalidArgumentError` for invalid options.
- */
+/** A layer providing client options. */
 export function configLayer(options: P4ClientOptions = {}): Layer.Layer<P4Config, P4InvalidArgumentError> {
-  return Layer.effect(P4Config, Effect.try({
-    try: () => resolveOptions(options),
-    catch: (error) => error as P4InvalidArgumentError,
-  }));
+  return Layer.effect(P4Config, validated(() => resolveOptions(options)));
 }
 
-/**
- * Run part of a program with changed options, for example another workspace.
- *
- * @param patch Options to change; connection fields merge individually.
- * @returns A function applying the change to an effect.
- */
+/** Run an option check that throws `P4InvalidArgumentError`; anything else it throws is a defect. */
+function validated<A>(check: () => A): Effect.Effect<A, P4InvalidArgumentError> {
+  return Effect.suspend(() => {
+    try {
+      return Effect.succeed(check());
+    } catch (cause) {
+      return cause instanceof P4InvalidArgumentError ? Effect.fail(cause) : Effect.die(cause);
+    }
+  });
+}
+
+/** Run part of a program with changed options, for example another workspace. */
 export function withOptions(patch: P4ClientOptions) {
   return <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | P4InvalidArgumentError, R | P4Config> =>
-    Effect.flatMap(P4Config, (base) =>
-      Effect.try({
-        try: () => mergeOptions(base, patch),
-        catch: (error) => error as P4InvalidArgumentError,
-      })).pipe(Effect.flatMap((options) => Effect.provideService(effect, P4Config, options)));
+    Effect.flatMap(P4Config, (base) => validated(() => mergeOptions(base, patch)))
+      .pipe(Effect.flatMap((options) => Effect.provideService(effect, P4Config, options)));
 }

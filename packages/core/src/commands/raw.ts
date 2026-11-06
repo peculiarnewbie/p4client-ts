@@ -55,6 +55,7 @@ function taggedProgram<A>(
   return operation<TaggedCommandOptions, A, P4TaggedResult<A>>(name, (options, sink) =>
     Effect.gen(function* () {
       if (options.args.length === 0) return yield* invalid('args', 'args must name a command.');
+
       const output = yield* drain(sink, streamCommand<A>({
         args: options.args,
         input: options.input,
@@ -65,26 +66,21 @@ function taggedProgram<A>(
         item: (record) => record,
         counter: progressCounter(sink, 'records'),
       });
+
       const result: P4TaggedResult<A> = {
         items: output.items,
         messages: output.messages,
         failures: output.failures.map(itemFailure),
       };
+
       return result;
     }));
 }
 
 /**
- * Make a typed operation that runs any tagged command (`p4 -Mj -z tag <args>`)
- * and decodes each data record with a schema.
- *
- * Messages are classified like every other operation's, adjusted by
- * `policy`. A command that can change the server or a workspace fails with
- * `P4ReadOnlyError` unless the client allows mutation.
- *
- * @param schema Schema each data record must satisfy; a record that does not fails with `P4ParseError`.
- * @param name Operation name. Defaults to `runTagged`.
- * @returns The operation, whose items are the schema's type.
+ * A typed operation for any tagged command (`p4 -Mj -z tag <args>`), each data record decoded
+ * with a schema. Messages are classified as elsewhere, adjusted by `policy`. A mutating command
+ * fails with `P4ReadOnlyError` unless the client allows mutation.
  */
 export function taggedOperation<A>(
   schema: Schema.Decoder<A>,
@@ -100,11 +96,6 @@ const untyped = taggedProgram<unknown>('runTagged', (row) => row);
  *
  * Without `schema`, records are returned as received. For typed records, use
  * {@link taggedOperation}.
- *
- * @returns The data records, messages and per-item failures.
- * @throws {P4InvalidArgumentError} When `args` is empty.
- * @throws {P4ParseError} When a record does not satisfy `schema`.
- * @throws {P4ReadOnlyError} When the command mutates and the client does not allow it.
  */
 export const runTagged = operation<RunTaggedOptions, unknown, P4TaggedResult<unknown>>('runTagged', (options, sink) =>
   options.schema === undefined

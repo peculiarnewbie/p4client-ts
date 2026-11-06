@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { checkCommand } from '../../../src/exec/guard.js';
 
 const mutates = (args: string[], input?: string) => checkCommand(args, input).mutates;

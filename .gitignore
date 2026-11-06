@@ -4,6 +4,5 @@ coverage
 packages/core/.captures/
 *.tsbuildinfo
 .astro
-.typedoc
 packages/www/dist
-packages/www/src/content/docs/api/**
+.vite-plus

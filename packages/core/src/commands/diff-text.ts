@@ -32,32 +32,35 @@ const NON_TEXT_BASE_TYPES = new Set(['binary', 'apple', 'resource', 'xb', 'xbina
  *
  * Recognizes the base types `binary`, `apple` and `resource`, the historical
  * `xb`/`xbinary` spellings, and `+` modifiers (for example `binary+F`).
- *
- * @param type A file type, such as `text+k` or `binary+F`.
- * @returns `true` for non-text types; `false` for text types and a missing type.
  */
 export function isBinaryP4Type(type: string | null | undefined): boolean {
   if (!type) return false;
   const normalized = type.toLowerCase();
   const base = normalized.split('+', 1)[0] ?? normalized;
+
   return NON_TEXT_BASE_TYPES.has(base) || base.includes('binary') || base.includes('xb');
+}
+
+/** Line counts of a unified diff. */
+export interface P4UnifiedDiffCounts {
+  readonly additions: number;
+  readonly deletions: number;
 }
 
 /**
  * Count the added and deleted lines of a unified diff.
  *
  * Only lines inside a hunk count, so `---`/`+++` file headers do not.
- *
- * @param diff Unified diff text.
- * @returns Added and deleted line counts.
  */
-export function summarizeUnifiedDiff(diff: string): { additions: number; deletions: number } {
+export function summarizeUnifiedDiff(diff: string): P4UnifiedDiffCounts {
   let additions = 0;
   let deletions = 0;
   let oldRemaining = 0;
   let newRemaining = 0;
+
   for (const line of diff.split(/\r?\n/)) {
     const header = HUNK_HEADER.exec(line);
+
     if (header) {
       oldRemaining = Number(header[2] ?? 1);
       newRemaining = Number(header[4] ?? 1);
@@ -72,20 +75,18 @@ export function summarizeUnifiedDiff(diff: string): { additions: number; deletio
       newRemaining = Math.max(0, newRemaining - 1);
     }
   }
+
   return { additions, deletions };
 }
 
-/**
- * Split a unified diff into hunks. Text before the first hunk is ignored.
- *
- * @param diff Unified diff text.
- * @returns The hunks in order.
- */
+/** Split a unified diff into hunks. Text before the first hunk is ignored. */
 export function parseUnifiedDiff(diff: string): P4DiffHunk[] {
   const hunks: P4DiffHunk[] = [];
   let current: P4DiffHunk | null = null;
+
   for (const line of diff.split(/\r?\n/)) {
     const header = HUNK_HEADER.exec(line);
+
     if (header) {
       if (current) hunks.push(current);
       current = {
@@ -99,31 +100,25 @@ export function parseUnifiedDiff(diff: string): P4DiffHunk[] {
       current.lines.push(line);
     }
   }
+
   if (current) hunks.push(current);
+
   return hunks;
 }
 
-/**
- * Whether text contains at least one unified diff hunk.
- *
- * @param diff Diff output.
- * @returns `true` when a hunk header is present.
- */
+/** Whether text contains at least one unified diff hunk. */
 export function hasUnifiedHunk(diff: string): boolean {
   return /^@@ -\d/m.test(diff);
 }
 
-/**
- * A file spec at a revision.
- *
- * @param file Depot path, without a revision.
- * @param revision A number, `none`, `have`, `head`, or a specifier starting with `#` or `@`.
- * @returns For example `//d/a.txt#3`, `//d/a.txt#none` or `//d/a.txt@=7`.
- */
+/** A file spec at a revision. */
 export function fileAtRevision(file: string, revision: P4RevisionSpec): string {
   const text = String(revision);
+
   if (text.toLowerCase() === 'none') return `${file}#none`;
+
   if (text.startsWith('#') || text.startsWith('@')) return `${file}${text}`;
+
   return `${file}#${text}`;
 }
 
@@ -133,24 +128,24 @@ export interface P4DiffRevisions {
   readonly toRevision: P4RevisionSpec;
 }
 
-/**
- * Infer the revisions to compare for a file of a submitted changelist.
- *
- * @param file The file's action and submitted revision.
- * @returns The revisions, or `null` when the action does not imply a comparison.
- */
+/** Infer the revisions to compare for a file of a submitted changelist. */
 export function submittedDiffRevisions(file: {
   readonly action: string;
   readonly revision: number | null;
 }): P4DiffRevisions | null {
   const action = file.action.toLowerCase();
   const revision = file.revision;
+
   if (action === 'add' || action === 'move/add' || action === 'branch') {
     return { fromRevision: 'none', toRevision: revision ?? 'have' };
   }
+
   if (revision === null || revision <= 1) return null;
+
   if (action === 'delete' || action === 'move/delete') return { fromRevision: revision - 1, toRevision: 'none' };
+
   if (action === 'edit' || action === 'integrate') return { fromRevision: revision - 1, toRevision: revision };
+
   return null;
 }
 
@@ -159,10 +154,6 @@ export function submittedDiffRevisions(file: {
  *
  * `describe -S` reports the depot revision a shelved file is based on; the
  * shelved content is addressed as `@=change`.
- *
- * @param file The file and the shelving changelist.
- * @returns The revisions.
- * @throws {P4InvalidArgumentError} When the action or base revision does not allow a comparison.
  */
 export function shelvedDiffRevisions(file: {
   readonly depotFile: string;
@@ -173,7 +164,9 @@ export function shelvedDiffRevisions(file: {
   const action = file.action.toLowerCase();
   const revision = file.revision;
   const shelf = `@=${file.shelvedChange}`;
+
   if (action === 'add' || action === 'move/add') return { fromRevision: 'none', toRevision: shelf };
+
   if (action === 'delete' || action === 'move/delete') {
     if (revision === null) {
       throw new P4InvalidArgumentError({
@@ -181,8 +174,10 @@ export function shelvedDiffRevisions(file: {
         option: 'revision',
       });
     }
+
     return { fromRevision: revision, toRevision: 'none' };
   }
+
   if (action === 'edit' || action === 'integrate' || action === 'branch') {
     if (revision === null || revision < 1) {
       throw new P4InvalidArgumentError({
@@ -190,8 +185,10 @@ export function shelvedDiffRevisions(file: {
         option: 'revision',
       });
     }
+
     return { fromRevision: revision, toRevision: shelf };
   }
+
   throw new P4InvalidArgumentError({
     message: `Unable to infer revisions for shelved ${action} file ${file.depotFile}.`,
     option: 'action',
@@ -248,26 +245,25 @@ function depotPlan(options: P4DiffPlanOptions, revisions: P4DiffRevisions, flags
 /**
  * Decide whether a file diff compares the workspace (`p4 diff`) or two depot
  * revisions (`p4 diff2`).
- *
- * @param options The file and what to compare.
- * @returns The command and the revisions it compares.
- * @throws {P4InvalidArgumentError} When only one revision is given, a shelved
- * diff has no `shelvedChange`, or the revisions cannot be inferred.
  */
 export function resolveDiffPlan(options: P4DiffPlanOptions): P4DiffPlan {
   const flags = options.diffFlags ?? ['-du'];
   const { fromRevision, toRevision } = options;
+
   if ((fromRevision === undefined) !== (toRevision === undefined)) {
     throw new P4InvalidArgumentError({
       message: 'A depot-to-depot diff needs both fromRevision and toRevision.',
       option: fromRevision === undefined ? 'fromRevision' : 'toRevision',
     });
   }
+
   if (fromRevision !== undefined && toRevision !== undefined) {
     return depotPlan(options, { fromRevision, toRevision }, flags);
   }
+
   const action = options.action ?? 'edit';
   const revision = options.revision ?? null;
+
   if (options.changelistStatus === 'shelved') {
     if (options.shelvedChange === undefined) {
       throw new P4InvalidArgumentError({
@@ -275,20 +271,25 @@ export function resolveDiffPlan(options: P4DiffPlanOptions): P4DiffPlan {
         option: 'shelvedChange',
       });
     }
+
     return depotPlan(options, shelvedDiffRevisions({
       depotFile: options.file, action, revision, shelvedChange: options.shelvedChange,
     }), flags);
   }
+
   if (options.changelistStatus === 'submitted') {
     const revisions = submittedDiffRevisions({ action, revision });
+
     if (revisions === null) {
       throw new P4InvalidArgumentError({
         message: `Unable to infer revisions for submitted ${action} file ${options.file}#${String(revision)}.`,
         option: 'revision',
       });
     }
+
     return depotPlan(options, revisions, flags);
   }
+
   return {
     source: 'workspace',
     command: 'diff',

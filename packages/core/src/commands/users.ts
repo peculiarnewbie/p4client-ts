@@ -51,19 +51,20 @@ function toUser(row: Row): P4User {
  * List users (`p4 users`), for example to turn the user names on changelists
  * and revisions into full names and emails. A requested user that does not
  * exist is reported in `failures` rather than failing the operation.
- *
- * @returns The users, in the order Perforce lists them.
  */
 export const listUsers = operation<ListUsersOptions, P4User, P4UserList>('listUsers', (options, sink) =>
   Effect.gen(function* () {
     const args = ['users'];
+
     if (options.limit !== undefined) args.push('-m', String(yield* requirePositive(options.limit, 'limit')));
     args.push(...(options.users ?? []));
+
     const output = yield* drain(sink, streamCommand({
       args,
       format: 'json',
       policy: { unknown_user: 'item' },
       decode: toUser,
     }), { item: (user) => user, counter: progressCounter(sink, 'records') });
+
     return { items: output.items, messages: output.messages, failures: output.failures.map(itemFailure) };
   }));

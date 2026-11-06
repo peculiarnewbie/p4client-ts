@@ -9,11 +9,13 @@ import {
   rmdirSync,
   writeFileSync,
 } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { WireScriptError } from './wire-script-error.js';
 
 const Text = Schema.NonEmptyString.check(Schema.isPattern(/^[^\0\r\n]+$/));
+
 const Config = Schema.Struct({
   port: Text,
   user: Text,
@@ -31,8 +33,12 @@ const Config = Schema.Struct({
 /** Explicit connection settings; keep instances in the gitignored capture directory. */
 export type ProductionReadConfig = typeof Config.Type;
 
+const decodeConfig = Schema.decodeEffect(Config);
+
+const decodeConfigJson = Schema.decodeEffect(Schema.fromJsonString(Config));
+
 // Only reviewed flags are accepted. A flag's value cannot become another command or option.
-const FLAGS: Readonly<Record<string, Readonly<Record<string, boolean>>>> = {
+const FLAGS = new Map<string, ReadonlyMap<string, boolean>>(Object.entries({
   info: {},
   changes: { '-m': true, '-s': true, '-u': true, '-c': true, '-l': false },
   describe: { '-s': false, '-S': false },
@@ -71,7 +77,8 @@ const FLAGS: Readonly<Record<string, Readonly<Record<string, boolean>>>> = {
   diff: { '-sa': false, '-se': false, '-sd': false, '-sr': false },
   tickets: {},
   set: {},
-};
+}).map(([command, flags]) => [command, new Map(Object.entries(flags))]));
+
 const CLIENT_COMMANDS = new Set([
   'sync',
   'reconcile',
@@ -81,6 +88,7 @@ const CLIENT_COMMANDS = new Set([
   'where',
   'client',
 ]);
+
 const BOUNDED_COMMANDS = new Set([
   'changes',
   'files',
@@ -94,6 +102,7 @@ const BOUNDED_COMMANDS = new Set([
   'sync',
   'interchanges',
 ]);
+
 const PATH_COMMANDS = new Set([
   'files',
   'fstat',
@@ -120,6 +129,7 @@ function refuse(message: string): never {
 
 function inside(root: string, path: string): boolean {
   const rel = relative(root, path);
+
   return (
     rel !== '' &&
     rel !== '..' &&
@@ -133,75 +143,97 @@ export function validateProductionRead(
   args: readonly string[],
   scratchDir: string,
 ): string {
-  if (args.some((arg) => /[\0\r\n]/.test(arg) || /^-x/.test(arg)))
+  if (args.some((arg) => /[\0\r\n]/.test(arg) || arg.startsWith('-x')))
     refuse('argument files or control characters');
   let offset = 0;
+
   while (['-Mj', '-ztag', '-G', '-z'].includes(args[offset] ?? '')) {
     if (args[offset++] === '-z' && args[offset++] !== 'tag')
       refuse('only -z tag is allowed');
   }
+
   const command = args[offset++];
-  if (!command || !Object.hasOwn(FLAGS, command))
+
+  if (!command || !FLAGS.has(command))
     refuse('command is not allowlisted');
-  const flags = FLAGS[command];
+  const flags = FLAGS.get(command);
+
   if (!flags) refuse('missing flag policy');
   const seen = new Set<string>();
   const positional: string[] = [];
+
   for (let i = offset; i < args.length; i += 1) {
     const arg = args[i];
+
     if (arg === undefined) refuse('missing argument');
+
     if (!arg.startsWith('-')) {
       positional.push(arg);
       continue;
     }
-    if (!Object.hasOwn(flags, arg) || seen.has(arg))
+
+    if (!flags.has(arg) || seen.has(arg))
       refuse(`unreviewed or repeated flag ${arg}`);
     seen.add(arg);
-    if (!flags[arg]) continue;
+
+    if (flags.get(arg) !== true) continue;
     const value = args[++i];
+
     if (!value || value.startsWith('-')) refuse(`missing value for ${arg}`);
+
     if (
       arg === '-m' &&
       (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 50)
     )
       refuse('limit must be 1..50');
+
     if (
       arg === '-o' &&
       !inside(resolve(scratchDir), resolve(scratchDir, value))
     )
       refuse('print destination is outside scratch');
   }
+
   if (['stream', 'client', 'user'].includes(command) && !seen.has('-o'))
     refuse('spec reads require -o');
+
   if (['sync', 'reconcile', 'status'].includes(command) && !seen.has('-n'))
     refuse('preview requires -n');
+
   if (command === 'property' && !seen.has('-l'))
     refuse('properties require -l');
+
   if (
     command === 'diff' &&
     !['-sa', '-se', '-sd', '-sr'].some((flag) => seen.has(flag))
   )
     refuse('diff requires a reviewed summary flag');
+
   if (BOUNDED_COMMANDS.has(command) && !seen.has('-m'))
     refuse('command requires -m 1..50');
+
   if (
     ['info', 'depots', 'tickets', 'set', 'property'].includes(command) &&
     positional.length
   )
     refuse('unexpected positional arguments');
+
   if (
     ['stream', 'client', 'user', 'describe'].includes(command) &&
     positional.length > 1
   )
     refuse('read only one spec or change');
+
   if (
     command === 'describe' &&
     (positional.length !== 1 || !/^\d+$/.test(positional[0] ?? ''))
   )
     refuse('describe requires one numbered change');
+
   if (PATH_COMMANDS.has(command)) {
     if (!positional.length || positional.length > (command === 'diff2' ? 2 : 1))
       refuse('provide one narrow path (two for diff2)');
+
     for (const path of positional) {
       if (
         !path.startsWith('//') ||
@@ -209,6 +241,7 @@ export function validateProductionRead(
         path === '//...'
       )
         refuse('use a narrow explicit depot path');
+
       if (
         [
           'print',
@@ -224,10 +257,12 @@ export function validateProductionRead(
         /\.\.\.|\*/.test(path)
       )
         refuse('this read requires an exact file');
+
       if (command === 'dirs' && path.includes('...'))
         refuse('directory reads must be one level');
     }
   }
+
   return command;
 }
 
@@ -258,6 +293,7 @@ export function captureSubprocess(
       stdio: 'pipe',
       windowsHide: true,
     });
+
     // Disposable captures feed `-x -` argument lists; production reads close stdin empty.
     child.stdin.on('error', () => undefined);
     child.stdin.end(input);
@@ -265,19 +301,26 @@ export function captureSubprocess(
     const stderr: Buffer[] = [];
     let bytes = 0;
     let stopped: ProductionCapture['stopped'] = null;
+
     const stop = (reason: NonNullable<ProductionCapture['stopped']>) => {
       stopped ??= reason;
       child.kill('SIGKILL');
     };
+
     const timer = setTimeout(() => stop('timeout'), timeoutMs);
+
     const collect = (chunks: Buffer[], chunk: Buffer) => {
       bytes += chunk.length;
+
       if (bytes > 16 * 1024 * 1024) {
         stop('output-limit');
+
         return;
       }
+
       chunks.push(chunk);
     };
+
     child.stdout.on('data', (chunk: Buffer) => collect(stdout, chunk));
     child.stderr.on('data', (chunk: Buffer) => collect(stderr, chunk));
     child.on('error', (error) => {
@@ -304,8 +347,10 @@ export function captureSubprocess(
         }),
       );
     });
+
     return Effect.sync(() => {
       clearTimeout(timer);
+
       if (child.exitCode === null) child.kill('SIGKILL');
     });
   });
@@ -318,18 +363,22 @@ export function runProductionRead(
 ): Promise<ProductionCapture> {
   return Effect.runPromise(
     Effect.gen(function* () {
-      const settings = yield* Schema.decodeUnknownEffect(Config)(config);
+      const settings = yield* decodeConfig(config);
       const scratch = resolve(settings.scratchDir);
       const temp = realpathSync(tmpdir());
+
       if (!inside(temp, scratch))
         refuse('scratch must be under the system temp folder');
       mkdirSync(scratch, { recursive: true });
+
       if (realpathSync(scratch) !== scratch)
         refuse('scratch cannot contain links');
       const command = validateProductionRead(args, scratch);
       const destinationIndex = args.indexOf('-o');
+
       if (command === 'print' && destinationIndex >= 0) {
         const destination = resolve(scratch, args[destinationIndex + 1] ?? '');
+
         if (
           !inside(scratch, destination) ||
           realpathSync(dirname(destination)) !== dirname(destination) ||
@@ -337,13 +386,16 @@ export function runProductionRead(
         )
           refuse('print destination contains links');
       }
+
       if (CLIENT_COMMANDS.has(command) && !settings.client)
         refuse('workspace reads require an explicit client');
+
       const environment: NodeJS.ProcessEnv = Object.fromEntries(
         Object.entries(process.env).filter(
           ([key]) => !key.toUpperCase().startsWith('P4') && key !== 'PWD',
         ),
       );
+
       Object.assign(environment, {
         P4CONFIG: join(scratch, 'disabled-config'),
         P4ENVIRO: join(scratch, 'enviro'),
@@ -354,6 +406,7 @@ export function runProductionRead(
         P4TRUST: settings.trust ?? join(scratch, 'trust'),
       });
       writeFileSync(environment.P4ENVIRO ?? '', '');
+
       const actualArgs = [
         '-p',
         settings.port,
@@ -362,9 +415,11 @@ export function runProductionRead(
         ...(CLIENT_COMMANDS.has(command) ? ['-c', settings.client ?? ''] : []),
         ...args,
       ];
+
       // One lock across every invocation and scratch folder. Never remove another invocation's lock.
       const lock = join(temp, 'p4client-prod-readonly.lock');
       const log = join(scratch, 'commands.jsonl');
+
       return yield* Effect.acquireUseRelease(
         Effect.try({
           try: () => mkdirSync(lock),
@@ -385,6 +440,7 @@ export function runProductionRead(
                 args: actualArgs,
               }) + '\n',
             );
+
             const result = yield* captureSubprocess(
               settings.executable ?? 'p4',
               actualArgs,
@@ -406,6 +462,7 @@ export function runProductionRead(
                 ),
               ),
             );
+
             appendFileSync(
               log,
               JSON.stringify({
@@ -415,6 +472,7 @@ export function runProductionRead(
                 stopped: result.stopped,
               }) + '\n',
             );
+
             return result;
           }),
         () => Effect.sync(() => rmdirSync(lock)),
@@ -429,19 +487,21 @@ if (import.meta.main) {
     Effect.gen(function* () {
       if (!configPath)
         refuse(
-          'usage: bun prod-readonly-p4.ts <private-config.json> <command arguments>',
+          'usage: vpx prod-readonly-p4.ts <private-config.json> <command arguments>',
         );
-      const contents = yield* Effect.promise(() => Bun.file(configPath).text());
-      const config = yield* Schema.decodeUnknownEffect(
-        Schema.fromJsonString(Config),
-      )(contents);
+      const contents = yield* Effect.promise(() => readFile(configPath, 'utf8'));
+
+      const config = yield* decodeConfigJson(contents);
+
       const capture = yield* Effect.promise(() =>
         runProductionRead(config, args),
       );
+
       const destination = join(
         dirname(resolve(configPath)),
         `capture-${Date.now()}.json`,
       );
+
       writeFileSync(destination, JSON.stringify(capture, null, 2));
       // Captures can contain private production data; display only their local location and exit status.
       console.log(
@@ -453,8 +513,8 @@ if (import.meta.main) {
       );
       process.exitCode = capture.exitCode;
     }),
-  ).catch((error: unknown) => {
-    console.error(String(error));
+  ).catch((cause: unknown) => {
+    console.error(String(cause));
     process.exitCode = 1;
   });
 }

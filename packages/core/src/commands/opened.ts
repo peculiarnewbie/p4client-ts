@@ -59,12 +59,7 @@ export interface P4OpenedFileList {
   readonly messages: P4Message[];
 }
 
-/**
- * Convert an `opened` record.
- *
- * @param row One data record.
- * @returns The opened file.
- */
+/** Convert an `opened` record. */
 export function toOpenedFile(row: Row): P4OpenedFile {
   return {
     depotFile: optionalDepotPath(row.depotFile, row),
@@ -82,27 +77,23 @@ export function toOpenedFile(row: Row): P4OpenedFile {
   };
 }
 
-/**
- * The `opened` command for some options.
- *
- * @param options What to list.
- * @returns The command spec.
- */
+/** The `opened` command for some options. */
 export function openedCommand(options: ListOpenedFilesOptions): P4CommandSpec<P4OpenedFile> {
   const args = ['opened'];
+
   if (options.allClients) args.push('-a');
+
   if (options.user !== undefined) args.push('-u', options.user);
+
   if (options.client !== undefined) args.push('-C', options.client);
+
   if (options.change !== undefined) args.push('-c', String(options.change));
   args.push(...specList(options.fileSpec));
+
   return { args, format: 'json', decode: toOpenedFile };
 }
 
-/**
- * List opened files.
- *
- * @returns Opened files, in the order Perforce lists them.
- */
+/** Files open for any action (`p4 opened`), in the connection's workspace unless filtered. */
 export const listOpenedFiles = operation<ListOpenedFilesOptions, P4OpenedFile, P4OpenedFileList>('listOpenedFiles', (options, sink) =>
   Effect.map(
     drain(sink, streamCommand(openedCommand(options)), {

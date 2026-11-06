@@ -3,8 +3,9 @@ title: Testing and Fixtures
 description: Mock the P4 service or replay strict captured CLI output.
 ---
 
-Use Bun's test runner. Service mocks exercise application logic without starting
-Perforce; replay layers exercise command construction and wire decoding.
+Any test runner works; this repository uses Vitest through Vite+. Service mocks exercise
+application logic without starting Perforce; replay layers exercise command construction and
+wire decoding.
 
 ### Mock operations
 
@@ -15,11 +16,15 @@ import { layerTest } from 'p4client-ts/testing';
 
 const program = Effect.gen(function* () {
   const p4 = yield* P4;
+
   return yield* p4.listOpenedFiles({});
 });
+
 const result = await Effect.runPromise(program.pipe(Effect.provide(layerTest({
   listOpenedFiles: () => Effect.succeed({ items: [], messages: [] }),
 }))));
+
+console.log(result.items.length);
 ```
 
 Unspecified methods fail as defects naming the unexpected operation. A mocked
@@ -34,11 +39,15 @@ import { configLayer } from 'p4client-ts';
 import { readWireFixture, replayExecutor } from 'p4client-ts/testing';
 
 const fixture = readWireFixture('./tests/fixtures/opened-empty.json');
+
 const replayLayer = P4.layer.pipe(Layer.provideMerge(Layer.merge(
   configLayer({}),
   replayExecutor([fixture], { chunkSize: 7 }),
 )));
+
 const replayed = await Effect.runPromise(program.pipe(Effect.provide(replayLayer)));
+
+console.log(replayed.items, replayed.messages);
 ```
 
 Replay compares normalized argv, including subcommand flags and stdin, and
@@ -61,20 +70,21 @@ Perforce protocol behavior.
 From the repository root:
 
 ```sh
-bun run typecheck
-bun run test
-bun run test:e2e
-bun run docs:check
-bun run build
-bun run pack:core
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm test:e2e
+pnpm docs:check
+pnpm build
+pnpm pack:core
 ```
 
 The e2e runner starts a disposable localhost p4d, seeds a stream and workspace,
 and cleans up afterward. The harness checks the explicit `-p` against that
 isolated port and permits `-x -` only immediately before `print`.
 
-To refresh wire captures, run `bun run wire:capture`, then
-`bun run --cwd packages/core wire:reasons`. Review the golden reason diff.
+To refresh wire captures, run `pnpm wire:capture`, then
+`pnpm --filter p4client-ts wire:reasons`. Review the golden reason diff.
 Every capture must be referenced by a test; the evidence-only allowlist may
 only shrink. Chunk-split tests cover both JSON and Python marshal input.
 
@@ -93,7 +103,9 @@ import type { P4ClientOptions } from 'p4client-ts';
 const derive = (options: P4ClientOptions) => P4.layer.pipe(Layer.provideMerge(Layer.merge(
   configLayer(options), replayExecutor([fixture]),
 )));
+
 const promiseClient = createP4ClientFromLayer(derive({}), derive);
+
 try {
   const replayedOpened = await promiseClient.listOpenedFiles({});
   console.log(replayedOpened.items, replayedOpened.messages);
@@ -109,6 +121,8 @@ import { withP4Client } from 'p4client-ts/promise';
 const scopedOpened = await withP4Client({
   connection: { port: 'ssl:perforce:1666', user: 'alice', client: 'alice_ws' },
 }, (scoped) => scoped.listOpenedFiles({}));
+
+console.log(scopedOpened.items);
 ```
 
 The callback owns clients it derives with `with`; dispose those separately. An app

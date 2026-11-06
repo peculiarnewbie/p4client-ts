@@ -1,10 +1,12 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { loadE2EConfig } from "./config.js";
 import { loadFixture } from "./fixture.js";
 import { P4E2EHarness } from "./harness.js";
+import { P4CommandError, P4ReadOnlyError } from "../../src/errors.js";
+import { expectFailure, rejectionOf } from "../support/assert.js";
 
 const config = loadE2EConfig();
 const fixture = loadFixture(config);
@@ -22,6 +24,7 @@ describe("p4-ts e2e typed mutations", () => {
 
   beforeAll(async () => {
     await harness.validateSeededWorkspace();
+
     // An exclusive (+l) asset, as in an Unreal project, held by a second workspace.
     if (!(await harness.depotFileExists(EXCLUSIVE_DEPOT))) {
       mkdirSync(harness.getPath("exclusive"), { recursive: true });
@@ -29,6 +32,7 @@ describe("p4-ts e2e typed mutations", () => {
       await harness.run(["add", "-t", "binary+l", harness.getPath(EXCLUSIVE_PATH)]);
       await harness.run(["submit", "-d", "p4-ts E2E exclusive asset"]);
     }
+
     await harness.run(["client", "-i"], {
       input: [
         `Client: ${SECOND_CLIENT}`,
@@ -52,6 +56,7 @@ describe("p4-ts e2e typed mutations", () => {
       await harness.run(["revert", "-c", String(created), "//..."], { allowNonZeroExit: true });
       await harness.deleteChangelistIfEmpty(created);
     }
+
     await harness.cleanupWorkspace();
     await harness.assertCleanWorkspace();
   });
@@ -84,9 +89,7 @@ describe("p4-ts e2e typed mutations", () => {
     expect(described.description).toBe("p4-ts e2e typed mutations\nsecond line");
     expect(described.files.map((file) => basename(file.depotFile)).sort()).toEqual(["config.json", "new-feature.txt"]);
 
-    await expect(client.deleteChange({ change: change.change })).rejects.toMatchObject({
-      _tag: "P4CommandError", reason: "changelist_not_empty",
-    });
+    expectFailure(await rejectionOf(client.deleteChange({ change: change.change })), P4CommandError, { reason: "changelist_not_empty" });
 
     expect((await client.previewRevert({ change: change.change })).items).toHaveLength(2);
     expect((await client.listOpenedFiles({ change: change.change })).items).toHaveLength(2);
@@ -106,6 +109,7 @@ describe("p4-ts e2e typed mutations", () => {
 
     const preview = await harness.client.previewOpenForEdit({ fileSpec: EXCLUSIVE_DEPOT });
     const attempt = await harness.client.openForEdit({ fileSpec: EXCLUSIVE_DEPOT });
+
     for (const result of [preview, attempt]) {
       expect(result.items).toEqual([]);
       expect(result.failures).toMatchObject([{
@@ -114,17 +118,19 @@ describe("p4-ts e2e typed mutations", () => {
         heldBy: [`${config.user}@${SECOND_CLIENT}`],
       }]);
     }
+
     expect((await harness.client.listOpenedFiles({ fileSpec: EXCLUSIVE_DEPOT })).items).toEqual([]);
     await second.revert({ fileSpec: EXCLUSIVE_DEPOT });
   });
 
   it("refuses every mutation on a read-only client, creating nothing", async () => {
     const readOnly = harness.client.with({ allowMutation: false });
+
     try {
       const before = await readOnly.listChangelists({ status: "pending", includeDefault: false });
-      await expect(readOnly.createChange({ description: "must not exist" })).rejects.toMatchObject({ _tag: "P4ReadOnlyError" });
-      await expect(readOnly.openForEdit({ fileSpec: harness.getPath(CONFIG_PATH) })).rejects.toMatchObject({ _tag: "P4ReadOnlyError" });
-      await expect(readOnly.revert({ fileSpec: harness.getPath(CONFIG_PATH) })).rejects.toMatchObject({ _tag: "P4ReadOnlyError" });
+      expectFailure(await rejectionOf(readOnly.createChange({ description: "must not exist" })), P4ReadOnlyError);
+      expectFailure(await rejectionOf(readOnly.openForEdit({ fileSpec: harness.getPath(CONFIG_PATH) })), P4ReadOnlyError);
+      expectFailure(await rejectionOf(readOnly.revert({ fileSpec: harness.getPath(CONFIG_PATH) })), P4ReadOnlyError);
       const after = await readOnly.listChangelists({ status: "pending", includeDefault: false });
       expect(after.items).toEqual(before.items);
       expect((await readOnly.previewOpenForEdit({ fileSpec: harness.getPath(CONFIG_PATH) })).items).toHaveLength(1);
@@ -146,6 +152,7 @@ describe("p4-ts e2e typed mutations", () => {
     const fileSpec = files.items.map((file) => ({ depotFile: file.depotFile, revision: file.revision ?? 1 }));
     const batched = mkdtempSync(join(tmpdir(), "p4ts-e2e-batch-"));
     const each = mkdtempSync(join(tmpdir(), "p4ts-e2e-each-"));
+
     try {
       const fromBatch = await harness.client.materializeDepotFiles({ fileSpec, directory: batched, maxFiles: 2, batch: true });
       const perFile = await harness.client.materializeDepotFiles({ fileSpec, directory: each, maxFiles: 2 });
@@ -153,6 +160,7 @@ describe("p4-ts e2e typed mutations", () => {
         ["lock.uasset", "batch"],
         ["config.json", "print"],
       ]);
+
       for (const [index, item] of fromBatch.items.entries()) {
         expect(readFileSync(item.localPath)).toEqual(readFileSync(perFile.items[index]!.localPath));
       }

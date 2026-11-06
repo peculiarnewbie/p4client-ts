@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Effect, Match } from 'effect';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -20,12 +20,9 @@ import type { P4Executor } from '../exec/executor.js';
 import type { P4Message } from '../wire/message.js';
 
 /**
- * Where local connection settings can come from.
- *
- * - `p4`: what `p4 set -q` reports in the working directory: environment
- *   variables, P4CONFIG files, P4ENVIRO and, on Windows, the registry.
- * - `p4v-app-settings`: P4V's last, open and recent connections.
- * - `p4v-connection-map`: P4V's first saved connection.
+ * Where local connection settings come from: `p4` is what `p4 set -q` reports in the working
+ * directory (environment, P4CONFIG, P4ENVIRO and the Windows registry); `p4v-app-settings` is
+ * P4V's last, open and recent connections; `p4v-connection-map` is P4V's first saved connection.
  */
 export type P4SettingsSource = 'p4' | 'p4v-app-settings' | 'p4v-connection-map';
 
@@ -54,9 +51,11 @@ function readP4vFile(name: string, parse: (xml: string) => P4Settings): Effect.E
 /** `p4 set -q` in the configured directory, ignoring the configured connection it would otherwise report. */
 const p4Settings: Effect.Effect<P4Settings, P4Error, P4Executor | P4Config> = Effect.gen(function* () {
   const options = yield* P4Config;
+
   const output = yield* runPlainCommand({ args: ['set', '-q'] }).pipe(
     Effect.provideService(P4Config, { ...options, connection: {} }),
   );
+
   return parseP4SetOutput(new TextDecoder().decode(output.stdout));
 });
 
@@ -66,30 +65,33 @@ const p4Settings: Effect.Effect<P4Settings, P4Error, P4Executor | P4Config> = Ef
  *
  * Each source only fills values earlier sources left unset. Resolution stops
  * once a port, user and workspace are known.
- *
- * @param options Sources to consult.
- * @returns The connection and the source of each value.
  */
-export function resolveConnection(
-  options: ResolveConnectionOptions = {},
-): Effect.Effect<P4ResolvedConnection, P4Error, P4Executor | P4Config> {
-  return Effect.gen(function* () {
-    let settings: P4Settings = {};
-    const sources: Partial<Record<P4SettingField, P4SettingsSource>> = {};
-    for (const source of options.sources ?? DEFAULT_SOURCES) {
-      const found = source === 'p4'
-        ? yield* p4Settings
-        : source === 'p4v-app-settings'
-          ? yield* readP4vFile('ApplicationSettings.xml', parseP4vApplicationSettingsXml)
-          : yield* readP4vFile('connectionmap.xml', parseP4vConnectionMapXml);
-      const merged = fillMissing(settings, found);
-      settings = merged.settings;
-      for (const field of merged.contributed) sources[field] = source;
-      if (settings.port && settings.user && settings.client) break;
-    }
-    return { connection: toConnection(settings), sources };
-  });
-}
+export const resolveConnection: (
+  options?: ResolveConnectionOptions,
+) => Effect.Effect<P4ResolvedConnection, P4Error, P4Executor | P4Config> = Effect.fn(
+  'p4client-ts.resolveConnection',
+)(function* (options: ResolveConnectionOptions = {}) {
+  let settings: P4Settings = {};
+  const sources: Partial<Record<P4SettingField, P4SettingsSource>> = {};
+
+  for (const source of options.sources ?? DEFAULT_SOURCES) {
+    const found = yield* Match.value(source).pipe(
+      Match.when('p4', () => p4Settings),
+      Match.when('p4v-app-settings', () => readP4vFile('ApplicationSettings.xml', parseP4vApplicationSettingsXml)),
+      Match.when('p4v-connection-map', () => readP4vFile('connectionmap.xml', parseP4vConnectionMapXml)),
+      Match.exhaustive,
+    );
+
+    const merged = fillMissing(settings, found);
+    settings = merged.settings;
+
+    for (const field of merged.contributed) sources[field] = source;
+
+    if (settings.port && settings.user && settings.client) break;
+  }
+
+  return { connection: toConnection(settings), sources };
+});
 
 /** Options for {@link setPersistentWorkspace}. */
 export interface SetPersistentWorkspaceOptions {
@@ -104,38 +106,30 @@ export interface P4PersistentWorkspace {
 }
 
 /**
- * Select a workspace for every later `p4` on this machine, with `p4 set P4CLIENT=<client>`.
- *
- * **This writes the user's persistent Perforce settings**: the Windows
- * registry (`HKEY_CURRENT_USER`), or the `P4ENVIRO` file elsewhere. It
- * affects P4V, other tools and every later command, not just this client.
- * Nothing else in p4client-ts writes them; call this only on an explicit
- * user request, and prefer passing `connection.client` per client instead.
- *
- * A `P4CLIENT` environment variable or P4CONFIG file still takes precedence
- * over the written value. The client's connection and isolation are not
- * applied, so the value always lands in the user's own settings.
- *
- * Requires `allowMutation: true`.
- *
- * @returns The workspace written.
- * @throws {P4InvalidArgumentError} When `client` is empty or not a single workspace name.
- * @throws {P4ReadOnlyError} When the client does not allow mutation.
+ * `p4 set P4CLIENT=<client>`: **writes the user's persistent settings** (Windows registry or
+ * P4ENVIRO), so P4V and every later `p4` see it. Nothing else here writes them; call it only on an
+ * explicit user request and prefer `connection.client`. P4CLIENT in the environment or P4CONFIG
+ * still wins. Ignores the client's connection and isolation. Needs `allowMutation`.
  */
 export const setPersistentWorkspace = operation<SetPersistentWorkspaceOptions, never, P4PersistentWorkspace>(
   'setPersistentWorkspace',
   (options, sink) => Effect.gen(function* () {
     const client = options.client.trim();
+
     if (client === '' || client !== options.client || /[\s=#@%*]|^-|\.\.\./.test(client)) {
       return yield* invalid('client', `"${options.client}" is not a workspace name.`);
     }
+
     const config = yield* P4Config;
+
     // The configured connection becomes -c/-p/-u and isolation redirects P4ENVIRO; neither may
     // decide where the persistent setting is written.
     const output = yield* runPlainCommand({ args: ['set', `P4CLIENT=${client}`] }).pipe(
       Effect.provideService(P4Config, { ...config, connection: {} }),
     );
+
     for (const message of output.messages) yield* sink.message(message);
+
     return { client, messages: output.messages };
   }),
 );

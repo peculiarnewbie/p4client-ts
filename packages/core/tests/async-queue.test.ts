@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vite-plus/test";
 import { createAsyncEventQueue } from "../src/internal/async-queue.js";
 
 describe("createAsyncEventQueue", () => {
@@ -43,9 +43,11 @@ describe("createAsyncEventQueue", () => {
     for (const value of expected) {
       queue.push(value);
     }
+
     queue.finish();
 
     const actual: number[] = [];
+
     for await (const value of queue.iterable) {
       actual.push(value);
     }

@@ -30,13 +30,9 @@ import type { Effect } from 'effect';
 import type { P4Sink } from './engine/operation.js';
 
 /**
- * Every platform-neutral operation, by method name.
- *
- * The `P4` service and the Promise client are derived from this registry, so
- * an operation added here is available in both. Operations that need Node,
- * such as `materializeDepotFiles`, `findWorkspaceForPath` and
- * `setPersistentWorkspace`, live in
- * `p4client-ts/node`.
+ * Every platform-neutral operation, by method name. The `P4` service and the Promise client are
+ * derived from it, so an operation added here is in both. Node-only operations, such as
+ * `materializeDepotFiles`, live in `p4client-ts/node`.
  */
 export const ops = {
   getEnvironment,
@@ -78,6 +74,11 @@ export const ops = {
 
 /** The operation registry's type. */
 export type P4Ops = typeof ops;
+
+/** @internal The registry's operation names. */
+export const OPERATION_NAMES: ReadonlyArray<keyof P4Ops> =
+  // SAFETY: ops is a frozen-shape object literal declared above, so Object.keys returns exactly its keys.
+  Object.keys(ops) as Array<keyof P4Ops>;
 
 /** Options of an operation in the registry. */
 export type OpOptions<K extends keyof P4Ops> = K extends 'listChangelists' ? ListChangelistsOptions : Parameters<P4Ops[K]['program']>[0];

@@ -1,21 +1,26 @@
-import { describe, expect, it } from 'bun:test';
-import { Effect, Fiber, Layer, Schema, Stream } from 'effect';
+import { build } from 'vite-plus';
+import { describe, expect, it } from 'vite-plus/test';
+import { Effect, Fiber, Layer, Predicate, Schema, Stream } from 'effect';
 import { fileURLToPath } from 'node:url';
 import { P4 } from '../../src/P4.js';
 import { configLayer, mergeOptions, resolveOptions } from '../../src/engine/config.js';
 import { P4Executor } from '../../src/exec/executor.js';
-import { P4CommandError, P4ParseError, P4ReadOnlyError } from '../../src/errors.js';
+import { P4CommandError, P4InvalidArgumentError, P4ParseError, P4ReadOnlyError } from '../../src/errors.js';
+import { P4OperationEvent } from '../../src/engine/operation.js';
 import { ops } from '../../src/ops.js';
 import { runNodeProcess } from '../../src/node/index.js';
 import { createP4Client, createP4ClientFromLayer, withP4Client } from '../../src/promise/index.js';
 import { layerTest, readWireFixtures, replayExecutor, scriptedExecutor } from '../../src/testing/index.js';
 import type { P4ClientOptions } from '../../src/engine/config.js';
-import type { P4Invocation, P4ProcessEvent } from '../../src/exec/executor.js';
+import type { P4Invocation } from '../../src/exec/executor.js';
 import type { P4Service } from '../../src/P4.js';
 import type { P4PromiseClient, P4PromiseWatch } from '../../src/promise/index.js';
+import { expectFailure, rejectionOf } from '../support/assert.js';
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
-const assert = <T extends true>(): T => true as T;
+
+// Compile-time check: a call only typechecks when T is `true`.
+const assert = <_T extends true>(): void => undefined;
 const empty = { items: [], messages: [] };
 const fixtures = readWireFixtures(fileURLToPath(new URL('../fixtures/wire/', import.meta.url)));
 const row = '{"revision":"3"}\n';
@@ -26,6 +31,7 @@ function serviceLayer(executor: Layer.Layer<P4Executor>, options: P4ClientOption
 
 function clientFor(executor: Layer.Layer<P4Executor>, options: P4ClientOptions = {}) {
   const derive = (config: P4ClientOptions) => serviceLayer(executor, config);
+
   return createP4ClientFromLayer(derive(options), derive, options);
 }
 
@@ -34,11 +40,13 @@ function pendingExecutor() {
   let released!: () => void;
   const ready = new Promise<void>((resolve) => { started = resolve; });
   const closed = new Promise<void>((resolve) => { released = resolve; });
+
   const scoped = Layer.succeed(P4Executor, {
     run: () => Stream.fromEffect(Effect.sync(started).pipe(
       Effect.andThen(Effect.never), Effect.ensuring(Effect.sync(released)),
-    )) as Stream.Stream<P4ProcessEvent>,
+    )),
   });
+
   return { executor: scoped, ready, closed };
 }
 
@@ -48,10 +56,13 @@ describe('Phase 5 facades', () => {
     assert<Equal<keyof P4Service['watch'], keyof typeof ops>>();
     assert<Equal<Exclude<keyof P4PromiseClient, 'watch' | 'with' | 'dispose' | 'resolveConnection' | 'workspaceRootExists' | 'findWorkspaceForPath' | 'materializeDepotFiles' | 'setPersistentWorkspace'>, keyof typeof ops>>();
     assert<Equal<Exclude<keyof P4PromiseWatch, 'findWorkspaceForPath' | 'materializeDepotFiles' | 'setPersistentWorkspace'>, keyof typeof ops>>();
+
     const service = await Effect.runPromise(P4.pipe(
       Effect.provide(serviceLayer(scriptedExecutor(() => ({ stdout: row })))),
     ));
+
     const client = clientFor(scriptedExecutor(() => ({ stdout: row })));
+
     try {
       expect(Object.keys(service).filter((key) => key !== 'watch').sort()).toEqual(Object.keys(ops).sort());
       expect(Object.keys(client.watch).sort()).toEqual([...Object.keys(ops), 'findWorkspaceForPath', 'materializeDepotFiles', 'setPersistentWorkspace'].sort());
@@ -65,15 +76,19 @@ describe('Phase 5 facades', () => {
       Effect.catch((cause) => Effect.succeed(cause)),
       Effect.provide(serviceLayer(replayExecutor([fixtures.get('server-unreachable-summary')!]))),
     ));
+
     expect(error).toBeInstanceOf(P4CommandError);
   });
 
   it('scopes P4.with to one program, merges connection fields and restores siblings', async () => {
     const calls: P4Invocation[] = [];
+
     const executor = scriptedExecutor((invocation) => {
       calls.push(invocation);
+
       return { stdout: row };
     });
+
     const command = Effect.flatMap(P4, (p4) => p4.runTagged({ args: ['info'] }));
     await Effect.runPromise(Effect.gen(function* () {
       const p4 = yield* P4;
@@ -90,13 +105,17 @@ describe('Phase 5 facades', () => {
 
   it('supports partial service mocks and fails loudly for unmocked calls', async () => {
     const layer = layerTest({ listDepots: () => Effect.succeed(empty) });
+
     const result = await Effect.runPromise(Effect.flatMap(P4, (p4) => p4.listDepots({})).pipe(
       Effect.provide(layer),
     ));
+
     expect(result).toEqual(empty);
+
     const events = await Effect.runPromise(Stream.unwrap(Effect.map(P4, (p4) =>
       p4.watch.listDepots({}))).pipe(Stream.runCollect, Effect.provide(layer)));
-    expect(events).toEqual([{ _tag: 'done', result: empty }]);
+
+    expect(events).toEqual([P4OperationEvent.done({ result: empty })]);
     await expect(Effect.runPromise(Effect.flatMap(P4, (p4) => p4.listUsers({})).pipe(
       Effect.provide(layer),
     ))).rejects.toThrow('Unmocked P4 operation: listUsers');
@@ -104,15 +123,17 @@ describe('Phase 5 facades', () => {
 
   it('runs and watches typed tagged schemas and rejects malformed data', async () => {
     const client = clientFor(scriptedExecutor(() => ({ stdout: row })));
+
     try {
-      const schema = Schema.Struct({ revision: Schema.NumberFromString });
+      const schema = Schema.Struct({ revision: Schema.FiniteFromString });
       const result = await client.runTagged({ args: ['info'], schema });
       expect(result.items).toEqual([{ revision: 3 }]);
       const handle = client.watch.runTagged({ args: ['info'], schema });
       const events = [];
+
       for await (const event of handle.events) events.push(event);
       expect(await handle.result).toEqual(result);
-      expect(events[0]).toEqual({ _tag: 'item', item: { revision: 3 } });
+      expect(events[0]).toEqual(P4OperationEvent.item({ item: { revision: 3 } }));
       await expect(client.runTagged({ args: ['info'], schema: Schema.Struct({ missing: Schema.String }) }))
         .rejects.toBeInstanceOf(P4ParseError);
     } finally { await client.dispose(); }
@@ -123,29 +144,37 @@ describe('Phase 5 facades', () => {
     const fixture = fixtures.get('sync-force-preview')!;
     expect(fixture).toBeDefined();
     const replay = replayExecutor([fixture]);
+
     const counted = Layer.effect(P4Executor, Effect.map(P4Executor, (executor) => ({
-      run: (invocation: P4Invocation) => { calls++; return executor.run(invocation); },
+      run: (invocation: P4Invocation) => { calls++;
+
+ return executor.run(invocation); },
     }))).pipe(Layer.provide(replay));
+
     const client = clientFor(counted);
+
     try {
       const options = { force: true, fileSpec: '//p4ts/main/wire/text.txt' };
       const expected = await client.previewSync(options);
       calls = 0;
       const handle = client.watch.previewSync(options);
       const events = [];
+
       for await (const event of handle.events) events.push(event);
       expect(await handle.result).toEqual(expected);
-      expect(events.at(-1)).toEqual({ _tag: 'done', result: expected });
+      expect(events.at(-1)).toEqual(P4OperationEvent.done({ result: expected }));
       expect(calls).toBe(1);
     } finally { await client.dispose(); }
   });
 
   it('settles a watched result without consuming events', async () => {
     const client = clientFor(scriptedExecutor(() => ({ stdout: row })));
+
     try {
       const handle = client.watch.runTagged({ args: ['info'] });
       expect((await handle.result).items).toHaveLength(1);
       const tags = [];
+
       for await (const event of handle.events) tags.push(event._tag);
       expect(tags.at(-1)).toBe('done');
       expect(() => handle.events[Symbol.asyncIterator]()).toThrow('only be consumed once');
@@ -154,6 +183,7 @@ describe('Phase 5 facades', () => {
 
   it('preserves the read-only guard through both facades', async () => {
     const client = clientFor(scriptedExecutor(() => { throw new Error('must not run'); }));
+
     try {
       await expect(client.sync({})).rejects.toBeInstanceOf(P4ReadOnlyError);
       const watched = client.watch.sync({});
@@ -164,11 +194,15 @@ describe('Phase 5 facades', () => {
 
   it('derives independent clients without changing the parent connection or env', async () => {
     const calls: P4Invocation[] = [];
+
     const client = clientFor(scriptedExecutor((invocation) => {
       calls.push(invocation);
+
       return { stdout: row };
     }), { connection: { port: '1666', client: 'first' }, env: { ONE: '1' } });
+
     const child = client.with({ connection: { client: 'second' }, env: { TWO: '2' } });
+
     try {
       await child.runTagged({ args: ['info'] });
       await child.dispose();
@@ -185,6 +219,7 @@ describe('Phase 5 facades', () => {
     const client = clientFor(scriptedExecutor(() => { throw new Error('must not start'); }));
     const reason = { cancelled: true };
     const signal = AbortSignal.abort(reason);
+
     try {
       await expect(client.runTagged({ args: ['info'], signal })).rejects.toBe(reason);
       const handle = client.watch.runTagged({ args: ['info'], signal });
@@ -198,6 +233,7 @@ describe('Phase 5 facades', () => {
     const client = clientFor(pending.executor);
     const controller = new AbortController();
     const reason = new Error('cancelled by caller');
+
     try {
       const result = client.runTagged({ args: ['info'], signal: controller.signal });
       await pending.ready;
@@ -223,11 +259,14 @@ describe('Phase 5 facades', () => {
     const client = clientFor(pending.executor);
     const controller = new AbortController();
     const reason = new Error('watch cancelled by caller');
+
     try {
       const handle = client.watch.runTagged({ args: ['info'], signal: controller.signal });
+
       const event = handle.events[Symbol.asyncIterator]().next().then(
-        () => undefined, (error: unknown) => error,
+        () => undefined, (cause: unknown) => cause,
       );
+
       await pending.ready;
       controller.abort(reason);
       await expect(handle.result).rejects.toBe(reason);
@@ -239,12 +278,15 @@ describe('Phase 5 facades', () => {
   it('emits heartbeats and cancels when iteration ends early', async () => {
     const pending = pendingExecutor();
     const client = clientFor(pending.executor);
+
     try {
       const handle = client.watch.runTagged({ args: ['info'], progressIntervalMs: 1 });
+
       for await (const event of handle.events) {
         expect(event._tag).toBe('progress');
         break;
       }
+
       await expect(handle.result).rejects.toThrow('iteration ended early');
       await pending.closed;
     } finally { await client.dispose(); }
@@ -268,13 +310,14 @@ describe('Phase 5 facades', () => {
     expect(Object.isFrozen(client)).toBe(true);
     expect(await client.resolveConnection({ sources: [] })).toMatchObject({ connection: {}, sources: {} });
     expect(await client.workspaceRootExists({ root: process.cwd() })).toBe(true);
-    expect(typeof client.materializeDepotFiles).toBe('function');
-    expect(typeof client.findWorkspaceForPath).toBe('function');
+    expect(client.materializeDepotFiles).toBeTypeOf('function');
+    expect(client.findWorkspaceForPath).toBeTypeOf('function');
     await client.dispose();
   });
 
   it('stopping facade iteration kills and joins a real Node child', async () => {
     let pid = 0;
+
     const executor = Layer.succeed(P4Executor, {
       run: (invocation) => runNodeProcess({
         ...invocation,
@@ -282,15 +325,19 @@ describe('Phase 5 facades', () => {
         args: ['-e', "process.stdout.write(JSON.stringify({pid: process.pid}) + '\\n'); setInterval(() => {}, 1000)"],
       }),
     });
+
     const client = clientFor(executor);
+
     try {
-      const handle = client.watch.runTagged({ args: ['info'], schema: Schema.Struct({ pid: Schema.Number }) });
+      const handle = client.watch.runTagged({ args: ['info'], schema: Schema.Struct({ pid: Schema.Finite }) });
+
       for await (const event of handle.events) {
-        if (event._tag === 'item') {
+        if (Predicate.isTagged(event, 'item')) {
           pid = event.item.pid;
           break;
         }
       }
+
       await expect(handle.result).rejects.toThrow('iteration ended early');
       expect(pid).toBeGreaterThan(0);
       expect(() => process.kill(pid, 0)).toThrow();
@@ -299,6 +346,7 @@ describe('Phase 5 facades', () => {
 
   it('bounds unconsumed event buffering while allowing the result to finish', async () => {
     const client = clientFor(scriptedExecutor(() => ({ stdout: row.repeat(5) })));
+
     try {
       const handle = client.watch.runTagged({ args: ['info'], maxBuffered: 1 });
       expect((await handle.result).items).toHaveLength(5);
@@ -315,12 +363,16 @@ describe('Phase 5 facades', () => {
     expect(mergeOptions(base, { cwd: undefined, timeoutMs: undefined, executable: undefined }))
       .toMatchObject({ cwd: undefined, timeoutMs: undefined, executable: 'p4' });
     const calls: P4Invocation[] = [];
+
     const executor = scriptedExecutor((invocation) => {
       calls.push(invocation);
+
       return { stdout: row };
     });
+
     const parent = clientFor(executor, base);
     const child = parent.with({ cwd: undefined, timeoutMs: undefined, executable: undefined });
+
     try {
       await child.runTagged({ args: ['info'] });
       await parent.runTagged({ args: ['info'] });
@@ -328,6 +380,7 @@ describe('Phase 5 facades', () => {
         [undefined, 'p4'], ['parent', 'custom-p4'],
       ]);
     } finally { await child.dispose(); await parent.dispose(); }
+
     await Effect.runPromise(Effect.flatMap(P4, (p4) =>
       p4.runTagged({ args: ['info'] }).pipe(P4.with({ cwd: undefined, timeoutMs: undefined, executable: undefined })))
       .pipe(Effect.provide(serviceLayer(executor, base))));
@@ -339,33 +392,39 @@ describe('Phase 5 facades', () => {
     const client = clientFor(scriptedExecutor(() => ({
       stdout: '{"userName":"u"}\n{"data":"FYI","severity":1,"generic":0}\n',
     })));
+
     try {
       const handle = client.watch.getEnvironment({});
       const events: Array<import('../../src/engine/operation.js').P4OperationEvent<never, import('../../src/commands/environment.js').P4Environment>> = [];
+
       for await (const event of handle.events) events.push(event);
       const result = await handle.result;
-      expect(events.filter((event) => event._tag === 'message').map((event) => event.message))
+      expect(events.flatMap((event) => (Predicate.isTagged(event, 'message') ? [event.message] : [])))
         .toEqual(result.messages);
       expect(result.messages).toHaveLength(1);
-      expect(events.at(-1)).toEqual({ _tag: 'done', result });
+      expect(events.at(-1)).toEqual(P4OperationEvent.done({ result }));
     } finally { await client.dispose(); }
   });
 
+  const heartbeat = { progressIntervalMs: 5 };
+
   it.each([
-    ['previewSync', 'files', {}],
-    ['printFile', 'files', { file: '//d/a' }],
-    ['getFileHistory', 'revisions', { file: '//d/a' }],
-    ['listChangelists', 'changes', { status: 'submitted' }],
-  ] as const)('starts %s heartbeats in %s before any output', async (name, unit, options) => {
+    ['previewSync', 'files', (client: P4PromiseClient) => client.watch.previewSync(heartbeat)],
+    ['printFile', 'files', (client: P4PromiseClient) => client.watch.printFile({ file: '//d/a', ...heartbeat })],
+    ['getFileHistory', 'revisions', (client: P4PromiseClient) => client.watch.getFileHistory({ file: '//d/a', ...heartbeat })],
+    ['listChangelists', 'changes', (client: P4PromiseClient) => client.watch.listChangelists({ status: 'submitted', ...heartbeat })],
+  ] as const)('starts %s heartbeats in %s before any output', async (_name, unit, start) => {
     const pending = pendingExecutor();
     const client = clientFor(pending.executor);
+
     try {
-      type Watch = (options: object) => { events: AsyncIterable<{ _tag: string; progress?: { unit: string; completed: number } }>; result: Promise<unknown> };
-      const handle = (client.watch[name] as Watch)({ ...options, progressIntervalMs: 5 });
+      const handle = start(client);
       await pending.ready;
       const iterator = handle.events[Symbol.asyncIterator]();
       const first = await iterator.next();
-      expect(first.value).toMatchObject({ _tag: 'progress', progress: { unit, completed: 0 } });
+
+      if (first.done === true || !Predicate.isTagged(first.value, 'progress')) throw new Error('Expected a progress event.');
+      expect(first.value.progress).toMatchObject({ unit, completed: 0 });
       await iterator.return!();
       await expect(handle.result).rejects.toThrow('iteration ended early');
       await pending.closed;
@@ -374,14 +433,18 @@ describe('Phase 5 facades', () => {
 
   it('runs Node helpers with the client executor and derived configuration', async () => {
     const calls: P4Invocation[] = [];
+
     const executor = scriptedExecutor((invocation) => {
       calls.push(invocation);
+
       return invocation.args.includes('set')
         ? { stdout: 'P4PORT=local:1666\nP4USER=u\nP4CLIENT=c\n' }
         : {};
     });
+
     const parent = clientFor(executor, { cwd: 'parent' });
     const child = parent.with({ cwd: 'child' });
+
     try {
       expect(await child.resolveConnection({ sources: ['p4'] })).toMatchObject({
         connection: { port: 'local:1666', user: 'u', client: 'c' },
@@ -391,27 +454,30 @@ describe('Phase 5 facades', () => {
       const handle = child.watch.findWorkspaceForPath({ path: process.cwd() });
       expect(await handle.result).toMatchObject({ match: null });
       expect(await child.workspaceRootExists({ root: process.cwd() })).toBe(true);
-      await expect(child.materializeDepotFiles({ fileSpec: [], directory: '.', maxFiles: 0 }))
-        .rejects.toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'maxFiles' });
+      expectFailure(await rejectionOf(child.materializeDepotFiles({ fileSpec: [], directory: '.', maxFiles: 0 })), P4InvalidArgumentError, { option: 'maxFiles' });
       const written = await child.materializeDepotFiles({ fileSpec: [], directory: process.cwd(), maxFiles: 1 });
       expect(written).toMatchObject({ items: [], messages: [] });
       const materialize = child.watch.materializeDepotFiles({ fileSpec: [], directory: '.', maxFiles: 0 });
-      await expect(materialize.result).rejects.toMatchObject({ _tag: 'P4InvalidArgumentError' });
+      expectFailure(await rejectionOf(materialize.result), P4InvalidArgumentError);
       const aborted = new AbortController();
       const reason = new Error('cancel root check');
       aborted.abort(reason);
       await expect(child.workspaceRootExists({ root: '.', signal: aborted.signal })).rejects.toBe(reason);
     } finally { await child.dispose(); await parent.dispose(); }
+
     await expect(child.resolveConnection({ sources: [] })).rejects.toThrow('client disposed');
     await expect(child.workspaceRootExists({ root: '.' })).rejects.toThrow('client disposed');
   });
 
   it('does not execute an already cancelled call after runtime initialization', async () => {
     const calls: P4Invocation[] = [];
+
     const client = clientFor(scriptedExecutor((invocation) => {
       calls.push(invocation);
+
       return { stdout: row };
     }));
+
     try {
       await client.runTagged({ args: ['info'] });
       const controller = new AbortController();
@@ -434,13 +500,24 @@ describe('Phase 5 facades', () => {
   });
 
   it('keeps the root entry free of child_process imports in a browser bundle', async () => {
-    const build = await Bun.build({
-      entrypoints: [fileURLToPath(new URL('../../src/index.ts', import.meta.url))],
-      target: 'browser',
-      external: ['node:*'],
+    const built = await build({
+      configFile: false,
+      logLevel: 'silent',
+      build: {
+        write: false,
+        lib: { entry: fileURLToPath(new URL('../../src/index.ts', import.meta.url)), formats: ['es'] },
+        rollupOptions: { external: [/^node:/] },
+      },
     });
-    expect(build.success).toBe(true);
-    const bundle = await build.outputs[0]!.text();
+
+    const outputs = Array.isArray(built) ? built : [built];
+
+    const bundle = outputs
+      .flatMap((result) => ('output' in result ? result.output : []))
+      .map((chunk) => (chunk.type === 'chunk' ? chunk.code : ''))
+      .join('\n');
+
+    expect(bundle).toContain('P4CommandError');
     expect(bundle).not.toContain('node:child_process');
     expect(bundle).not.toContain('NodeP4Executor');
   });
@@ -449,7 +526,9 @@ describe('Phase 5 facades', () => {
 describe('scoped Promise client', () => {
   it('returns the callback value and disposes its runtime', async () => {
     let captured: P4PromiseClient | undefined;
-    expect(await withP4Client({}, async (client) => { captured = client; return 42; })).toBe(42);
+    expect(await withP4Client({}, async (client) => { captured = client;
+
+ return 42; })).toBe(42);
     await expect(captured!.getEnvironment({})).rejects.toThrow('disposed');
   });
   it('preserves callback rejection and still disposes', async () => {

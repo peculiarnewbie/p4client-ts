@@ -1,13 +1,15 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { getStream, listStreams } from '../../../src/commands/streams.js';
 import { listUsers } from '../../../src/commands/users.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';
 import { argvCase, argvTable, failure, fixtureTime, replay, run, watch } from './support.js';
-import type { P4DepotPath } from '../../../src/schemas.js';
+import { asDepotPath } from '../../support/values.js';
+import { P4InvalidArgumentError, P4ParseError } from '../../../src/errors.js';
+import { expectFailure } from '../../support/assert.js';
 
 const TAG = ['-Mj', '-z', 'tag'];
 
-const path = (value: string) => value as P4DepotPath;
+const path = asDepotPath;
 
 describe('directory operations: argv', () => {
   argvTable([
@@ -64,7 +66,7 @@ describe('listUsers', () => {
 
   it('rejects a non-positive limit', async () => {
     const error = await failure(listUsers, { limit: -1 }, scriptedExecutor(() => ({})));
-    expect(error).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'limit' });
+    expectFailure(error, P4InvalidArgumentError, { option: 'limit' });
   });
 });
 
@@ -92,6 +94,7 @@ describe('listStreams', () => {
     const streams = await run(listStreams, {}, scriptedExecutor(() => ({
       stdout: '{"Stream":"//p4ts/dev","Parent":"//p4ts/main","Type":"development"}\n',
     })));
+
     expect(streams.items[0]).toMatchObject({ name: 'dev', parent: path('//p4ts/main'), options: [], description: null });
   });
 
@@ -128,6 +131,6 @@ describe('getStream', () => {
 
   it('fails when stream -o prints no spec', async () => {
     const error = await failure(getStream, { stream: '//p4ts/main' }, scriptedExecutor(() => ({})));
-    expect(error).toMatchObject({ _tag: 'P4ParseError' });
+    expectFailure(error, P4ParseError);
   });
 });

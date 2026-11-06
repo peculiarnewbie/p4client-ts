@@ -1,7 +1,7 @@
 import { Effect, Layer, Option, Context, Stream } from 'effect';
 import { taggedOperation } from './commands/raw.js';
 import { P4Config, withOptions } from './engine/config.js';
-import { runOperation, watchOperation } from './engine/operation.js';
+import { P4OperationEvent, runOperation, watchOperation } from './engine/operation.js';
 import { P4Executor } from './exec/executor.js';
 import { ops } from './ops.js';
 import type { Schema } from 'effect';
@@ -10,7 +10,7 @@ import type {
 } from './commands/changelists.js';
 import type { P4TaggedResult, RunTaggedOptions } from './commands/raw.js';
 import type { P4ResolvedOptions } from './engine/config.js';
-import type { P4Operation, P4OperationEvent, P4WatchOptions } from './engine/operation.js';
+import type { P4Operation, P4WatchOptions } from './engine/operation.js';
 import type { P4Error } from './errors.js';
 import type { OpItem, OpOptions, OpResult, P4Ops } from './ops.js';
 
@@ -57,7 +57,25 @@ export type P4TestOps = Partial<Omit<P4Service, 'watch'>> & {
   readonly watch?: Partial<P4Service['watch']>;
 };
 
-// The cast is confined to heterogeneous registry traversal. Public methods retain each op's types.
+/** A registered operation with its types erased; every operation in the registry is one. */
+type AnyOperation = P4Operation<never, unknown, unknown>;
+
+/** A service method with its types erased; every method of {@link P4Service} is one. */
+type AnyMethod = (options: never) => Effect.Effect<unknown, P4Error>;
+
+/** A watched service method with its types erased; every method of {@link P4WatchService} is one. */
+type AnyWatch = (options: never, settings?: P4WatchOptions) => Stream.Stream<P4OperationEvent<unknown, unknown>, P4Error>;
+
+const OPERATIONS: ReadonlyArray<readonly [string, AnyOperation]> = Object.entries(ops);
+
+/** Freeze per-name methods into a service. */
+function toService(methods: Record<string, AnyMethod>, watch: Record<string, AnyWatch>): P4Service {
+  // SAFETY: both maps hold one method per registry name, each built from (or mocking) the operation
+  // registered under that name, plus the runTagged overloads; P4Service is exactly that mapping.
+  // TypeScript cannot follow a per-key correlation through a loop over the registry.
+  return Object.freeze({ ...methods, watch: Object.freeze(watch) }) as P4Service;
+}
+
 /** @internal Build a service bound to one immutable configuration and executor. */
 function makeP4Service(config: P4ResolvedOptions, executor: P4Executor['Service']): P4Service {
   // Read config at execution time so a service obtained before P4.with also sees its patch.
@@ -67,26 +85,29 @@ function makeP4Service(config: P4ResolvedOptions, executor: P4Executor['Service'
       Effect.provideService(P4Config, Option.getOrElse(current, () => config)),
       Effect.provideService(P4Executor, executor),
     ));
+
   const provideStream = <A, E>(stream: Stream.Stream<A, E, P4Config | P4Executor>) =>
     Stream.unwrap(Effect.map(Effect.serviceOption(P4Config), (current) => stream.pipe(
       Stream.provideService(P4Config, Option.getOrElse(current, () => config)),
       Stream.provideService(P4Executor, executor),
     )));
-  const methods: Record<string, unknown> = {};
-  const watch: Record<string, unknown> = {};
-  for (const [name, entry] of Object.entries(ops)) {
-    const op = entry as P4Operation<unknown, unknown, unknown>;
-    methods[name] = (options: unknown) => provide(runOperation(op, options));
-    watch[name] = (options: unknown, settings?: P4WatchOptions) =>
-      provideStream(watchOperation(op, options, settings));
+
+  const methods: Record<string, AnyMethod> = {};
+  const watch: Record<string, AnyWatch> = {};
+
+  for (const [name, op] of OPERATIONS) {
+    methods[name] = (options) => provide(runOperation(op, options));
+    watch[name] = (options, settings) => provideStream(watchOperation(op, options, settings));
   }
+
   methods.runTagged = (options: RunTaggedOptions) => provide(runOperation(
     options.schema === undefined ? ops.runTagged : taggedOperation(options.schema), options,
   ));
   watch.runTagged = (options: RunTaggedOptions, settings?: P4WatchOptions) => provideStream(watchOperation(
     options.schema === undefined ? ops.runTagged : taggedOperation(options.schema), options, settings,
   ));
-  return Object.freeze({ ...methods, watch: Object.freeze(watch) }) as P4Service;
+
+  return toService(methods, watch);
 }
 
 /** Perforce operations as a service. Provide an executor and config to build {@link P4.layer}. */
@@ -97,33 +118,27 @@ export class P4 extends Context.Service<P4, P4Service>()('p4client-ts/P4') {
       return makeP4Service(yield* P4Config, yield* P4Executor);
     }));
 
-  /**
-   * Provide only the operations a test expects; an unspecified call dies with its name.
-   * @param partialOps Effect methods and optional watch overrides.
-   * @returns A layer without CLI dependencies. Default watches emit the mock's result as done.
-   */
+  /** Provide only the operations a test expects; an unspecified call dies with its name. */
   static layerTest(partialOps: P4TestOps): Layer.Layer<P4> {
     return Layer.sync(P4, () => {
-      const methods: Record<string, unknown> = {};
-      const watch: Record<string, unknown> = {};
-      for (const name of Object.keys(ops)) {
-        const method = (partialOps as Record<string, unknown>)[name] as
-          ((options: unknown) => Effect.Effect<unknown, unknown>) | undefined;
-        const run = method ?? (() => Effect.die(new Error(`Unmocked P4 operation: ${name}`)));
+      const { watch: watchOverrides = {}, ...methodOverrides } = partialOps;
+      const mocked = new Map<string, AnyMethod | undefined>(Object.entries(methodOverrides));
+      const mockedWatch = new Map<string, AnyWatch | undefined>(Object.entries(watchOverrides));
+      const methods: Record<string, AnyMethod> = {};
+      const watch: Record<string, AnyWatch> = {};
+
+      for (const [name] of OPERATIONS) {
+        const run: AnyMethod = mocked.get(name) ?? (() => Effect.die(new Error(`Unmocked P4 operation: ${name}`)));
         methods[name] = run;
-        watch[name] = (partialOps.watch as Record<string, unknown> | undefined)?.[name] ??
-          ((options: unknown) => Stream.fromEffect(run(options).pipe(
-            Effect.map((result) => ({ _tag: 'done' as const, result })),
-          )));
+        watch[name] = mockedWatch.get(name) ?? ((options) => Stream.fromEffect(run(options).pipe(
+          Effect.map((result) => P4OperationEvent.done({ result })),
+        )));
       }
-      return Object.freeze({ ...methods, watch: Object.freeze(watch) }) as P4Service;
+
+      return toService(methods, watch);
     });
   }
 
-  /**
-   * Run a program with patched configuration, including calls on an already obtained P4 service.
-   * @param patch Connection fields and environment entries merge individually.
-   * @returns A transformation scoped to this program; siblings keep their original configuration.
-   */
+  /** Run a program with patched configuration, including calls on an already obtained P4 service. */
   static readonly with = withOptions;
 }

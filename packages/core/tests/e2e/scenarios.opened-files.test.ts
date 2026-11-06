@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { basename } from "node:path";
 import { loadE2EConfig } from "./config.js";
 import { loadFixture } from "./fixture.js";
@@ -22,9 +22,11 @@ describe("p4-ts e2e opened files", () => {
 
   afterEach(async () => {
     await harness.cleanupWorkspace();
+
     if (numberedChange !== null) {
       await harness.deleteChangelistIfEmpty(numberedChange);
     }
+
     await harness.assertCleanWorkspace();
   });
 

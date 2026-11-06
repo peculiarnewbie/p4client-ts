@@ -2,7 +2,6 @@ import { Effect, Schema } from 'effect';
 import {
   chmodSync,
   mkdirSync,
-  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -14,9 +13,11 @@ import { startFixture } from './test-perforce-e2e.js';
 import { WireScriptError } from './wire-script-error.js';
 import type { Fixture } from './test-perforce-e2e.js';
 
-const destination = resolve(import.meta.dir, '../tests/fixtures/wire');
-const privateRoot = resolve(import.meta.dir, '../.captures/disposable');
+const destination = resolve(import.meta.dirname, '../tests/fixtures/wire');
+const privateRoot = resolve(import.meta.dirname, '../.captures/disposable');
+
 type Mode = 'json' | 'tagged' | 'marshal' | 'plain';
+
 const PREFIX: Record<Mode, string[]> = {
   json: ['-Mj', '-z', 'tag'],
   tagged: ['-ztag'],
@@ -42,29 +43,37 @@ function assertLocal(
 
 function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
   const workspace = fixture.projectRoot;
+
   const env: NodeJS.ProcessEnv = {
     ...fixture.environment,
     P4CONFIG: join(workspace, 'disabled-config'),
   };
+
   const decodeJsonRow = Schema.decodeUnknownSync(
     Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
   );
+
   const decodeChange = Schema.decodeUnknownSync(
     Schema.fromJsonString(Schema.Struct({ change: Schema.String })),
   );
+
   let count = 0;
+
   const normalize = (text: string): string => {
     let result = text;
+
     const replace = (path: string, replacement: string) => {
       result = result.replace(
         new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
         replacement,
       );
     };
+
     for (const path of [workspace, workspace.replaceAll('\\', '/')]) {
       replace(JSON.stringify(path).slice(1, -1), '<WORKSPACE>');
       replace(path, '<WORKSPACE>');
     }
+
     for (const path of [
       dirname(workspace),
       dirname(workspace).replaceAll('\\', '/'),
@@ -72,11 +81,14 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       replace(JSON.stringify(path).slice(1, -1), '<SCRATCH>');
       replace(path, '<SCRATCH>');
     }
+
     result = result.replaceAll(env.P4PORT ?? '', '<LOCAL_PORT>');
     result = result.replace(/(Peer address: )[^\r\n]+/g, '$1<LOCAL_PEER>');
     result = result.replace(/(Server address: )[^\r\n]+/g, '$1<LOCAL_PORT>');
+
     return result;
   };
+
   const run = (
     args: string[],
     input?: string,
@@ -86,6 +98,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       try: () => {
         const environment = { ...env, ...overrides };
         assertLocal(fixture, args, environment);
+
         return {
           executable: fixture.p4Executable,
           args: ['-p', environment.P4PORT ?? '', '-u', environment.P4USER ?? '',
@@ -99,107 +112,117 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     }).pipe(Effect.flatMap((invocation) => captureProcess(invocation).pipe(
       Effect.mapError((error) => new WireScriptError(String(error), error)),
     )));
+
   const write = (
     args: string[],
     input?: string,
     overrides: NodeJS.ProcessEnv = {},
   ) =>
     run(args, input, overrides).pipe(
-      Effect.flatMap((result) =>
-        result.exitCode === 0
-          ? Effect.succeed(result)
-          : Effect.fail(
-              new WireScriptError(
-                `Disposable seed failed: ${args[0]}: ${result.stderr || result.stdout}`,
-              ),
-            ),
+      Effect.filterOrFail(
+        (result) => result.exitCode === 0,
+        (result) =>
+          new WireScriptError(
+            `Disposable seed failed: ${args[0]}: ${result.stderr || result.stdout}`,
+          ),
       ),
     );
-  const capture = (
+
+  const capture = Effect.fn('captureWire.capture')(function* (
     name: string,
     args: string[],
     mode: Mode = 'json',
     overrides: NodeJS.ProcessEnv = {},
     timeoutMs = 30_000,
     input?: string,
-  ) =>
-    Effect.gen(function* () {
-      const environment = { ...env, ...overrides };
-      assertLocal(fixture, args, environment);
-      const actual = [
-        '-p',
-        environment.P4PORT ?? '',
-        '-u',
-        environment.P4USER ?? '',
-        '-c',
-        environment.P4CLIENT ?? '',
-        ...PREFIX[mode],
-        ...args,
-      ];
-      const result = yield* captureSubprocess(
-        fixture.p4Executable,
-        actual,
-        workspace,
-        environment,
-        timeoutMs,
-        input,
-      );
-      writeFileSync(
-        join(privateRoot, `${name}.json`),
-        JSON.stringify(result, null, 2),
-      );
-      const stdout = normalize(result.stdout);
-      const stderr = normalize(result.stderr);
-      const rows =
-        mode === 'json'
-          ? stdout
-              .trim()
-              .split(/\r?\n/)
-              .filter(Boolean)
-              .map((line) => {
-                try {
-                  const row = decodeJsonRow(line);
-                  return row.severity !== undefined ||
-                    row.level !== undefined ||
-                    row.code === 'error' ||
-                    row.code === 'info'
-                    ? 'message'
-                    : 'data';
-                } catch {
-                  return 'text';
-                }
-              })
-          : [];
-      writeFileSync(
-        join(destination, `${name}.json`),
-        JSON.stringify(
-          {
-            origin: 'disposable p4d r26.1',
-            mode,
-            cwd: '<WORKSPACE>',
-            charset: environment.P4CHARSET,
-            args: actual.map(normalize),
-            ...(input === undefined ? {} : { input: normalize(input) }),
-            exitCode: result.exitCode,
-            stopped: result.stopped,
-            stdout: mode === 'marshal' ? null : stdout,
-            stdoutBase64: mode === 'marshal' ? result.stdoutBase64 : null,
-            stderr,
-            rows,
-          },
-          null,
-          2,
-        ) + '\n',
-      );
-      count += 1;
-      return result;
-    });
+  ) {
+    const environment = { ...env, ...overrides };
+    assertLocal(fixture, args, environment);
+
+    const actual = [
+      '-p',
+      environment.P4PORT ?? '',
+      '-u',
+      environment.P4USER ?? '',
+      '-c',
+      environment.P4CLIENT ?? '',
+      ...PREFIX[mode],
+      ...args,
+    ];
+
+    const result = yield* captureSubprocess(
+      fixture.p4Executable,
+      actual,
+      workspace,
+      environment,
+      timeoutMs,
+      input,
+    );
+
+    writeFileSync(
+      join(privateRoot, `${name}.json`),
+      JSON.stringify(result, null, 2),
+    );
+    const stdout = normalize(result.stdout);
+    const stderr = normalize(result.stderr);
+
+    const rows =
+      mode === 'json'
+        ? stdout
+            .trim()
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map((line) => {
+              try {
+                const row = decodeJsonRow(line);
+
+                return row.severity !== undefined ||
+                  row.level !== undefined ||
+                  row.code === 'error' ||
+                  row.code === 'info'
+                  ? 'message'
+                  : 'data';
+              } catch {
+                return 'text';
+              }
+            })
+        : [];
+
+    writeFileSync(
+      join(destination, `${name}.json`),
+      JSON.stringify(
+        {
+          origin: 'disposable p4d r26.1',
+          mode,
+          cwd: '<WORKSPACE>',
+          charset: environment.P4CHARSET,
+          args: actual.map(normalize),
+          // JSON.stringify leaves `input` out of the fixture when there is none.
+          input: input === undefined ? undefined : normalize(input),
+          exitCode: result.exitCode,
+          stopped: result.stopped,
+          stdout: mode === 'marshal' ? null : stdout,
+          stdoutBase64: mode === 'marshal' ? result.stdoutBase64 : null,
+          stderr,
+          rows,
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+    count += 1;
+
+    return result;
+  });
+
   const file = '//p4ts/main/wire/text.txt';
   const local = join(workspace, 'wire/text.txt');
+
   return Effect.gen(function* () {
     mkdirSync(destination, { recursive: true });
     mkdirSync(privateRoot, { recursive: true });
     mkdirSync(dirname(local), { recursive: true });
+
     const seedFiles: Array<[string, string, string]> = [
       ['text.txt', 'text', 'one\ntwo\n'],
       ['space name.txt', 'text', 'spaced path\n'],
@@ -210,6 +233,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       ['clobber.txt', 'text', 'clobber base\n'],
       ['deleted.txt', 'text', 'deleted base\n'],
     ];
+
     for (const [name, type, content] of seedFiles) {
       const path = join(workspace, 'wire', name);
       writeFileSync(
@@ -218,6 +242,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       );
       yield* write(['add', '-f', '-t', type, path]);
     }
+
     const longDescription = `Wire fixture CRLF description\r\nsecond paragraph\r\n${'long description '.repeat(1000)}`;
     yield* write(['submit', '-d', longDescription]);
     yield* write(
@@ -230,6 +255,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     const submitted = yield* run(['-Mj', '-z', 'tag', 'changes', '-m', '1']);
     const lastChange = decodeChange(submitted.stdout.trim()).change;
     yield* capture('client-version', ['-V'], 'plain');
+
     const normal: Array<[string, string[], Mode?]> = [
       ['info', ['info'], 'plain'],
       ['settings', ['set', '-q'], 'plain'],
@@ -276,6 +302,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       ['property-empty', ['property', '-l', '-n', 'fixture.setting']],
       ['have', ['have', file]],
     ];
+
     for (const [name, args, mode] of normal) yield* capture(name, args, mode);
     // 0.13 rearchitecture: info and content commands in structured modes.
     yield* capture('info-json', ['info']);
@@ -314,6 +341,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     yield* write(['sync', `${file}#none`]);
     yield* capture('files-unsynced-have', ['files', `${file}#have`]);
     yield* write(['sync', file]);
+
     for (const mode of ['json', 'tagged', 'marshal'] as const) {
       yield* capture(`modes-${mode}-files`, ['files', file], mode);
       yield* capture(
@@ -322,7 +350,9 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
         mode,
       );
     }
+
     const missing = '//p4ts/main/missing.txt';
+
     for (const [name, args] of [
       ['files-empty', ['files', missing]],
       ['dirs-empty', ['dirs', '//p4ts/main/missing/*']],
@@ -380,6 +410,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       P4USER: 'missing-user',
     });
     yield* write(['edit', local]);
+
     for (const mode of ['json', 'tagged', 'marshal'] as const)
       yield* capture(`opened-unchanged-${mode}`, ['sync', '-n', file], mode);
     yield* capture('opened-default', ['opened', '-c', 'default']);
@@ -390,6 +421,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       ['change', '-i'],
       `Change: new\nClient: ${env.P4CLIENT}\nUser: ${env.P4USER}\nDescription:\n\tPending wire fixture\n`,
     );
+
     const pending = yield* run([
       '-Mj',
       '-z',
@@ -400,6 +432,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       '-m',
       '1',
     ]);
+
     const pendingChange = decodeChange(pending.stdout.trim()).change;
     yield* write(['reopen', '-c', pendingChange, local]);
     yield* capture('changes-pending', [
@@ -450,10 +483,12 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     // A second client produces concurrent opens, exclusive-file failures and conflicting head revisions.
     const secondRoot = join(dirname(workspace), 'second-client');
     mkdirSync(secondRoot);
+
     const secondEnv = {
       P4CLIENT: 'wire_second',
       P4CONFIG: join(secondRoot, 'disabled'),
     };
+
     yield* write(
       ['client', '-i'],
       `Client: wire_second\nOwner: ${env.P4USER}\nRoot: ${secondRoot}\nOptions: allwrite clobber nocompress unlocked nomodtime rmdir\nLineEnd: local\nStream: //p4ts/main\n`,
@@ -608,6 +643,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     );
     const bulk = join(workspace, 'bulk');
     mkdirSync(bulk);
+
     for (let index = 0; index < 1001; index += 1)
       writeFileSync(
         join(bulk, `f${String(index).padStart(4, '0')}.txt`),
@@ -618,6 +654,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     const large = yield* run(['-Mj', '-z', 'tag', 'changes', '-m', '1']);
     const largeChange = decodeChange(large.stdout.trim()).change;
     yield* capture('describe-large', ['describe', '-s', largeChange]);
+
     // Enough untracked files for reconcile to have a chance to report -I progress through a pipe.
     for (let index = 0; index < 2000; index += 1)
       writeFileSync(
@@ -630,6 +667,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       '-n',
       '//p4ts/main/bulk/...',
     ]);
+
     for (let index = 0; index < 2000; index += 1)
       rmSync(join(bulk, `new${String(index).padStart(4, '0')}.txt`));
     yield* capture('changes-cursor-separated', [
@@ -677,6 +715,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     yield* capture('filelog-revisions', ['filelog', '-l', '-m', '11', '//p4ts/main/blame/blame.txt']);
     // 0.14 typed mutations: a changelist's whole life, short of submit, which p4client-ts never runs.
     yield* capture('change-create-invalid', ['change', '-i'], 'plain', {}, 30_000, 'Change: new\n');
+
     const created = yield* capture(
       'change-create',
       ['change', '-i'],
@@ -685,10 +724,13 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
       30_000,
       'Change: new\nDescription:\n\tWire mutation fixture\n\tsecond line\n',
     );
+
     const mutationChange = /Change (\d+) created/.exec(created.stdout)?.[1];
+
     if (mutationChange === undefined) {
       return yield* Effect.fail(new WireScriptError('change -i created no changelist.'));
     }
+
     // wire/text.txt was moved away above; blame.txt was just submitted and synced.
     const editable = '//p4ts/main/blame/blame.txt';
     yield* capture('edit-preview', ['edit', '-n', '-c', mutationChange, editable]);
@@ -761,11 +803,13 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
     yield* write(['login'], 'WirePassword123!\n');
     // Server ticket timestamps have whole-second precision; allow for the boundary.
     yield* Effect.sleep('3 seconds');
+
     const expired = yield* capture('changes-ticket-expired', [
       'changes',
       '-m',
       '1',
     ]);
+
     if (
       !/session has expired|ticket.*expired/i.test(
         expired.stdout + expired.stderr,
@@ -777,6 +821,7 @@ function scenarios(fixture: Fixture): Effect.Effect<void, WireScriptError> {
         ),
       );
     }
+
     // Stopping our own server preserves its original endpoint for both transport cases.
     yield* Effect.tryPromise({
       try: fixture.pauseServer,
@@ -798,12 +843,13 @@ if (import.meta.main) {
         try: () => startFixture({ unicode: true }),
         catch: (error) => new WireScriptError(String(error), error),
       });
+
       return yield* scenarios(fixture).pipe(
         Effect.ensuring(Effect.promise(fixture.stop)),
       );
     }),
-  ).catch((error: unknown) => {
-    console.error(String(error));
+  ).catch((cause: unknown) => {
+    console.error(String(cause));
     process.exitCode = 1;
   });
 }

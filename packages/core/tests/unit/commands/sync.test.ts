@@ -1,12 +1,17 @@
-import { describe, expect, it } from 'bun:test';
+import { Predicate } from 'effect';
+import { describe, expect, it } from 'vite-plus/test';
 import { previewSync, sync } from '../../../src/commands/sync.js';
+import { P4OperationEvent } from '../../../src/engine/operation.js';
 import { scriptedExecutor } from '../../../src/testing/executor.js';
 import { fixtureStdout } from '../../../src/testing/fixture.js';
 import { argvCase, argvTable, failure, fixtures, invocations, replay, run, watch } from './support.js';
+import { asAction, asDepotPath, asLocalPath } from '../../support/values.js';
 import type { Layer } from 'effect';
 import type { SyncOptions } from '../../../src/commands/sync.js';
 import type { P4ClientOptions } from '../../../src/engine/config.js';
 import type { P4Executor } from '../../../src/exec/executor.js';
+import { P4CommandError, P4ParseError } from '../../../src/errors.js';
+import { expectFailure } from '../../support/assert.js';
 
 const TAG = ['-Mj', '-z', 'tag'];
 const MUTATE: P4ClientOptions = { allowMutation: true };
@@ -15,6 +20,7 @@ const TEXT = '//p4ts/main/wire/text.txt';
 /** Replay a fixture's output whatever the invocation, for fixtures recorded without arguments. */
 function output(name: string): Layer.Layer<P4Executor> {
   const [fixture] = fixtures(name);
+
   return scriptedExecutor(() => ({ stdout: fixtureStdout(fixture!), stderr: fixture!.stderr, exitCode: fixture!.exitCode }));
 }
 
@@ -38,10 +44,10 @@ describe('previewSync', () => {
     const result = await run(previewSync, { force: true, fileSpec: TEXT }, replay('sync-force-preview'));
     expect(result).toEqual({
       items: [{
-        depotFile: TEXT as never,
-        clientFile: '<WORKSPACE>\\wire\\text.txt' as never,
+        depotFile: asDepotPath(TEXT),
+        clientFile: asLocalPath('<WORKSPACE>\\wire\\text.txt'),
         revision: 1,
-        action: 'refreshed' as never,
+        action: asAction('refreshed'),
         change: 4,
         fileSize: 8,
       }],
@@ -54,7 +60,7 @@ describe('previewSync', () => {
 
   it('reports determinate progress in files and bytes', async () => {
     const events = await watch(previewSync, { force: true, fileSpec: TEXT }, replay('sync-os-error-preview'));
-    const progress = events.flatMap((event) => (event._tag === 'progress' ? [event.progress] : []));
+    const progress = events.flatMap((event) => (Predicate.isTagged(event, 'progress') ? [event.progress] : []));
     expect(events.map((event) => event._tag)).toEqual(['item', 'progress', 'done']);
     expect(progress).toEqual([{
       completed: 1, total: 1, unit: 'files', bytesCompleted: 23, bytesTotal: 23, elapsedMs: expect.any(Number),
@@ -97,17 +103,17 @@ describe('previewSync', () => {
 
   it('fails for an unknown workspace', async () => {
     const error = await failure(previewSync, { fileSpec: TEXT }, replay('sync-unknown-client'));
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'unknown_client' });
+    expectFailure(error, P4CommandError, { reason: 'unknown_client' });
   });
 
   it('fails for an expired session', async () => {
     const error = await failure(previewSync, {}, output('changes-ticket-expired'));
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'ticket_expired' });
+    expectFailure(error, P4CommandError, { reason: 'ticket_expired' });
   });
 
   it('rejects a file record without a depot path or action', async () => {
     const error = await failure(previewSync, {}, scriptedExecutor(() => ({ stdout: '{"rev":"1"}\n' })));
-    expect(error).toMatchObject({ _tag: 'P4ParseError' });
+    expectFailure(error, P4ParseError);
   });
 });
 
@@ -119,7 +125,7 @@ describe('sync', () => {
 
   it('reports an operating-system error as a failure naming the file', async () => {
     const result = await run(sync, { force: true, fileSpec: TEXT }, replay('sync-os-error'), MUTATE);
-    expect(result.items.map((item) => item.depotFile)).toEqual([TEXT as never]);
+    expect(result.items.map((item) => item.depotFile)).toEqual([asDepotPath(TEXT)]);
     expect(result.messages).toEqual([]);
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0]).toMatchObject({
@@ -155,9 +161,11 @@ describe('sync', () => {
   it('reports per-file failures printed on stderr', async () => {
     const [rename] = fixtures('synthetic-review-sync-rename');
     const lines = (rename!.stdout ?? '').split('\n').filter(Boolean);
+
     const executor = scriptedExecutor(() => ({
       stdout: `${lines.slice(0, 2).join('\n')}\n`, stderr: `${lines[2]}\n`, exitCode: 1,
     }));
+
     const result = await run(sync, {}, executor, MUTATE);
     expect(result.items).toHaveLength(2);
     expect(result.failures).toHaveLength(1);
@@ -169,7 +177,8 @@ describe('sync', () => {
       stdout: `${JSON.stringify({ generic: 6, severity: 3, data: 'You don\'t have permission for this operation.' })}\n`,
       exitCode: 1,
     })), MUTATE);
-    expect(error).toMatchObject({ _tag: 'P4CommandError', category: 'permission' });
+
+    expectFailure(error, P4CommandError, { category: 'permission' });
   });
 });
 
@@ -187,16 +196,17 @@ describe('sync: buffered and watched parity', () => {
     { name: 'sync-os-error', op: sync, options: { force: true, fileSpec: TEXT }, client: MUTATE },
     { name: 'sync-clobber', op: sync, options: { fileSpec: '//p4ts/main/wire/clobber.txt' }, client: MUTATE },
   ];
+
   for (const testCase of cases) {
     it(`${testCase.name}: the watched events and done equal the run result`, async () => {
       const result = await run(testCase.op, testCase.options, replay(testCase.name), testCase.client);
       const events = await watch(testCase.op, testCase.options, replay(testCase.name), testCase.client);
       const done = events.at(-1);
-      expect(done).toEqual({ _tag: 'done', result });
-      expect(events.flatMap((event) => (event._tag === 'item' ? [event.item] : []))).toEqual(result.items);
-      expect(events.flatMap((event) => (event._tag === 'failure' ? [event.failure] : [])))
+      expect(done).toEqual(P4OperationEvent.done({ result }));
+      expect(events.flatMap((event) => (Predicate.isTagged(event, 'item') ? [event.item] : []))).toEqual(result.items);
+      expect(events.flatMap((event) => (Predicate.isTagged(event, 'failure') ? [event.failure] : [])))
         .toEqual(result.failures);
-      expect(events.flatMap((event) => (event._tag === 'message' ? [event.message] : []))).toEqual(result.messages);
+      expect(events.flatMap((event) => (Predicate.isTagged(event, 'message') ? [event.message] : []))).toEqual(result.messages);
     });
   }
 });

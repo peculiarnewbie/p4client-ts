@@ -46,7 +46,9 @@ const Name = Schema.NonEmptyString;
 
 function toWorkspace(row: Row): P4Workspace {
   const root = text(row.Root);
+
   if (root === null) throw malformed('Expected a workspace with a Root.', row);
+
   return {
     client: decodeField(Name, row.client, row),
     owner: decodeField(Name, row.Owner, row),
@@ -59,24 +61,26 @@ function toWorkspace(row: Row): P4Workspace {
   };
 }
 
-/**
- * List workspaces, sorted by root and then name.
- *
- * @returns Matching workspaces.
- */
+/** List workspaces, sorted by root and then name. */
 export const listWorkspaces = operation<ListWorkspacesOptions, P4Workspace, P4WorkspaceList>('listWorkspaces', (options, sink) =>
   Effect.gen(function* () {
     const args = ['clients'];
+
     if (options.user !== undefined) args.push('-u', options.user);
+
     if (options.stream !== undefined) args.push('-S', options.stream);
+
     const usable = (workspace: P4Workspace) =>
       options.host === undefined || workspace.host === null || workspace.host === options.host;
+
     const output = yield* drain(sink, streamCommand({ args, format: 'json', decode: toWorkspace }), {
       item: (workspace) => (usable(workspace) ? workspace : null),
       counter: progressCounter(sink, 'records'),
     });
+
     const items = output.items
       .filter(usable)
       .sort((left, right) => left.root.localeCompare(right.root) || left.client.localeCompare(right.client));
+
     return { items, messages: output.messages };
   }));

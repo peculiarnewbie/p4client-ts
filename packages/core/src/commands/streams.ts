@@ -13,7 +13,7 @@ import {
 } from './shared.js';
 import type { P4DepotPath } from '../schemas.js';
 import type { P4Message } from '../wire/message.js';
-import type { FileSpecs, Row } from './shared.js';
+import type { Field, FileSpecs, Row } from './shared.js';
 
 /** Options for {@link listStreams}. */
 export interface ListStreamsOptions {
@@ -49,12 +49,13 @@ export interface P4StreamList {
   readonly messages: P4Message[];
 }
 
-function parentStream(value: unknown, row: Row): P4DepotPath | null {
+function parentStream(value: Field, row: Row): P4DepotPath | null {
   const parent = text(value);
+
   return parent === null || parent === 'none' ? null : depotPath(parent, row);
 }
 
-function words(value: unknown): string[] {
+function words(value: Field): string[] {
   return text(value)?.split(/\s+/) ?? [];
 }
 
@@ -64,6 +65,7 @@ function baseName(stream: P4DepotPath): string {
 
 function toStream(row: Row): P4Stream {
   const stream = depotPath(row.Stream, row);
+
   return {
     stream,
     name: text(row.Name) ?? baseName(stream),
@@ -81,18 +83,19 @@ function toStream(row: Row): P4Stream {
  * List streams (`p4 streams`). Each carries its parent, so the hierarchy of
  * a stream depot needs no further queries. A path that matches no stream
  * gives no items and an `empty` message.
- *
- * @returns The streams, in the order Perforce lists them.
  */
 export const listStreams = operation<ListStreamsOptions, P4Stream, P4StreamList>('listStreams', (options, sink) =>
   Effect.gen(function* () {
     const args = ['streams'];
+
     if (options.limit !== undefined) args.push('-m', String(yield* requirePositive(options.limit, 'limit')));
     args.push(...specList(options.fileSpec));
+
     const output = yield* drain(sink, streamCommand({ args, format: 'json', decode: toStream }), {
       item: (stream) => stream,
       counter: progressCounter(sink, 'records'),
     });
+
     return { items: output.items, messages: output.messages };
   }));
 
@@ -128,6 +131,7 @@ function lines(row: Row, field: string): string[] {
 
 function toStreamSpec(row: Row): Omit<P4StreamSpec, 'messages'> {
   const stream = depotPath(row.Stream, row);
+
   return {
     stream,
     name: text(row.Name) ?? baseName(stream),
@@ -146,15 +150,16 @@ function toStreamSpec(row: Row): Omit<P4StreamSpec, 'messages'> {
 /**
  * Read a stream's spec (`p4 stream -o`), including its `Paths` view.
  * Perforce prints a default spec for a stream that does not exist yet.
- *
- * @returns The stream spec.
  */
 export const getStream = operation<GetStreamOptions, never, P4StreamSpec>('getStream', (options, sink) =>
   Effect.gen(function* () {
     const output = yield* drain(sink, streamCommand({ args: ['stream', '-o', options.stream], format: 'json', decode: toStreamSpec }), {
       counter: progressCounter(sink, 'records', 1),
     });
+
     const spec = output.items[0];
+
     if (spec === undefined) return yield* malformed('stream -o printed no spec.', output.messages);
+
     return { ...spec, messages: output.messages };
   }));

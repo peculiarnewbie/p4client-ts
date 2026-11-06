@@ -1,11 +1,16 @@
-import { describe, expect, it } from 'bun:test';
+import { Predicate } from 'effect';
+import { describe, expect, it } from 'vite-plus/test';
 import { previewReconcile, workspaceRootFileSpec } from '../../../src/commands/reconcile.js';
+import { P4OperationEvent } from '../../../src/engine/operation.js';
 import { replayExecutor, scriptedExecutor } from '../../../src/testing/executor.js';
 import { fixtureStdout } from '../../../src/testing/fixture.js';
 import { argvCase, argvTable, failure, fixtures, replay, run, watch } from './support.js';
+import { asDepotPath, asLocalPath } from '../../support/values.js';
 import type { Layer } from 'effect';
 import type { PreviewReconcileOptions } from '../../../src/commands/reconcile.js';
 import type { P4Executor } from '../../../src/exec/executor.js';
+import { P4CommandError, P4InvalidArgumentError, P4ParseError } from '../../../src/errors.js';
+import { expectFailure } from '../../support/assert.js';
 
 const TAG = ['-Mj', '-z', 'tag'];
 const WIRE = '//p4ts/main/wire/...';
@@ -54,16 +59,16 @@ describe('previewReconcile', () => {
     const result = await run(previewReconcile, { fileSpec: WIRE }, replay('reconcile-data'));
     expect(result.items).toEqual([
       {
-        depotFile: '//p4ts/main/wire/text.txt' as never,
-        clientFile: '<WORKSPACE>\\wire\\text.txt' as never,
+        depotFile: asDepotPath('//p4ts/main/wire/text.txt'),
+        clientFile: asLocalPath('<WORKSPACE>\\wire\\text.txt'),
         action: 'edit',
         type: 'text',
         change: null,
         workRevision: 2,
       },
       {
-        depotFile: '//p4ts/main/wire/new file.txt' as never,
-        clientFile: '<WORKSPACE>\\wire\\new file.txt' as never,
+        depotFile: asDepotPath('//p4ts/main/wire/new file.txt'),
+        clientFile: asLocalPath('<WORKSPACE>\\wire\\new file.txt'),
         action: 'add',
         type: 'text',
         change: null,
@@ -84,10 +89,10 @@ describe('previewReconcile', () => {
   it('streams every candidate of a large tree with an indeterminate count', async () => {
     const events = await watch(previewReconcile, { fileSpec: '//p4ts/main/bulk/...' }, withoutProgressFlag('reconcile-progress-large'));
     const done = events.at(-1);
-    const result = done?._tag === 'done' ? done.result : null;
-    const progress = events.flatMap((event) => (event._tag === 'progress' ? [event.progress] : []));
+    const result = Predicate.isTagged(done, 'done') ? done.result : null;
+    const progress = events.flatMap((event) => (Predicate.isTagged(event, 'progress') ? [event.progress] : []));
     expect(result?.added).toHaveLength(2000);
-    expect(events.filter((event) => event._tag === 'item')).toHaveLength(2000);
+    expect(events.filter((event) => Predicate.isTagged(event, 'item'))).toHaveLength(2000);
     expect(progress).toHaveLength(2000);
     expect(progress.every((update) => update.total === null && update.unit === 'files')).toBe(true);
     expect(progress.at(-1)?.completed).toBe(2000);
@@ -109,6 +114,7 @@ describe('previewReconcile', () => {
         + row({ action: 'move/delete', depotFile: '//d/old.txt', clientFile: '/ws/old.txt' })
         + row({ action: 'delete', depotFile: '//d/gone.txt', clientFile: '/ws/gone.txt', change: 'default' }),
     })));
+
     expect(result.added.map((item) => item.action)).toEqual(['move/add']);
     expect(result.deleted.map((item) => [item.action, item.change])).toEqual([['move/delete', null], ['delete', 'default']]);
   });
@@ -117,7 +123,8 @@ describe('previewReconcile', () => {
     const error = await failure(previewReconcile, {}, scriptedExecutor(() => ({
       stdout: row({ action: 'integrate', depotFile: '//d/a.txt' }),
     })));
-    expect(error).toMatchObject({ _tag: 'P4ParseError' });
+
+    expectFailure(error, P4ParseError);
   });
 
   it('fails on a file it cannot read', async () => {
@@ -126,18 +133,19 @@ describe('previewReconcile', () => {
         + `${JSON.stringify({ severity: 3, generic: 33, data: 'open for read: /ws/b.txt: Permission denied.' })}\n`,
       exitCode: 1,
     })));
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'fault' });
+
+    expectFailure(error, P4CommandError, { reason: 'fault' });
   });
 
   it('fails for a spec outside the workspace view', async () => {
     const [outside] = fixtures('sync-outside-stream');
     const error = await failure(previewReconcile, {}, scriptedExecutor(() => ({ stdout: fixtureStdout(outside!) })));
-    expect(error).toMatchObject({ _tag: 'P4CommandError', reason: 'not_in_view' });
+    expectFailure(error, P4CommandError, { reason: 'not_in_view' });
   });
 
   it('rejects a workspace without a root', async () => {
     const error = await failure(previewReconcile, { workspace: { root: ' ' } }, scriptedExecutor(() => ({})));
-    expect(error).toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'workspace' });
+    expectFailure(error, P4InvalidArgumentError, { option: 'workspace' });
   });
 });
 
@@ -151,14 +159,15 @@ describe('reconcile: buffered and watched parity', () => {
       executor: () => withoutProgressFlag('reconcile-progress-large'),
     },
   ];
+
   for (const testCase of cases) {
     it(`${testCase.name}: the watched events and done equal the run result`, async () => {
       const result = await run(previewReconcile, testCase.options, testCase.executor());
       const events = await watch(previewReconcile, testCase.options, testCase.executor());
-      expect(events.at(-1)).toEqual({ _tag: 'done', result });
-      expect(events.flatMap((event) => (event._tag === 'item' ? [event.item] : []))).toEqual(result.items);
-      expect(events.filter((event) => event._tag === 'failure')).toEqual([]);
-      expect(events.flatMap((event) => (event._tag === 'message' ? [event.message] : []))).toEqual(result.messages);
+      expect(events.at(-1)).toEqual(P4OperationEvent.done({ result }));
+      expect(events.flatMap((event) => (Predicate.isTagged(event, 'item') ? [event.item] : []))).toEqual(result.items);
+      expect(events.filter((event) => Predicate.isTagged(event, 'failure'))).toEqual([]);
+      expect(events.flatMap((event) => (Predicate.isTagged(event, 'message') ? [event.message] : []))).toEqual(result.messages);
     });
   }
 });

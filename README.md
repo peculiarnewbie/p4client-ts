@@ -5,7 +5,7 @@ Promise facade. Requires Node >=18, a local `p4` executable for live commands,
 and the Effect peer dependency.
 
 ```sh
-bun add p4client-ts effect@4.0.4
+pnpm add p4client-ts effect@4.0.4
 ```
 
 ```ts
@@ -45,7 +45,7 @@ strict fixture replay and recording.
 See the [guides](https://p4client-ts.peculiarnewbie.com/guides/getting-started/)
 and [migration guide](./MIGRATION.md) for upgrading from 0.13 and the breaking 0.13 changes.
 
-The Bun monorepo contains `packages/core` (library), `packages/test-stream`
-(live fixtures) and `packages/www` (Astro guides and generated API).
-Run `bun run typecheck`, `bun run test`, `bun run test:e2e`, `bun run docs:check`,
-`bun run build` and `bun run pack:core` from this directory.
+The pnpm monorepo contains `packages/core` (library), `packages/test-stream`
+(live fixtures) and `packages/www` (Astro guides).
+Run `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:e2e`, `pnpm docs:check`,
+`pnpm build` and `pnpm pack:core` from this directory.

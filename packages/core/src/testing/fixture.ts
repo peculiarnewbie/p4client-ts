@@ -18,7 +18,7 @@ export const P4WireFixtureSchema = Schema.Struct({
   args: Schema.Array(Schema.String),
   /** Text written to stdin, for `-x -` argument lists. */
   input: Schema.optionalKey(Schema.String),
-  exitCode: Schema.Number,
+  exitCode: Schema.Finite,
   stopped: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** Output as text; `null` for marshal captures, whose output is binary. */
   stdout: Schema.NullOr(Schema.String),
@@ -33,24 +33,14 @@ export type P4WireFixture = typeof P4WireFixtureSchema.Type;
 const decodeFixture = Schema.decodeUnknownSync(Schema.fromJsonString(P4WireFixtureSchema));
 const readMode = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({ mode: Schema.String })));
 
-/**
- * The exact bytes a fixture's command wrote to stdout.
- *
- * @param fixture A recorded invocation.
- * @returns Its stdout bytes.
- */
+/** The exact bytes a fixture's command wrote to stdout. */
 export function fixtureStdout(fixture: P4WireFixture): Uint8Array {
   if (fixture.stdoutBase64) return new Uint8Array(Buffer.from(fixture.stdoutBase64, 'base64'));
+
   return new TextEncoder().encode(fixture.stdout ?? '');
 }
 
-/**
- * Read one fixture file.
- *
- * @param path Path to a fixture `.json` file.
- * @returns The decoded fixture.
- * @throws {Error} When the file is not a command capture.
- */
+/** Read one fixture file. */
 export function readWireFixture(path: string): P4WireFixture {
   return decodeFixture(readFileSync(path, 'utf8'));
 }
@@ -58,17 +48,17 @@ export function readWireFixture(path: string): P4WireFixture {
 /**
  * Read every command capture in a directory, keyed by file name without `.json`.
  * Files that are not command captures, such as golden outputs, are skipped.
- *
- * @param directory Directory of fixture files.
- * @returns Fixtures by name.
  */
 export function readWireFixtures(directory: string): ReadonlyMap<string, P4WireFixture> {
   const fixtures = new Map<string, P4WireFixture>();
+
   for (const name of readdirSync(directory).sort()) {
     if (!name.endsWith('.json') || name.startsWith('_')) continue;
     const text = readFileSync(join(directory, name), 'utf8');
+
     if (Option.isNone(readMode(text))) continue;
     fixtures.set(name.slice(0, -'.json'.length), decodeFixture(text));
   }
+
   return fixtures;
 }

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,8 +14,10 @@ describe('E2E binary cache', () => {
   let cacheDirectory: string;
   let cachedPath: string;
   let downloads: string[];
+
   const download = (bytes: Uint8Array) => async (url: string) => {
     downloads.push(url);
+
     return bytes;
   };
 

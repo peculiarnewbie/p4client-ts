@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'bun:test';
+import { Predicate, Schema } from 'effect';
+import { describe, expect, it } from 'vite-plus/test';
 import { createChange, deleteChange } from '../../../src/commands/change.js';
 import { listChangelists } from '../../../src/commands/changelists.js';
 import { describeChangelists } from '../../../src/commands/describe.js';
@@ -10,7 +11,10 @@ import { setPersistentWorkspace } from '../../../src/node/connection.js';
 import { commandArgs, recordingExecutor, scriptedExecutor } from '../../../src/testing/executor.js';
 import { fixtureStdout } from '../../../src/testing/fixture.js';
 import { failure, fixtures, invocations, replay, run, watch } from './support.js';
+import { asAction, asDepotPath, asLocalPath } from '../../support/values.js';
 import type { P4ClientOptions } from '../../../src/engine/config.js';
+import { P4CommandError, P4InvalidArgumentError, P4ParseError, P4ReadOnlyError } from '../../../src/errors.js';
+import { expectFailure } from '../../support/assert.js';
 
 const TAG = ['-Mj', '-z', 'tag'];
 const MUTATE: P4ClientOptions = { allowMutation: true };
@@ -22,6 +26,7 @@ describe('the mutation guard', () => {
   const none = () => {
     throw new Error('p4 must not run');
   };
+
   it.each([
     ['createChange', () => failure(createChange, { description: 'x' }, scriptedExecutor(none))],
     ['deleteChange', () => failure(deleteChange, { change: 15 }, scriptedExecutor(none))],
@@ -30,7 +35,7 @@ describe('the mutation guard', () => {
     ['revert', () => failure(revert, { change: 15 }, scriptedExecutor(none))],
     ['setPersistentWorkspace', () => failure(setPersistentWorkspace, { client: 'ws' }, scriptedExecutor(none))],
   ])('refuses %s on a read-only client before running p4', async (_name, attempt) => {
-    expect(await attempt()).toMatchObject({ _tag: 'P4ReadOnlyError' });
+    expectFailure(await attempt(), P4ReadOnlyError);
   });
 
   it('runs previews without allowMutation', async () => {
@@ -50,23 +55,23 @@ describe('createChange', () => {
   it('fails with the server diagnostics for a rejected spec', async () => {
     const recorder = recordingExecutor(scriptedExecutor(() => {
       const fixture = fixtures('change-create-invalid')[0]!;
+
       return { stderr: fixture.stderr, exitCode: fixture.exitCode };
     }));
+
     const error = await failure(createChange, { description: 'x' }, recorder.layer, MUTATE);
-    expect(error).toMatchObject({ _tag: 'P4CommandError' });
-    expect(error._tag === 'P4CommandError' ? error.messages.map((message) => message.text) : [])
+    expectFailure(error, P4CommandError);
+    expect(Predicate.isTagged(error, 'P4CommandError') ? error.messages.map((message) => message.text) : [])
       .toContain("Missing required field 'Description'.");
     expect(recorder.invocations[0]?.input).toBe('Change: new\nDescription:\n\tx\n');
   });
 
   it('rejects a blank description before running p4', async () => {
-    expect(await failure(createChange, { description: ' \n\t' }, scriptedExecutor(() => ({})), MUTATE))
-      .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'description' });
+    expectFailure(await failure(createChange, { description: ' \n\t' }, scriptedExecutor(() => ({})), MUTATE), P4InvalidArgumentError, { option: 'description' });
   });
 
   it('fails when p4 reports no new changelist', async () => {
-    expect(await failure(createChange, { description: 'x' }, scriptedExecutor(() => ({ stdout: 'Change updated.\n' })), MUTATE))
-      .toMatchObject({ _tag: 'P4ParseError' });
+    expectFailure(await failure(createChange, { description: 'x' }, scriptedExecutor(() => ({ stdout: 'Change updated.\n' })), MUTATE), P4ParseError);
   });
 });
 
@@ -78,18 +83,15 @@ describe('deleteChange', () => {
   });
 
   it('fails while files are open in it', async () => {
-    expect(await failure(deleteChange, { change: 15 }, replay('change-delete-not-empty'), MUTATE))
-      .toMatchObject({ _tag: 'P4CommandError', reason: 'changelist_not_empty', category: 'conflict' });
+    expectFailure(await failure(deleteChange, { change: 15 }, replay('change-delete-not-empty'), MUTATE), P4CommandError, { reason: 'changelist_not_empty', category: 'conflict' });
   });
 
   it('fails for a changelist that does not exist', async () => {
-    expect(await failure(deleteChange, { change: 15 }, replay('change-delete-unknown'), MUTATE))
-      .toMatchObject({ _tag: 'P4CommandError', reason: 'unknown_changelist' });
+    expectFailure(await failure(deleteChange, { change: 15 }, replay('change-delete-unknown'), MUTATE), P4CommandError, { reason: 'unknown_changelist' });
   });
 
   it('rejects a changelist that is not a positive integer', async () => {
-    expect(await failure(deleteChange, { change: 0 }, scriptedExecutor(() => ({})), MUTATE))
-      .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'change' });
+    expectFailure(await failure(deleteChange, { change: 0 }, scriptedExecutor(() => ({})), MUTATE), P4InvalidArgumentError, { option: 'change' });
   });
 });
 
@@ -98,9 +100,9 @@ describe('openForEdit', () => {
     const result = await run(openForEdit, { fileSpec: BLAME, change: 15 }, replay('edit-change'), MUTATE);
     expect(result).toEqual({
       items: [{
-        depotFile: BLAME as never,
-        clientFile: '<WORKSPACE>\\blame\\blame.txt' as never,
-        action: 'edit' as never,
+        depotFile: asDepotPath(BLAME),
+        clientFile: asLocalPath('<WORKSPACE>\\blame\\blame.txt'),
+        action: asAction('edit'),
         type: 'text+D',
         workRevision: 3,
       }],
@@ -140,8 +142,7 @@ describe('openForEdit', () => {
   });
 
   it('fails for a changelist that does not exist', async () => {
-    expect(await failure(openForEdit, { fileSpec: BLAME, change: 999999 }, replay('edit-unknown-change'), MUTATE))
-      .toMatchObject({ _tag: 'P4CommandError', reason: 'unknown_changelist' });
+    expectFailure(await failure(openForEdit, { fileSpec: BLAME, change: 999999 }, replay('edit-unknown-change'), MUTATE), P4CommandError, { reason: 'unknown_changelist' });
   });
 
   it('passes -c default and every spec', async () => {
@@ -150,8 +151,7 @@ describe('openForEdit', () => {
   });
 
   it('rejects an empty file list', async () => {
-    expect(await failure(openForEdit, { fileSpec: [] }, scriptedExecutor(() => ({})), MUTATE))
-      .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'fileSpec' });
+    expectFailure(await failure(openForEdit, { fileSpec: [] }, scriptedExecutor(() => ({})), MUTATE), P4InvalidArgumentError, { option: 'fileSpec' });
   });
 });
 
@@ -159,9 +159,9 @@ describe('openForAdd', () => {
   it('opens a new file with a type in a numbered changelist', async () => {
     const result = await run(openForAdd, { fileSpec: ADDED, change: 15, type: 'binary+l' }, replay('add-change'), MUTATE);
     expect(result.items).toEqual([{
-      depotFile: '//p4ts/main/wire/added.uasset' as never,
-      clientFile: ADDED as never,
-      action: 'add' as never,
+      depotFile: asDepotPath('//p4ts/main/wire/added.uasset'),
+      clientFile: asLocalPath(ADDED),
+      action: asAction('add'),
       type: 'binary+l',
       workRevision: 1,
     }]);
@@ -175,8 +175,7 @@ describe('openForAdd', () => {
   });
 
   it('rejects a malformed file type', async () => {
-    expect(await failure(openForAdd, { fileSpec: ADDED, type: 'binary -x' }, scriptedExecutor(() => ({})), MUTATE))
-      .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'type' });
+    expectFailure(await failure(openForAdd, { fileSpec: ADDED, type: 'binary -x' }, scriptedExecutor(() => ({})), MUTATE), P4InvalidArgumentError, { option: 'type' });
   });
 });
 
@@ -185,17 +184,17 @@ describe('revert', () => {
     const result = await run(revert, { change: 15 }, replay('revert-change'), MUTATE);
     expect(result.items).toEqual([
       {
-        depotFile: '//p4ts/main/wire/added.uasset' as never,
-        clientFile: ADDED as never,
+        depotFile: asDepotPath('//p4ts/main/wire/added.uasset'),
+        clientFile: asLocalPath(ADDED),
         action: 'abandoned',
-        previousAction: 'add' as never,
+        previousAction: asAction('add'),
         haveRevision: null,
       },
       {
-        depotFile: BLAME as never,
-        clientFile: '<WORKSPACE>\\blame\\blame.txt' as never,
+        depotFile: asDepotPath(BLAME),
+        clientFile: asLocalPath('<WORKSPACE>\\blame\\blame.txt'),
         action: 'reverted',
-        previousAction: 'edit' as never,
+        previousAction: asAction('edit'),
         haveRevision: 3,
       },
     ]);
@@ -208,8 +207,7 @@ describe('revert', () => {
   });
 
   it('never reverts everything implicitly', async () => {
-    expect(await failure(revert, {}, scriptedExecutor(() => ({})), MUTATE))
-      .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'fileSpec' });
+    expectFailure(await failure(revert, {}, scriptedExecutor(() => ({})), MUTATE), P4InvalidArgumentError, { option: 'fileSpec' });
   });
 
   it('limits specs to a changelist when both are given', async () => {
@@ -221,10 +219,12 @@ describe('revert', () => {
 describe('setPersistentWorkspace', () => {
   it('runs p4 set without the configured connection or isolation', async () => {
     const recorder = recordingExecutor(scriptedExecutor(() => ({})));
+
     const result = await run(setPersistentWorkspace, { client: 'ws_main' }, recorder.layer, {
       ...MUTATE,
       connection: { port: 'ssl:p4:1666', user: 'u', client: 'other', isolated: true },
     });
+
     expect(result).toEqual({ client: 'ws_main', messages: [] });
     const [invocation] = recorder.invocations;
     expect(commandArgs(invocation!.args)).toEqual(['set', 'P4CLIENT=ws_main']);
@@ -234,25 +234,32 @@ describe('setPersistentWorkspace', () => {
   });
 
   it.each(['', ' ws', 'a b', 'ws=x', '-ws', 'ws...', 'a@b'])('rejects %j as a workspace name', async (client) => {
-    expect(await failure(setPersistentWorkspace, { client }, scriptedExecutor(() => ({})), MUTATE))
-      .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'client' });
+    expectFailure(await failure(setPersistentWorkspace, { client }, scriptedExecutor(() => ({})), MUTATE), P4InvalidArgumentError, { option: 'client' });
   });
 });
+
+const decodeChangeRow = Schema.decodeSync(Schema.fromJsonString(Schema.Struct({ change: Schema.String })));
 
 describe('describeChangelists', () => {
   it('describes past a changelist that does not exist, which describe stops at', async () => {
     const [many] = fixtures('describe-many');
     const [moved] = fixtures('describe-move');
-    const movedRow = JSON.parse(moved!.stdout!.split('\n')[0]!) as { change: string };
+
+    const movedRow = decodeChangeRow(moved!.stdout!.split('\n')[0]!);
+
     const responses = new Map([
       [JSON.stringify([...TAG, 'describe', '-s', '6', '999999', movedRow.change]), fixtureStdout(many!)],
       [JSON.stringify([...TAG, 'describe', '-s', movedRow.change]), fixtureStdout(moved!)],
     ]);
+
     const recorder = recordingExecutor(scriptedExecutor((invocation) => {
       const stdout = responses.get(JSON.stringify(commandArgs(invocation.args)));
+
       if (stdout === undefined) throw new Error(`Unexpected ${commandArgs(invocation.args).join(' ')}`);
+
       return { stdout };
     }));
+
     const result = await run(describeChangelists, { changes: [6, 999999, Number(movedRow.change)] }, recorder.layer);
     expect(result.items.map((item) => item.change)).toEqual([6, Number(movedRow.change)]);
     expect(result.failures).toMatchObject([{ spec: '999999', reason: 'unknown_changelist' }]);
@@ -263,14 +270,14 @@ describe('describeChangelists', () => {
     expect(await run(describeChangelists, { changes: [] }, scriptedExecutor(() => {
       throw new Error('p4 must not run');
     }))).toEqual({ items: [], failures: [], messages: [] });
-    expect(await failure(describeChangelists, { changes: [1, -2] }, scriptedExecutor(() => ({}))))
-      .toMatchObject({ _tag: 'P4InvalidArgumentError', option: 'changes' });
+    expectFailure(await failure(describeChangelists, { changes: [1, -2] }, scriptedExecutor(() => ({}))), P4InvalidArgumentError, { option: 'changes' });
   });
 
   it('reports each changelist and progress in changes', async () => {
     const events = await watch(describeChangelists, { changes: [6] }, scriptedExecutor(() => ({
       stdout: `${fixtures('describe-many')[0]!.stdout!.split('\n')[0]!}\n`,
     })));
+
     expect(events.map((event) => event._tag)).toEqual(['item', 'progress', 'done']);
     expect(events[1]).toMatchObject({ progress: { completed: 1, total: 1, unit: 'changes' } });
   });
@@ -280,9 +287,11 @@ describe('server-scoped reads', () => {
   it('lists a whole range without -l or -m', async () => {
     const [fixture] = fixtures('changes-range-short');
     const spec = fixture!.args.at(-1)!;
+
     const result = await run(listChangelists, {
       status: 'submitted', fileSpec: spec, limit: 'all', fullDescriptions: false,
     }, replay('changes-range-short'));
+
     expect(result.hasMore).toBe(false);
     expect(result.nextCursor).toBeNull();
     expect(result.items.map((item) => item.change)).toEqual([10, 9, 8]);
@@ -299,6 +308,7 @@ describe('server-scoped reads', () => {
       excludeWorkspaceData: true,
       fields: ['headRev', 'headChange', 'headAction', 'headType', 'digest', 'fileSize'],
     }, replay('fstat-server-only'));
+
     expect(result.items[0]).toMatchObject({
       depotFile: '//p4ts/main/wire/clobber.txt',
       headRevision: 2,

@@ -1,13 +1,9 @@
 import type { P4Reason } from './reasons.js';
 
 /**
- * Text recognition for messages without a code.
- *
- * Structured output (`-Mj`, `-G`) identifies every server message by code, so
- * these patterns apply only to text with nothing else to go on: failures the
- * `p4` client prints before reaching a server, plain-text stderr, and
- * informational rows that carry only a `level`. This is the only module that
- * classifies English text; a test enforces that.
+ * Text recognition for messages without a code: failures `p4` prints before reaching a server,
+ * plain-text stderr and info rows with only a `level`. Structured output carries codes, so this
+ * is the only module that classifies English text; a test enforces that.
  */
 
 /** Ordered: the first pattern that matches the message, after its subject, wins. */
@@ -42,27 +38,19 @@ const TEXT_REASONS: ReadonlyArray<readonly [RegExp, P4Reason]> = [
   [/^usage:|invalid option|unknown option/i, 'usage'],
 ];
 
-/**
- * Remove a leading `<path> - ` so that file names cannot match a pattern.
- *
- * @param text Formatted message.
- * @returns The message without its file subject.
- */
+/** Remove a leading `<path> - ` so that file names cannot match a pattern. */
 export function stripMessageSubject(text: string): string {
   return text.replace(/^(?:\/\/|[A-Za-z]:[\\/]|\/)[^\r\n]*? - /, '');
 }
 
-/**
- * Recognize a message that carries no code.
- *
- * @param text Formatted message text.
- * @returns The first matching reason, or `'unknown'`.
- */
+/** Recognize a message that carries no code. */
 export function textReason(text: string): P4Reason {
   const subject = stripMessageSubject(text.trim());
+
   for (const [pattern, reason] of TEXT_REASONS) {
     if (pattern.test(subject)) return reason;
   }
+
   return 'unknown';
 }
 
@@ -75,33 +63,22 @@ const NOTICE_REASONS = new Set<P4Reason>([
 /**
  * Severity of a plain-text diagnostic, which carries none of its own. Known
  * empty-result notices stay warnings even when `p4` exits non-zero.
- *
- * @param reason Reason recognized from the text.
- * @param exitCode Exit code of the command that printed it.
- * @returns Numeric severity: 2 (warning) or 3 (failed).
  */
 export function textSeverity(reason: P4Reason, exitCode: number): number {
   return NOTICE_REASONS.has(reason) || exitCode === 0 ? 2 : 3;
 }
 
-/**
- * Recover a path subject from a diagnostic without a format template.
- * @param text Formatted diagnostic text.
- * @returns The path as `file`, or an empty record when absent.
- */
+/** Recover a path subject from a diagnostic without a format template. */
 export function textSubject(text: string): Readonly<Record<string, string>> {
   const match = /^(?<file>(?:\/\/|[A-Za-z]:[\\/]|\/)[^\r\n]*?) - /.exec(text);
+
   return match?.groups?.file === undefined ? {} : { file: match.groups.file };
 }
 
-/**
- * The changelist number in `p4 change -i` output (`Change 42 created.`).
- *
- * @param text Command output.
- * @returns The new changelist number, or `null` when the output names none.
- */
+/** The changelist number in `p4 change -i` output (`Change 42 created.`). */
 export function createdChangeNumber(text: string): number | null {
   const match = /^Change (\d+) created\b/m.exec(text);
+
   return match?.[1] === undefined ? null : Number(match[1]);
 }
 
@@ -109,13 +86,11 @@ export function createdChangeNumber(text: string): number | null {
  * Who else has a file open, from the notice `edit` and `add` print after a
  * refused exclusive open: `<file> - also opened by <user>@<client>` or
  * `<file> - locked by <user>@<client>`.
- *
- * @param text One message.
- * @returns The file and the holder, or `null` for any other message.
  */
 export function openHolder(text: string): { readonly file: string; readonly holder: string } | null {
   const match = /^(?<file>(?:\/\/|[A-Za-z]:[\\/]|\/)[^\r\n]*?) - (?:also opened|locked) by (?<holder>\S+)$/.exec(text.trim());
   const file = match?.groups?.file;
   const holder = match?.groups?.holder;
+
   return file === undefined || holder === undefined ? null : { file, holder };
 }

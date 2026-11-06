@@ -9,7 +9,7 @@ import { P4CategorySchema, P4ReasonSchema } from './wire/reasons.js';
  * `reason` and `category` describe the first failing message. `messages` holds
  * every message the command produced, in order.
  */
-export class P4CommandError extends Schema.TaggedError<P4CommandError>()('P4CommandError', {
+export class P4CommandError extends Schema.TaggedError<P4CommandError, { readonly brand: unique symbol }>()('P4CommandError', {
   message: Schema.String,
   reason: P4ReasonSchema,
   category: P4CategorySchema,
@@ -17,25 +17,25 @@ export class P4CommandError extends Schema.TaggedError<P4CommandError>()('P4Comm
   command: Schema.String,
   /** Arguments it ran with, credentials redacted. */
   args: Schema.Array(Schema.String),
-  exitCode: Schema.Number,
+  exitCode: Schema.Finite,
   messages: Schema.Array(P4MessageSchema),
   /** Diagnostic output on stderr, truncated to 64 KiB. */
   stderr: Schema.String,
 }) {}
 
 /** A `p4` process exceeded its timeout and was killed. */
-export class P4TimeoutError extends Schema.TaggedError<P4TimeoutError>()('P4TimeoutError', {
+export class P4TimeoutError extends Schema.TaggedError<P4TimeoutError, { readonly brand: unique symbol }>()('P4TimeoutError', {
   message: Schema.String,
   command: Schema.String,
   args: Schema.Array(Schema.String),
-  timeoutMs: Schema.Number,
+  timeoutMs: Schema.Finite,
   /** Output received before the process was killed, each truncated to 64 KiB. */
   stdout: Schema.String,
   stderr: Schema.String,
 }) {}
 
 /** Perforce output did not have the expected shape. */
-export class P4ParseError extends Schema.TaggedError<P4ParseError>()('P4ParseError', {
+export class P4ParseError extends Schema.TaggedError<P4ParseError, { readonly brand: unique symbol }>()('P4ParseError', {
   message: Schema.String,
   /** The offending output, as text, truncated to 4 KiB. */
   line: Schema.String,
@@ -46,7 +46,7 @@ export class P4ParseError extends Schema.TaggedError<P4ParseError>()('P4ParseErr
 }) {}
 
 /** The `p4` executable could not be started, or its pipes failed. */
-export class P4SpawnError extends Schema.TaggedError<P4SpawnError>()('P4SpawnError', {
+export class P4SpawnError extends Schema.TaggedError<P4SpawnError, { readonly brand: unique symbol }>()('P4SpawnError', {
   message: Schema.String,
   command: Schema.String,
   args: Schema.Array(Schema.String),
@@ -55,14 +55,14 @@ export class P4SpawnError extends Schema.TaggedError<P4SpawnError>()('P4SpawnErr
 }) {}
 
 /** A command that changes the workspace or server was refused because mutation is not allowed. */
-export class P4ReadOnlyError extends Schema.TaggedError<P4ReadOnlyError>()('P4ReadOnlyError', {
+export class P4ReadOnlyError extends Schema.TaggedError<P4ReadOnlyError, { readonly brand: unique symbol }>()('P4ReadOnlyError', {
   message: Schema.String,
   command: Schema.String,
   args: Schema.Array(Schema.String),
 }) {}
 
 /** An option passed by the caller is invalid; no command was run. */
-export class P4InvalidArgumentError extends Schema.TaggedError<P4InvalidArgumentError>()(
+export class P4InvalidArgumentError extends Schema.TaggedError<P4InvalidArgumentError, { readonly brand: unique symbol }>()(
   'P4InvalidArgumentError',
   {
     message: Schema.String,
@@ -72,7 +72,7 @@ export class P4InvalidArgumentError extends Schema.TaggedError<P4InvalidArgument
 ) {}
 
 /** Depot files could not be written safely to the requested destination. */
-export class P4MaterializationError extends Schema.TaggedError<P4MaterializationError>()(
+export class P4MaterializationError extends Schema.TaggedError<P4MaterializationError, { readonly brand: unique symbol }>()(
   'P4MaterializationError',
   {
     message: Schema.String,
@@ -99,37 +99,30 @@ export type P4Error = typeof P4ErrorSchema.Type;
 /** Serializable form of a {@link P4Error}. */
 export type P4EncodedError = typeof P4ErrorSchema.Encoded;
 
+const encodeError = Schema.encodeSync(P4ErrorSchema);
+
+const decodeError = Schema.decodeUnknownSync(P4ErrorSchema);
+
 /**
  * Encode an error as plain data, for example to send it over Electron IPC,
  * which drops the fields of `Error` subclasses.
- *
- * @param error A p4client-ts error.
- * @returns Plain data accepted by {@link decodeP4Error}.
  */
 export function encodeP4Error(error: P4Error): P4EncodedError {
-  return Schema.encodeSync(P4ErrorSchema)(error);
+  return encodeError(error);
 }
 
-/**
- * Rebuild an error from {@link encodeP4Error} output, restoring its class.
- *
- * @param encoded Plain data produced by {@link encodeP4Error}.
- * @returns The error instance, usable with `instanceof` and `Effect.catchTag`.
- * @throws {Error} When the data is not an encoded p4client-ts error.
- */
-export function decodeP4Error(encoded: unknown): P4Error {
-  return Schema.decodeUnknownSync(P4ErrorSchema)(encoded);
+/** Rebuild an error from {@link encodeP4Error} output, restoring its class. */
+export function decodeP4Error(
+  // This is the boundary decoder: it takes whatever arrived over IPC or storage and parses it here.
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- input from IPC is unknown until parsed here
+  encoded: unknown,
+): P4Error {
+  return decodeError(encoded);
 }
 
 const MAX_RETAINED = 64 * 1024;
 
-/**
- * Truncate retained output so errors stay small enough to log and send over IPC.
- *
- * @param text Output text.
- * @param limit Maximum length kept.
- * @returns The text, truncated with a marker when it was longer than `limit`.
- */
+/** Truncate retained output so errors stay small enough to log and send over IPC. */
 export function truncateOutput(text: string, limit = MAX_RETAINED): string {
   return text.length <= limit ? text : `${text.slice(0, limit)}\n… (${text.length - limit} more characters)`;
 }

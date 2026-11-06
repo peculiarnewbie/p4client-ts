@@ -1,4 +1,4 @@
-import { Effect, Stream } from 'effect';
+import { Effect, Predicate, Stream } from 'effect';
 import { streamCommand } from '../engine/command.js';
 import { drain, operation, progressCounter } from '../engine/operation.js';
 import {
@@ -16,7 +16,7 @@ import {
 import type { P4CommandSpec } from '../engine/command.js';
 import type { P4DepotPath, P4FileAction } from '../schemas.js';
 import type { P4Message } from '../wire/message.js';
-import type { Row } from './shared.js';
+import type { Field, Row } from './shared.js';
 
 /** Options for {@link getFileHistory}. */
 export interface GetFileHistoryOptions {
@@ -97,27 +97,34 @@ export interface P4FileHistory {
 }
 
 /** `#3` as 3 and `#none` as 0. */
-function revisionNumber(value: unknown, row: Row): number {
+function revisionNumber(value: Field, row: Row): number {
   const raw = text(value);
+
   if (raw === '#none') return 0;
   const match = raw === null ? null : /^#(\d+)$/.exec(raw);
-  if (match?.[1] === undefined) throw malformed(`Expected a revision such as #3, received ${String(value)}.`, row);
+
+  if (match?.[1] === undefined) throw malformed(`Expected a revision such as #3, received ${JSON.stringify(value) ?? 'nothing'}.`, row);
+
   return Number(match[1]);
 }
 
 /** The `how{n},{m}` records of revision `n`, in index order. */
 function integrations(row: Row, index: number): P4Integration[] {
   const pattern = new RegExp(`^how${index},(\\d+)$`);
+
   return Object.keys(row)
     .flatMap((key) => {
       const match = pattern.exec(key);
+
       return match?.[1] === undefined ? [] : [Number(match[1])];
     })
     .sort((left, right) => left - right)
     .map((other) => {
       const suffix = `${index},${other}`;
       const how = text(row[`how${suffix}`]);
+
       if (how === null) throw malformed('Expected an integration with a how field.', row);
+
       return {
         how,
         file: depotPath(row[`file${suffix}`], row),
@@ -127,14 +134,10 @@ function integrations(row: Row, index: number): P4Integration[] {
     });
 }
 
-/**
- * Convert a `filelog` record, one path with its revisions.
- *
- * @param row One data record.
- * @returns The path's revisions, newest first.
- */
+/** Convert a `filelog` record, one path with its revisions. */
 export function toFileRevisions(row: Row): P4FileRevision[] {
   const file = depotPath(row.depotFile, row);
+
   return indexes(row, 'rev').map((index) => ({
     depotFile: file,
     revision: positive(row[`rev${index}`], row),
@@ -154,9 +157,11 @@ export function toFileRevisions(row: Row): P4FileRevision[] {
 /** Newest first: by changelist, else by submit time; otherwise keep the input order. */
 function newestFirst(left: P4FileRevision, right: P4FileRevision): number {
   if (left.change !== null && right.change !== null) return right.change - left.change;
+
   if (left.submittedAt !== null && right.submittedAt !== null) {
     return right.submittedAt < left.submittedAt ? -1 : right.submittedAt > left.submittedAt ? 1 : 0;
   }
+
   return 0;
 }
 
@@ -164,48 +169,51 @@ function newestFirst(left: P4FileRevision, right: P4FileRevision): number {
 function merge(rows: readonly P4FileRevision[][]): P4FileRevision[] {
   const seen = new Set<string>();
   const merged: P4FileRevision[] = [];
+
   for (const revision of rows.flat()) {
     // A wide integration graph can report one path in several records.
     const key = `${revision.depotFile}#${revision.revision}`;
+
     if (seen.has(key)) continue;
     seen.add(key);
     merged.push(revision);
   }
+
   return merged.sort(newestFirst);
 }
 
 function filelogCommand(options: GetFileHistoryOptions, perPath: number | undefined): P4CommandSpec<P4FileRevision[]> {
   const args = ['filelog', '-l'];
+
   if (options.followBranches) args.push('-i');
+
   if (perPath !== undefined) args.push('-m', String(perPath));
   args.push(options.file);
+
   return { args, format: 'json', decode: toFileRevisions };
 }
 
 /**
- * Get a file's revision history with full changelist descriptions
- * (`p4 filelog -l`).
- *
- * `filelog` reports one record per path: several for a wildcard, for a renamed
- * file (its pre-rename path) and with `followBranches` (each ancestor). Their
- * revisions are merged into one newest-first list. `filelog -m` bounds each
- * path separately, so `limit + 1` revisions are requested per path and the
- * merged list is cut to `limit`. A file that does not exist gives an empty
- * history with an `empty` message.
- *
- * @returns The history.
+ * A file's revisions with full descriptions (`p4 filelog -l`), merged newest first across the
+ * paths `filelog` reports (wildcard matches, pre-rename paths, branch ancestors). `-m` bounds each
+ * path, so `limit + 1` per path are read and the merge is cut to `limit`. A missing file gives
+ * an empty history and an `empty` message.
  */
 export const getFileHistory = operation<GetFileHistoryOptions, P4FileRevision, P4FileHistory>('getFileHistory', (options, sink) =>
   Effect.gen(function* () {
     const limit = options.limit === undefined ? undefined : yield* requirePositive(options.limit, 'limit');
     const counter = progressCounter(sink, 'revisions');
+
     const events = streamCommand(filelogCommand(options, limit === undefined ? undefined : limit + 1)).pipe(
-      Stream.tap((event) => (event._tag === 'data' ? counter.advance(event.value.length) : Effect.void)),
+      Stream.tap((event) => (Predicate.isTagged(event, 'data') ? counter.advance(event.value.length) : Effect.void)),
     );
+
     const output = yield* drain(sink, events);
     const merged = merge(output.items);
     const items = limit === undefined ? merged : merged.slice(0, limit);
+
     for (const item of items) yield* sink.item(item);
+
     return {
       depotFile: output.items[0]?.[0]?.depotFile ?? null,
       items,
@@ -223,19 +231,10 @@ export interface P4FileLineage {
 }
 
 /**
- * Follow a file back through its renames in a history: from the file's
- * `move/add` revision to the path it was `moved from`, up to the revision it
- * was moved at, and so on. Revisions of other files in the history (wildcard
- * matches, branch ancestors) are left out, as are older revisions of a path
- * that a moved file replaced.
- *
- * The lineage is only as complete as the history: one cut short by `limit`
- * gives a shorter lineage, and `paths` can end in a path whose revisions the
- * history does not include.
- *
- * @param history A history from {@link getFileHistory}.
- * @param from The path to start from. Defaults to `history.depotFile`.
- * @returns The file's paths and revisions.
+ * Follow a file back through its renames: from each `move/add` to the path it was `moved from`,
+ * up to the revision it moved at. Other files in the history, and older revisions of a path a
+ * moved file replaced, are left out. It is only as complete as the history, so a `limit` can cut
+ * it short and `paths` can end in a path whose revisions are missing.
  */
 export function followMoves(
   history: Pick<P4FileHistory, 'depotFile' | 'items'>,
@@ -245,18 +244,24 @@ export function followMoves(
   const items: P4FileRevision[] = [];
   let path = from;
   let upTo = Number.POSITIVE_INFINITY;
+
   while (path !== null && !paths.includes(path)) {
     paths.push(path);
     const current: P4DepotPath = path;
+
     const revisions = history.items
       .filter((revision) => revision.depotFile === current && revision.revision <= upTo)
       .sort((left, right) => right.revision - left.revision);
+
     path = null;
+
     for (const revision of revisions) {
       items.push(revision);
+
       const moved = revision.action === 'move/add'
         ? revision.integrations.find((integration) => integration.how === 'moved from')
         : undefined;
+
       if (moved !== undefined) {
         path = moved.file;
         upTo = moved.endRevision;
@@ -264,5 +269,6 @@ export function followMoves(
       }
     }
   }
+
   return { paths, items };
 }

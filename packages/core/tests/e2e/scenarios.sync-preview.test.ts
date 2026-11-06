@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { loadE2EConfig } from "./config.js";
 import { loadFixture } from "./fixture.js";
 import { P4E2EHarness } from "./harness.js";

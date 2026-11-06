@@ -1,25 +1,31 @@
-import { Cause, Effect, Layer, Queue, Stream } from 'effect';
+import { Cause, Effect, Layer, Option, Predicate, Queue, Schema, Stream } from 'effect';
 import { spawn } from 'node:child_process';
 import { P4SpawnError } from '../errors.js';
-import { P4Executor } from '../exec/executor.js';
+import { P4Executor, P4ProcessEvent } from '../exec/executor.js';
 import { redactArgs } from '../connection/argv.js';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
-import type { P4Invocation, P4ProcessEvent } from '../exec/executor.js';
+import type { P4Invocation } from '../exec/executor.js';
+
+const { stdout: stdoutEvent, stderr: stderrEvent, exit: exitEvent } = P4ProcessEvent;
 
 function environment(overrides: P4Invocation['env']): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
+
   for (const [key, value] of Object.entries(overrides)) {
     if (value === undefined) delete env[key];
     else env[key] = value;
   }
+
   return env;
 }
 
+/** A Node system error's `code`, such as `ENOENT`. */
+const decodeSystemErrorCode = Schema.decodeUnknownOption(Schema.Struct({ code: Schema.String }));
+
 function spawnError(invocation: P4Invocation, message: string, cause: unknown): P4SpawnError {
-  const code = typeof cause === 'object' && cause !== null && 'code' in cause && typeof cause.code === 'string'
-    ? cause.code
-    : null;
+  const code = Option.match(decodeSystemErrorCode(cause), { onNone: () => null, onSome: (error) => error.code });
   const detail = cause instanceof Error ? cause.message : String(cause);
+
   return new P4SpawnError({
     message: `${message} ${detail}`,
     command: invocation.executable,
@@ -40,23 +46,21 @@ function terminate(child: ChildProcessWithoutNullStreams, closed: Promise<void>)
     child.stdin.destroy();
     child.stdout.destroy();
     child.stderr.destroy();
+
     return child.pid === undefined ? Promise.resolve() : closed;
   });
 }
 
-/**
- * Run one invocation as a stream of output chunks ending with its exit.
- *
- * @param invocation The process to run.
- * @returns Output events; interrupting the stream kills and joins the process.
- */
+/** Run one invocation as a stream of output chunks ending with its exit. */
 export function runNodeProcess(invocation: P4Invocation): Stream.Stream<P4ProcessEvent, P4SpawnError> {
   return Stream.callback<P4ProcessEvent, P4SpawnError>((queue) =>
     Effect.gen(function* () {
       let resolveClosed: () => void = () => undefined;
+
       const closed = new Promise<void>((resolve) => {
         resolveClosed = resolve;
       });
+
       const child = yield* Effect.acquireRelease(
         Effect.try({
           try: () => spawn(invocation.executable, [...invocation.args], {
@@ -69,10 +73,13 @@ export function runNodeProcess(invocation: P4Invocation): Stream.Stream<P4Proces
         }),
         (child) => terminate(child, closed),
       );
-      let stdinFailure: unknown = null;
+
+      let stdinFailure: Error | null = null;
+
       const fail = (error: P4SpawnError) => {
         Queue.failCauseUnsafe(queue, Cause.fail(error));
       };
+
       child.on('error', (cause) => fail(spawnError(invocation, 'p4 failed.', cause)));
       child.stdout.on('error', (cause) => fail(spawnError(invocation, 'Reading p4 output failed.', cause)));
       child.stderr.on('error', (cause) => fail(spawnError(invocation, 'Reading p4 output failed.', cause)));
@@ -82,18 +89,21 @@ export function runNodeProcess(invocation: P4Invocation): Stream.Stream<P4Proces
         stdinFailure = cause;
       });
       child.stdout.on('data', (bytes: Buffer) => {
-        Queue.offerUnsafe(queue, { _tag: 'stdout', bytes });
+        Queue.offerUnsafe(queue, stdoutEvent({ bytes }));
       });
       child.stderr.on('data', (bytes: Buffer) => {
-        Queue.offerUnsafe(queue, { _tag: 'stderr', bytes });
+        Queue.offerUnsafe(queue, stderrEvent({ bytes }));
       });
       child.on('close', (code) => {
         resolveClosed();
+
         if (code === 0 && stdinFailure !== null) {
           fail(spawnError(invocation, 'Writing p4 input failed.', stdinFailure));
+
           return;
         }
-        Queue.offerUnsafe(queue, { _tag: 'exit', code });
+
+        Queue.offerUnsafe(queue, exitEvent({ code }));
         Queue.endUnsafe(queue);
       });
       child.stdin.end(invocation.input);
@@ -115,10 +125,6 @@ export interface P4ProcessResult {
 /**
  * Collect a process without tagged parsing or a client runtime. This low-level
  * executor does not apply the P4 mutation guard or connection configuration.
- * @param invocation Complete executable, arguments, environment, cwd and stdin.
- * @param options Abort signal; cancellation kills and joins the child before rejecting.
- * @returns UTF-8 stdout/stderr and exitCode, including nonzero exits.
- * @throws {P4SpawnError} When launching or reading the process fails.
  */
 export function runNodeProcessPromise(
   invocation: P4Invocation,
@@ -129,17 +135,19 @@ export function runNodeProcessPromise(
     const stderr: Uint8Array[] = [];
     let exitCode: number | null = null;
     yield* runNodeProcess(invocation).pipe(Stream.runForEach((event) => Effect.sync(() => {
-      if (event._tag === 'stdout') stdout.push(event.bytes);
-      else if (event._tag === 'stderr') stderr.push(event.bytes);
+      if (Predicate.isTagged(event, 'stdout')) stdout.push(event.bytes);
+      else if (Predicate.isTagged(event, 'stderr')) stderr.push(event.bytes);
       else exitCode = event.code;
     })));
+
     return {
       stdout: Buffer.concat(stdout).toString('utf8'),
       stderr: Buffer.concat(stderr).toString('utf8'),
       exitCode,
     };
   });
-  return Effect.runPromise(output, options).catch((error: unknown) => {
-    throw options.signal?.aborted ? options.signal.reason : error;
+
+  return Effect.runPromise(output, options).catch((cause: unknown) => {
+    throw options.signal?.aborted ? options.signal.reason : cause;
   });
 }

@@ -18,11 +18,9 @@ const SUBJECT_ARGS = ['file', 'arg', 'path', 'depotFile', 'clientFile', 'argc'] 
 /**
  * Describe a per-item failure message, reading what it is about from its
  * template arguments rather than its text.
- *
- * @param message A message the operation's policy disposed as `item`.
- * @returns The failure.
  */
 export function itemFailure(message: P4Message): P4ItemFailure {
   const spec = SUBJECT_ARGS.map((key) => message.args[key]).find((value) => value !== undefined && value !== '');
+
   return { spec: spec ?? null, reason: message.reason, message };
 }

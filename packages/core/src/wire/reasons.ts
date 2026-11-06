@@ -72,7 +72,7 @@ export const P4CategorySchema = Schema.Literals([
 /** Coarse grouping of {@link P4Reason}, stable enough for UI and retry decisions. */
 export type P4Category = typeof P4CategorySchema.Type;
 
-const CATEGORIES: { readonly [Reason in P4Reason]: P4Category } = {
+const CATEGORIES = {
   server_unreachable: 'connection',
   server_config: 'configuration',
   not_logged_in: 'authentication',
@@ -112,14 +112,11 @@ const CATEGORIES: { readonly [Reason in P4Reason]: P4Category } = {
   usage: 'usage',
   invalid_revision: 'usage',
   unknown: 'unknown',
-};
+} satisfies { readonly [Reason in P4Reason]: P4Category };
 
 /**
  * The category a reason belongs to. Categories are derived, never classified
  * separately, so a reason and its category cannot disagree.
- *
- * @param reason Recognized Perforce outcome.
- * @returns The coarse category of that outcome.
  */
 export function categoryOf(reason: P4Reason): P4Category {
   return CATEGORIES[reason];
@@ -133,22 +130,12 @@ export type P4Severity = typeof P4SeveritySchema.Type;
 
 const SEVERITIES: readonly P4Severity[] = ['empty', 'info', 'warning', 'failed', 'fatal'];
 
-/**
- * Convert a numeric Perforce severity to its name. Values above `E_FATAL` are fatal.
- *
- * @param value Numeric severity from a message row or code.
- * @returns The named severity.
- */
+/** Convert a numeric Perforce severity to its name. Values above `E_FATAL` are fatal. */
 export function severityName(value: number): P4Severity {
   return SEVERITIES[Math.max(0, Math.min(4, Math.trunc(value)))] ?? 'fatal';
 }
 
-/**
- * Whether a severity is an error (`E_FAILED` or `E_FATAL`) rather than a notice.
- *
- * @param severity Named severity.
- * @returns `true` for failed and fatal messages.
- */
+/** Whether a severity is an error (`E_FAILED` or `E_FATAL`) rather than a notice. */
 export function isErrorSeverity(severity: P4Severity): boolean {
   return severity === 'failed' || severity === 'fatal';
 }

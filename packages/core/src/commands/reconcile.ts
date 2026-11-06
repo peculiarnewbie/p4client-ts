@@ -61,41 +61,39 @@ export interface P4ReconcilePreview {
 
 const ACTIONS: ReadonlySet<string> = new Set<P4ReconcileAction>(['add', 'edit', 'delete', 'move/add', 'move/delete']);
 
-/**
- * Convert a `reconcile -n` record.
- *
- * @param row One data record.
- * @returns The candidate.
- */
+const isReconcileAction = (action: string): action is P4ReconcileAction => ACTIONS.has(action);
+
+/** Convert a `reconcile -n` record. */
 export function toReconcileCandidate(row: Row): P4ReconcileCandidate {
   const decoded: P4FileAction = action(row.action, row);
-  if (!ACTIONS.has(decoded)) throw malformed(`Unsupported reconcile action "${decoded}".`, row);
+
+  if (!isReconcileAction(decoded)) throw malformed(`Unsupported reconcile action "${decoded}".`, row);
+
   return {
     depotFile: optionalDepotPath(row.depotFile, row),
     clientFile: clientFile(row.clientFile, row),
-    action: decoded as P4ReconcileAction,
+    action: decoded,
     type: text(row.type),
     change: row.change === undefined ? null : change(row.change, row),
     workRevision: integer(row.workRev, row),
   };
 }
 
-/**
- * The file spec for everything under a workspace root.
- *
- * @param root The workspace root.
- * @returns `<root>/...` with forward slashes.
- */
+/** The file spec for everything under a workspace root. */
 export function workspaceRootFileSpec(root: string): string {
   return `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/...`;
 }
 
 function reconcileCommand(options: PreviewReconcileOptions, specs: string[]): P4CommandSpec<P4ReconcileCandidate> {
   const args = ['reconcile', '-n'];
+
   if (options.change !== undefined) args.push('-c', String(options.change));
+
   if (options.useModTime) args.push('-m');
+
   if (options.includeWritable) args.push('-w');
   args.push(...specs);
+
   return { args, format: 'json', decode: toReconcileCandidate };
 }
 
@@ -105,22 +103,22 @@ function reconcileCommand(options: PreviewReconcileOptions, specs: string[]): P4
  *
  * Candidates are reported as they arrive, with an indeterminate file count:
  * `reconcile -I` prints no progress through a pipe, so none is requested.
- *
- * @returns The candidates, in output order and grouped by action.
- * @throws {P4InvalidArgumentError} When `workspace` has an empty root.
  */
 export const previewReconcile = operation<PreviewReconcileOptions, P4ReconcileCandidate, P4ReconcilePreview>(
   'previewReconcile',
   (options, sink) => Effect.gen(function* () {
     let specs = specList(options.fileSpec);
+
     if (options.fileSpec === undefined && options.workspace !== undefined) {
       if (!options.workspace.root.trim()) return yield* invalid('workspace', 'The workspace has no root.');
       specs = [workspaceRootFileSpec(options.workspace.root)];
     }
+
     const output = yield* drain(sink, streamCommand(reconcileCommand(options, specs)), {
       item: (candidate) => candidate,
       counter: progressCounter(sink, 'files'),
     });
+
     const result: P4ReconcilePreview = {
       items: output.items,
       added: output.items.filter((item) => item.action === 'add' || item.action === 'move/add'),
@@ -128,6 +126,7 @@ export const previewReconcile = operation<PreviewReconcileOptions, P4ReconcileCa
       deleted: output.items.filter((item) => item.action === 'delete' || item.action === 'move/delete'),
       messages: output.messages,
     };
+
     return result;
   }),
   'files',

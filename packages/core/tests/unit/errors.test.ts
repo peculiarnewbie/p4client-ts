@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vite-plus/test';
 import { Effect, Layer } from 'effect';
 import { runCommand } from '../../src/engine/command.js';
 import { configLayer } from '../../src/engine/config.js';
 import { P4CommandError, P4TimeoutError, decodeP4Error, encodeP4Error } from '../../src/errors.js';
 import { replayExecutor } from '../../src/testing/executor.js';
+import { expectFailure } from '../support/assert.js';
 import { corpus } from '../support/corpus.js';
 
 const commandError = () => Effect.runPromise(
@@ -22,22 +23,24 @@ describe('error codec', () => {
     const restored = decodeP4Error(transported);
     expect(restored).toBeInstanceOf(P4CommandError);
     expect(restored).toBeInstanceOf(Error);
-    expect(restored).toMatchObject({
-      _tag: 'P4CommandError',
+    expectFailure(restored, P4CommandError, {
       reason: 'ticket_expired',
       category: 'authentication',
       message: error.message,
     });
+
     if (restored instanceof P4CommandError && error instanceof P4CommandError) expect(restored.messages).toEqual(error.messages);
   });
 
   it('keeps messages plain enough to clone', async () => {
     const error = await commandError();
+
     if (!(error instanceof P4CommandError)) throw new Error('Expected a command error.');
     expect(structuredClone(error.messages)).toEqual(error.messages);
   });
 
   it('rejects data that is not an encoded error', () => {
+    // oxlint-disable-next-line anti-slop-effect/no-manual-tagged-construction -- deliberately invalid encoded data for the decoder
     expect(() => decodeP4Error({ _tag: 'Unknown' })).toThrow();
   });
 
@@ -45,6 +48,7 @@ describe('error codec', () => {
     const error = new P4TimeoutError({
       message: 'p4 info timed out after 5ms.', command: 'p4', args: ['info'], timeoutMs: 5, stdout: '', stderr: '',
     });
+
     expect(decodeP4Error(structuredClone(encodeP4Error(error)))).toBeInstanceOf(P4TimeoutError);
   });
 });

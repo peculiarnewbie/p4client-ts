@@ -1,0 +1,9 @@
+packages:
+  - packages/*
+
+# Build scripts pnpm may run. These three ship prebuilt platform packages, so their scripts only
+# rebuild from source; the docs build and tests pass without them.
+allowBuilds:
+  esbuild: false
+  msgpackr-extract: false
+  sharp: false

@@ -1,33 +1,67 @@
 export * from '../P4.js';
+
 export * from '../ops.js';
+
 export * from '../schemas.js';
+
 export * from '../errors.js';
+
 export * from '../engine/config.js';
+
 export * from '../engine/operation.js';
+
 export * from '../exec/executor.js';
+
 export * from '../wire/message.js';
+
 export * from '../wire/reasons.js';
+
 export * from '../wire/policy.js';
+
 export * from '../connection/argv.js';
+
 export * from '../connection/settings.js';
+
 export * from '../commands/annotate.js';
+
 export * from '../commands/change.js';
+
 export * from '../commands/changelists.js';
+
 export * from '../commands/describe.js';
+
 export * from '../commands/diff.js';
+
 export * from '../commands/diff-text.js';
+
 export * from '../commands/environment.js';
+
 export * from '../commands/files.js';
+
 export * from '../commands/history.js';
+
 export * from '../commands/open.js';
+
 export * from '../commands/opened.js';
+
 export * from '../commands/print.js';
+
 export * from '../commands/raw.js';
+
 export * from '../commands/reconcile.js';
+
 export * from '../commands/revert.js';
+
 export * from '../commands/streams.js';
+
 export * from '../commands/sync.js';
+
 export * from '../commands/users.js';
+
 export * from '../commands/workspaces.js';
+
 export type { P4ItemFailure, FileSpecs, Row } from '../commands/shared.js';
+
 export type { P4CommandSpec, P4CommandOutput, P4CommandEvent } from '../engine/command.js';
+
+export type { P4WireFields, P4WireValue } from '../wire/value.js';

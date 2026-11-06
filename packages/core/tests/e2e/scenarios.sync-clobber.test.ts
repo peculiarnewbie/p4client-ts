@@ -1,10 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { Predicate } from 'effect';
+import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadE2EConfig } from "./config.js";
 import { loadFixture } from "./fixture.js";
 import { P4E2EHarness } from "./harness.js";
-import type { P4OperationEvent, P4SyncItem, P4SyncResult } from '../../src/index.js';
+import { P4OperationEvent } from '../../src/index.js';
+import type { P4SyncItem, P4SyncResult } from '../../src/index.js';
 
 const config = loadE2EConfig();
 const harness = new P4E2EHarness(config, loadFixture(config));
@@ -21,16 +23,19 @@ function removeWorkspaceFiles(directory: string): void {
   for (const entry of readdirSync(directory, { withFileTypes: true, recursive: true })) {
     if (entry.isFile()) chmodSync(join(entry.parentPath, entry.name), 0o666);
   }
+
   rmSync(directory, { recursive: true, force: true });
 }
 
 describe("p4-ts e2e sync with a writable file that is not opened", () => {
   beforeAll(async () => {
     await harness.validateSeededWorkspace();
+
     for (const [relativePath, content] of [[TARGET, "target #1\n"], [OTHER, "other #1\n"]] as const) {
       mkdirSync(dirname(harness.getPath(relativePath)), { recursive: true });
       writeFileSync(harness.getPath(relativePath), content, "utf8");
     }
+
     await harness.run(["add", harness.getPath(TARGET), harness.getPath(OTHER)]);
     await harness.run(["submit", "-d", "p4-ts E2E clobber fixture"]);
 
@@ -91,11 +96,12 @@ describe("p4-ts e2e sync with a writable file that is not opened", () => {
     // The watched form classifies the same row the same way, and streams it as it arrives.
     const handle = workspace.watch.sync({ fileSpec: FILE_SPEC });
     const events: P4OperationEvent<P4SyncItem, P4SyncResult>[] = [];
+
     for await (const event of handle.events) events.push(event);
     const watched = await handle.result;
     expect(watched.failures).toEqual(result.failures);
-    expect(events.filter((event) => event._tag === 'failure')).toEqual(
-      result.failures.map((failure) => ({ _tag: 'failure', failure }))
+    expect(events.filter((event) => Predicate.isTagged(event, 'failure'))).toEqual(
+      result.failures.map((failure) => (P4OperationEvent.failure({ failure })))
     );
     expect(readFileSync(localTarget, "utf8")).toBe(LOCAL_CONTENT);
   });

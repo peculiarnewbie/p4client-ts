@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { loadE2EConfig } from "./config.js";
@@ -29,10 +29,13 @@ describe("p4-ts e2e diff inspection", () => {
         allowNonZeroExit: true
       });
     }
+
     await harness.cleanupWorkspace();
+
     if (numberedChange !== null) {
       await harness.deleteChangelistIfEmpty(numberedChange);
     }
+
     await harness.assertCleanWorkspace();
   });
 
@@ -46,18 +49,22 @@ describe("p4-ts e2e diff inspection", () => {
     await harness.run(['submit', '-d', 'p4-ts deletion diff fixture delete']);
     const changes = await harness.client.listChangelists({ status: 'submitted', fileSpec: depotFile, limit: 1 });
     const change = changes.items[0];
+
     if (!change) throw new Error('Missing submitted deletion changelist.');
     const description = await harness.client.describeChangelist({ change: change.change });
     const file = description.files[0];
+
     if (!file) throw new Error('Missing deleted file description.');
     expect(String(file.action)).toBe('delete');
     expect(file.revision).toBe(2);
+
     const diff = await harness.client.diffFile({
       file: depotFile,
       changelistStatus: 'submitted',
       action: file.action,
       revision: file.revision
     });
+
     expect(diff.fromRevision).toBe(1);
     expect(diff.toRevision).toBe('none');
     expect(diff.unifiedDiff).toContain(`${depotFile}#1`);
@@ -87,6 +94,7 @@ describe("p4-ts e2e diff inspection", () => {
     expect(openedEdit?.depotFile).toBe(editedFile.depotFile);
     expect(localFile).toBeTruthy();
     const printResult = await harness.client.printFile({ file: editedFile.depotFile, revision: 'have' });
+
     const diffResult = await harness.client.diffFile({
       file: editedFile.depotFile,
       localFile: localFile ?? undefined,
@@ -95,7 +103,7 @@ describe("p4-ts e2e diff inspection", () => {
 
     expect(printResult.isBinary).toBe(false);
     expect(printResult.content.length).toBeGreaterThan(0);
-    expect(diffResult.messages).toBeArray();
+    expect(Array.isArray(diffResult.messages)).toBe(true);
     expect(diffResult.unifiedDiff.length).toBeGreaterThan(0);
     expect(diffResult.additions + diffResult.deletions).toBeGreaterThan(0);
     expect(basename(localFile ?? '')).toBe(CONFIG_PATH.split('/').pop()!);
@@ -128,13 +136,16 @@ describe("p4-ts e2e diff inspection", () => {
       fileSpec: "...",
       limit: 50
     });
+
     const description = await harness.client.describeChangelist({ change: numberedChange,
       shelved: true
     });
+
     const summary = await harness.client.getChangelistDiffSummary({ change: numberedChange,
       shelved: true,
       includeLineCounts: true
     });
+
     const opened = await harness.client.listOpenedFiles({ change: numberedChange });
     const editedFile = description.files.find((file) => file.action === "edit");
 

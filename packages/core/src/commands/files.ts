@@ -25,7 +25,7 @@ import type { P4DrainOptions, P4ProgressCounter, P4Sink } from '../engine/operat
 import type { P4ClientPath, P4DepotPath, P4FileAction, P4LocalPath } from '../schemas.js';
 import type { P4Message } from '../wire/message.js';
 import type { P4MessagePolicy } from '../wire/policy.js';
-import type { FileSpecs, P4ItemFailure, Row } from './shared.js';
+import type { Field, FileSpecs, P4ItemFailure, Row } from './shared.js';
 
 /**
  * Policy of the commands that take several file specs (`files`, `fstat`,
@@ -46,6 +46,7 @@ const NON_TEXT_BASE_TYPES = new Set(['binary', 'apple', 'resource', 'xb', 'xbina
 function isBinaryType(type: string | null): boolean {
   if (type === null) return false;
   const base = type.toLowerCase().split('+', 1)[0] ?? '';
+
   return NON_TEXT_BASE_TYPES.has(base) || base.includes('binary') || base.includes('xb');
 }
 
@@ -57,15 +58,18 @@ function isDeleteAction(fileAction: P4FileAction | null): boolean {
 /** The last segment of a depot path. */
 function baseName(path: string): string {
   const trimmed = path.replace(/\/+$/, '');
+
   return trimmed.slice(trimmed.lastIndexOf('/') + 1);
 }
 
 /** Report items until `limit` have been reported; the extra row that sets `hasMore` is not reported. */
 function upTo<A>(limit: number | undefined, keep: (value: A) => boolean = () => true): (value: A) => A | null {
   let reported = 0;
+
   return (value) => {
     if (!keep(value) || (limit !== undefined && reported >= limit)) return null;
     reported += 1;
+
     return value;
   };
 }
@@ -120,7 +124,9 @@ export interface P4DepotList {
 
 function toDepot(row: Row): P4Depot {
   const name = text(row.name);
+
   if (name === null) throw malformed('Expected a depot with a name.', row);
+
   return {
     name,
     depotPath: depotPath(`//${name}`, row),
@@ -134,8 +140,6 @@ function toDepot(row: Row): P4Depot {
 /**
  * List the depots on the server, the roots that {@link listDepotDirs} and
  * {@link listDepotFiles} expand.
- *
- * @returns Depots, in the order Perforce lists them.
  */
 export const listDepots = operation<ListDepotsOptions, P4Depot, P4DepotList>('listDepots', (_, sink) =>
   Effect.map(
@@ -175,25 +179,26 @@ export interface P4DepotDirList {
 
 function toDepotDir(row: Row): P4DepotDir {
   const dir = depotPath(row.dir, row);
+
   return { depotDir: dir, name: baseName(dir) };
 }
 
 /**
  * List the immediate subdirectories of a depot directory, for lazy tree
  * expansion. An empty or missing directory lists nothing.
- *
- * @returns Subdirectories, in the order Perforce lists them.
  */
 export const listDepotDirs = operation<ListDepotDirsOptions, P4DepotDir, P4DepotDirList>('listDepotDirs', (options, sink) =>
   Effect.gen(function* () {
     const limit = options.limit === undefined ? undefined : yield* requirePositive(options.limit, 'limit');
     const spec = yield* atChange(`${yield* browseDirectory(options.depotPath)}/*`, options.atChange);
+
     const output = yield* drainAll(
       sink,
       { args: ['dirs', spec], format: 'json', decode: toDepotDir },
       progressCounter(sink, 'records'),
       upTo(limit),
     );
+
     return {
       items: limit === undefined ? output.items : output.items.slice(0, limit),
       messages: output.messages,
@@ -239,6 +244,7 @@ function toDepotFile(row: Row): P4DepotFile {
   const depotFile = depotPath(row.depotFile, row);
   const fileAction = optionalAction(row.action, row);
   const type = text(row.type);
+
   return {
     depotFile,
     name: baseName(depotFile),
@@ -275,8 +281,6 @@ export interface ListDepotFilesOptions {
 /**
  * List the immediate files of a depot directory at their head revision (or at
  * `atChange`). An empty or missing directory lists nothing.
- *
- * @returns Files, in the order Perforce lists them.
  */
 export const listDepotFiles = operation<ListDepotFilesOptions, P4DepotFile, P4DepotFileList>('listDepotFiles', (options, sink) =>
   Effect.gen(function* () {
@@ -284,17 +288,22 @@ export const listDepotFiles = operation<ListDepotFilesOptions, P4DepotFile, P4De
     const spec = yield* atChange(`${yield* browseDirectory(options.depotPath)}/*`, options.atChange);
     const deleted = options.deletedFiles ?? 'exclude';
     const args = ['files'];
+
     if (deleted === 'exclude') args.push('-e');
+
     if (deleted !== 'only' && limit !== undefined) args.push('-m', String(limit + 1));
     args.push(spec);
     const keep = (file: P4DepotFile) => deleted !== 'only' || file.isDeletedAtHead;
+
     const output = yield* drainAll(
       sink,
       { args, format: 'json', decode: toDepotFile },
       progressCounter(sink, 'files', deleted === 'only' ? null : limit ?? null),
       upTo(limit, keep),
     );
+
     const files = output.items.filter(keep);
+
     return {
       items: limit === undefined ? files : files.slice(0, limit),
       messages: output.messages,
@@ -316,24 +325,27 @@ export interface ListFilesOptions {
  * List the files matching several specs with `p4 files`. A spec that matches
  * nothing (no such file, no such revision, not in the view) is reported in
  * `failures` and does not fail the others.
- *
- * @returns Files, with one failure per spec that matched nothing.
  */
 export const listFiles = operation<ListFilesOptions, P4DepotFile, P4FileList>('listFiles', (options, sink) =>
   Effect.gen(function* () {
     const limit = options.limit === undefined ? undefined : yield* requirePositive(options.limit, 'limit');
     const specs = specList(options.fileSpec);
+
     if (specs.length === 0) return { items: [], messages: [], failures: [], hasMore: false };
     const args = ['files'];
+
     if (options.existing) args.push('-e');
+
     if (limit !== undefined) args.push('-m', String(limit + 1));
     args.push(...specs);
+
     const output = yield* drainAll(
       sink,
       { args, format: 'json', policy: FILE_SPEC_POLICY, decode: toDepotFile },
       progressCounter(sink, 'files', limit ?? null),
       upTo(limit),
     );
+
     return {
       items: limit === undefined ? output.items : output.items.slice(0, limit),
       messages: output.messages,
@@ -387,28 +399,32 @@ function toDepotFileRevision(row: Row): P4DepotFileRevision {
  * List the exact revisions under a depot path when a submitted changelist was
  * created, with `p4 files -e`, so deleted, purged and archived revisions are
  * left out. A path with no files at that changelist lists nothing.
- *
- * @returns Revisions, bounded by `limit`.
  */
 export const listDepotFilesAtChange = operation<
   ListDepotFilesAtChangeOptions, P4DepotFileRevision, P4DepotFileRevisionList
 >('listDepotFilesAtChange', (options, sink) =>
   Effect.gen(function* () {
     const limit = yield* requirePositive(options.limit, 'limit');
+
     if (limit >= Number.MAX_SAFE_INTEGER) {
       return yield* invalid('limit', 'limit must be smaller than Number.MAX_SAFE_INTEGER.');
     }
+
     const changeNumber = yield* requirePositive(options.change, 'change');
+
     if (!options.file.startsWith('//') || /[#@]/.test(options.file)) {
       return yield* invalid('file', 'file must use depot syntax without a revision specifier.');
     }
+
     const args = ['files', '-e', '-m', String(limit + 1), `${options.file}@${changeNumber}`];
+
     const output = yield* drainAll(
       sink,
       { args, format: 'json', decode: toDepotFileRevision },
       progressCounter(sink, 'files', limit),
       upTo(limit),
     );
+
     return {
       items: output.items.slice(0, limit),
       messages: output.messages,
@@ -493,6 +509,7 @@ function toFileStat(row: Row): P4FileStat {
   const isDeletedAtHead = isDeleteAction(headAction);
   const openAction = optionalAction(row.action, row);
   const keys = Object.keys(row);
+
   return {
     depotFile: depotPath(row.depotFile, row),
     localFile: localPath(row.clientFile, row),
@@ -520,29 +537,36 @@ function toFileStat(row: Row): P4FileStat {
 /**
  * Read depot, workspace and open state of files with one `p4 fstat`. A spec
  * that matches nothing is reported in `failures` and does not fail the others.
- *
- * @returns File state, with one failure per spec that matched nothing.
  */
 export const statFiles = operation<StatFilesOptions, P4FileStat, P4FileStatList>('statFiles', (options, sink) =>
   Effect.gen(function* () {
     const specs = specList(options.fileSpec);
     const limit = options.limit === undefined ? undefined : yield* requirePositive(options.limit, 'limit');
     const scoped: string[] = [];
+
     for (const spec of specs) scoped.push(yield* atChange(spec, options.atChange));
+
     if (scoped.length === 0) return { items: [], messages: [], failures: [] };
     const args = ['fstat'];
+
     if (options.includeFileSize) args.push('-Ol');
+
     if (options.excludeWorkspaceData) args.push('-Os');
+
     if (limit !== undefined) args.push('-m', String(limit));
+
     if (options.fields !== undefined && options.fields.length > 0) {
       args.push('-T', [...new Set(['depotFile', ...options.fields])].join(' '));
     }
+
     args.push(...scoped);
+
     const output = yield* drainAll(
       sink,
       { args, format: 'json', policy: FILE_SPEC_POLICY, decode: toFileStat },
       progressCounter(sink, 'files', limit ?? null),
     );
+
     return { items: output.items, messages: output.messages, failures: output.failures.map(itemFailure) };
   }), 'files');
 
@@ -572,13 +596,15 @@ export interface P4WhereMappingList {
   readonly failures: P4ItemFailure[];
 }
 
-function unexcluded(value: unknown): string | null {
+function unexcluded(value: Field): string | null {
   const trimmed = text(value);
+
   return trimmed === null ? null : trimmed.replace(/^-/, '');
 }
 
 function toWhereMapping(row: Row): P4WhereMapping {
   const client = unexcluded(row.clientFile);
+
   return {
     depotFile: depotPath(unexcluded(row.depotFile), row),
     clientFile: client === null ? null : decodeField(P4ClientPathSchema, client, row),
@@ -591,18 +617,19 @@ function toWhereMapping(row: Row): P4WhereMapping {
  * Map file specs between depot, client and local syntax with `p4 where`. A
  * view with overlapping or exclusion lines can map a spec to several rows. A
  * spec outside the workspace view is reported in `failures`.
- *
- * @returns Mappings, with one failure per spec outside the view.
  */
 export const whereFiles = operation<WhereFilesOptions, P4WhereMapping, P4WhereMappingList>('whereFiles', (options, sink) =>
   Effect.gen(function* () {
     const specs = specList(options.fileSpec);
+
     if (specs.length === 0) return { items: [], messages: [], failures: [] };
+
     const output = yield* drainAll(
       sink,
       { args: ['where', ...specs], format: 'json', policy: FILE_SPEC_POLICY, decode: toWhereMapping },
       progressCounter(sink, 'files'),
     );
+
     return { items: output.items, messages: output.messages, failures: output.failures.map(itemFailure) };
   }), 'files');
 
@@ -632,6 +659,7 @@ export interface P4HaveFileList {
 
 function toHaveFile(row: Row): P4HaveFile {
   const client = text(row.clientFile);
+
   return {
     depotFile: depotPath(row.depotFile, row),
     clientFile: client === null ? null : decodeField(P4ClientPathSchema, client, row),
@@ -645,16 +673,16 @@ function toHaveFile(row: Row): P4HaveFile {
  * List the file revisions the workspace has, with `p4 have`. A given spec the
  * workspace has nothing for is reported in `failures`; with no specs, an empty
  * workspace lists nothing.
- *
- * @returns Files the workspace has.
  */
 export const listHaveFiles = operation<ListHaveFilesOptions, P4HaveFile, P4HaveFileList>('listHaveFiles', (options, sink) =>
   Effect.gen(function* () {
     const specs = specList(options.fileSpec);
+
     const output = yield* drainAll(
       sink,
       { args: ['have', ...specs], format: 'json', policy: specs.length > 0 ? FILE_SPEC_POLICY : undefined, decode: toHaveFile },
       progressCounter(sink, 'files'),
     );
+
     return { items: output.items, messages: output.messages, failures: output.failures.map(itemFailure) };
   }), 'files');

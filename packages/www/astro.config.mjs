@@ -1,6 +1,5 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
-import starlightTypeDoc, { typeDocSidebarGroup } from "starlight-typedoc";
 
 export default defineConfig({
   site: "https://p4client-ts.peculiarnewbie.com",
@@ -24,37 +23,7 @@ export default defineConfig({
             { label: "Testing and Fixtures", link: "/guides/testing-and-fixtures/" },
             { label: "Changelog", link: "/changelog/" }
           ]
-        },
-        {
-          ...typeDocSidebarGroup,
-          label: "API",
-          collapsed: false
         }
-      ],
-      plugins: [
-        starlightTypeDoc({
-          entryPoints: ["../core/src/index.ts", "../core/src/node/index.ts", "../core/src/promise/index.ts", "../core/src/testing/index.ts"],
-          tsconfig: "../core/tsconfig.json",
-          output: "api",
-          sidebar: {
-            label: "API",
-            collapsed: false
-          },
-          typeDoc: {
-            hideGenerator: true,
-            treatWarningsAsErrors: true,
-            externalSymbolLinkMappings: {
-              effect: {
-                "BottomWithoutNew.make": "https://effect.website/docs/v4/api/effect/Schema",
-                "BottomWithoutNew.makeOption": "https://effect.website/docs/v4/api/effect/Schema",
-                "BottomWithoutNew.makeEffect": "https://effect.website/docs/v4/api/effect/Schema",
-                withConstructorDefault: "https://effect.website/docs/v4/api/effect/Schema"
-              }
-            },
-            readme: "none",
-            sort: ["source-order"]
-          }
-        })
       ]
     })
   ]

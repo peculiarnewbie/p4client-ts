@@ -8,15 +8,12 @@ hero:
     - text: Getting Started
       link: /guides/getting-started/
       icon: right-arrow
-    - text: API Reference
-      link: /api/
-      variant: minimal
 ---
 
 Install `p4client-ts` and its Effect peer dependency:
 
 ```sh
-bun add p4client-ts effect@4.0.4
+pnpm add p4client-ts effect@4.0.4
 ```
 
 An app whose workspace root still pins a beta `effect` can isolate the library in a
@@ -32,6 +29,7 @@ import { createP4Client } from 'p4client-ts/promise';
 const client = createP4Client({
   connection: { port: 'ssl:perforce:1666', user: 'alice', client: 'alice_ws' },
 });
+
 try {
   const pending = await client.listChangelists({ status: 'pending' });
   console.log(pending.items, pending.messages);
