@@ -61,7 +61,6 @@ export interface Fixture {
   readonly projectRoot: string;
   readonly baselineChange: number;
   readonly pauseServer: () => Promise<void>;
-  readonly resumeServer: () => Promise<void>;
   readonly p4dExecutable: string;
   readonly serverRoot: string;
   readonly stop: () => Promise<void>;
@@ -728,10 +727,6 @@ export async function startFixture(options: { readonly unicode?: boolean } = {})
       pauseServer: () => Effect.runPromise(Effect.promise(() => stopServer(server, binaries.p4, environment, operationRoot)).pipe(
         Effect.tap(() => Effect.sync(() => { server = undefined; }))
       )),
-      resumeServer: () => Effect.runPromise(Effect.gen(function* () {
-        server = yield* Effect.sync(startServer);
-        yield* Effect.promise(() => waitForServer(binaries.p4, environment, operationRoot));
-      })),
       stop
     };
   } catch (error) {
