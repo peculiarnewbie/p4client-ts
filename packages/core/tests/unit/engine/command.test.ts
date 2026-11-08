@@ -6,9 +6,10 @@ import {
   P4CommandError,
   P4ParseError,
   P4ReadOnlyError,
+  P4SpawnError,
   P4TimeoutError,
 } from '../../../src/errors.js';
-import { P4Executor } from '../../../src/exec/executor.js';
+import { P4Executor, P4ProcessEvent } from '../../../src/exec/executor.js';
 import { expectFailure } from '../../support/assert.js';
 import { recordingExecutor, replayExecutor, scriptedExecutor } from '../../../src/testing/executor.js';
 import { fixtureStdout } from '../../../src/testing/fixture.js';
@@ -59,6 +60,54 @@ const fields = (args: string[]): P4CommandSpec<P4WireFields> => ({
   args,
   format: 'json',
   decode: (row) => row,
+});
+
+describe('executor completion contract', () => {
+  const stdout = P4ProcessEvent.stdout({ bytes: new TextEncoder().encode('{"depotFile":"//d/a.txt"}\n') });
+  const stderr = P4ProcessEvent.stderr({ bytes: new TextEncoder().encode('notice\n') });
+  const exit = P4ProcessEvent.exit({ code: 0 });
+
+  const consumers = [
+    () => Effect.asVoid(runCommand(fields(['files', '//d/...']))),
+    () => Effect.asVoid(Stream.runCollect(streamCommand(fields(['files', '//d/...'])))),
+    () => Effect.asVoid(runPlainCommand({ args: ['diff2', 'a', 'b'] })),
+  ];
+
+  for (const [name, events] of [
+    ['empty EOF', []],
+    ['stdout EOF', [stdout]],
+    ['stderr EOF', [stderr]],
+    ['unfinished record EOF', [stdout, P4ProcessEvent.stdout({ bytes: new TextEncoder().encode('{') })]],
+    ['stdout after exit', [exit, stdout]],
+    ['stderr after exit', [exit, stderr]],
+    ['repeated exit', [exit, exit]],
+  ] satisfies Array<[string, P4ProcessEvent[]]>) {
+    it(`rejects ${name} in every collector`, async () => {
+      for (const consume of consumers) {
+        const error = await failure(consume(), Layer.succeed(P4Executor, { run: () => Stream.fromIterable<P4ProcessEvent>(events) }));
+        expectFailure(error, P4ParseError, { command: 'p4' });
+        expect(error.message).toContain('executor contract');
+      }
+    });
+  }
+
+  it('accepts stdout followed by a single exit in every collector', async () => {
+    for (const consume of consumers) {
+      await run(consume(), Layer.succeed(P4Executor, { run: () => Stream.make(stdout, exit) }));
+    }
+  });
+
+  it('preserves an upstream spawn failure instead of reporting missing exit', async () => {
+    const original = new P4SpawnError({ message: 'pipe failed', command: 'p4', args: [], code: 'EPIPE' });
+
+    for (const consume of consumers) {
+      const error = await failure(consume(), Layer.succeed(P4Executor, {
+        run: () => Stream.concat(Stream.make(stdout), Stream.fail(original)),
+      }));
+
+      expect(error).toBe(original);
+    }
+  });
 });
 
 describe('structured commands', () => {

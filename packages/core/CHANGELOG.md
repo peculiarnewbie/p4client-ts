@@ -4,6 +4,14 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
+## Unreleased
+
+### Fixed
+
+- Reject executor streams that end without an exit event or emit events after exit.
+- Reject known-size binary print content whose received byte count differs from its stored size.
+- Compare submitted revisions in changelist diff summaries even when shelving was requested.
+
 ## 0.14.0 - 2026-11-05
 
 ### Breaking changes

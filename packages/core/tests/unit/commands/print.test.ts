@@ -8,12 +8,95 @@ import { argvCase, argvTable, failure, fixtureTime, fixtures, replay, run, watch
 import { asAction, asDepotPath } from '../../support/values.js';
 import type { P4WireFields } from '../../../src/wire/value.js';
 import type { P4CommandSpec } from '../../../src/engine/command.js';
-import { P4CommandError, P4InvalidArgumentError } from '../../../src/errors.js';
+import { P4CommandError, P4InvalidArgumentError, P4ParseError } from '../../../src/errors.js';
 import { expectFailure } from '../../support/assert.js';
 
 const MARSHAL = ['-G'];
 const BATCH_INPUT = '//p4ts/main/wire/text.txt\n//p4ts/main/wire/full.uasset\n//p4ts/main/missing.txt\n//p4ts/main/wire/wide.txt\n';
 const encoder = new TextEncoder();
+
+function marshalRecord(fields: Record<string, string>): Buffer {
+  const string = (value: string) => {
+    const bytes = Buffer.from(value);
+    const length = Buffer.alloc(4);
+    length.writeInt32LE(bytes.length);
+
+    return Buffer.concat([Buffer.from('s'), length, bytes]);
+  };
+
+  return Buffer.concat([
+    Buffer.from('{'),
+    ...Object.entries(fields).flatMap(([key, value]) => [string(key), string(value)]),
+    Buffer.from('0'),
+  ]);
+}
+
+describe('print content size', () => {
+  const stat = (fileSize: string, type = 'binary') => marshalRecord({
+    code: 'stat', depotFile: '//d/a.bin', rev: '1', type, fileSize,
+  });
+
+  const chunk = (data: string) => marshalRecord({ code: 'binary', data });
+
+  const boundaries = [
+    ['EOF', Buffer.alloc(0)],
+    ['next stat', stat('0')],
+    ['missing spec', marshalRecord({ code: 'error', data: '//d/missing - no such file(s).\n', generic: '17', severity: '2' })],
+  ] as const;
+
+  for (const size of ['1', '4']) {
+    for (const [boundary, end] of boundaries) {
+      it(`rejects binary size ${size} with two bytes at ${boundary} before publishing`, async () => {
+        const executor = scriptedExecutor(() => ({ stdout: Buffer.concat([stat(size), chunk('a'), chunk('b'), end]) }), { chunkSize: 3 });
+
+        if (boundary !== 'missing spec') {
+          expectFailure(await failure(printFile, { file: '//d/a.bin' }, executor), P4ParseError);
+        }
+
+        const published: unknown[] = [];
+
+        const error = await Effect.runPromise(printBatch.program({ fileSpec: ['//d/a.bin', '//d/missing'] }, {
+          item: (item) => Effect.sync(() => { published.push(item); }),
+          message: () => Effect.void,
+          failure: () => Effect.void,
+          progress: () => Effect.void,
+        }).pipe(Effect.provide(Layer.merge(executor, configLayer({}))), Effect.flip));
+
+        expectFailure(error, P4ParseError);
+        expect(published).toEqual([]);
+      });
+    }
+  }
+
+  // A +k binary's fileSize is its keyword-expanded size, so a raw print is shorter (seen on Helix
+  // Core 2024.2: 26 raw bytes against fileSize 66).
+  for (const type of ['binary+k', 'binary+ko', 'binary+Fk', 'binary+kC', 'ubinary+kSn']) {
+    it(`accepts a raw ${type} print shorter than its expanded fileSize`, async () => {
+      const executor = scriptedExecutor(() => ({ stdout: Buffer.concat([stat('66', type), chunk('$Id$')]) }));
+      const file = await run(printFile, { file: '//d/a.bin' }, executor);
+      expect(file.content.length).toBe(4);
+    });
+  }
+
+  it('accepts exact and zero binary sizes including split content', async () => {
+    for (const [size, chunks] of [['2', [chunk('a'), chunk('b')]], ['0', []]] as const) {
+      const executor = scriptedExecutor(() => ({ stdout: Buffer.concat([stat(size), ...chunks]) }), { chunkSize: 1 });
+      const file = await run(printFile, { file: '//d/a.bin' }, executor);
+      expect(file.content.length).toBe(Number(size));
+      const batch = await run(printBatch, { fileSpec: ['//d/a.bin'] }, executor);
+      expect(batch.printed).toHaveLength(1);
+      expect(batch.items[0]?.content).toEqual(file.content);
+    }
+  });
+
+  it('allows expanded text keywords to differ from stored size', async () => {
+    const file = await run(printFile, { file: '//d/a.bin', keywords: 'expand' }, scriptedExecutor(() => ({
+      stdout: Buffer.concat([stat('4', 'text+k'), marshalRecord({ code: 'text', data: '$Id: expanded $' })]),
+    })));
+
+    expect(printedText(file)).toBe('$Id: expanded $');
+  });
+});
 
 function collect<A>(spec: P4CommandSpec<A>, ...names: string[]) {
   return Effect.runPromise(runCommand(spec).pipe(Effect.provide(Layer.merge(replay(...names), configLayer({})))));

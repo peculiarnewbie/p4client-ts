@@ -96,6 +96,29 @@ export interface P4PlainOutput {
 
 type Context = P4Executor | P4Config;
 
+type ProcessState =
+  | { readonly _tag: 'Reading' }
+  | { readonly _tag: 'Exited'; readonly code: number | null };
+
+const ProcessState = Data.taggedEnum<ProcessState>();
+const ProcessEnd = Data.taggedEnum<{ readonly _tag: 'eof' }>();
+
+function transitionProcess(state: ProcessState, event: P4ProcessEvent | { readonly _tag: 'eof' }, reader: OutputReader): ProcessState {
+  if (Predicate.isTagged(event, 'eof')) {
+    if (Predicate.isTagged(state, 'Reading')) {
+      throw reader.parseError('Perforce executor contract violated.', '', 'Stream ended without an exit event.');
+    }
+
+    return state;
+  }
+
+  if (Predicate.isTagged(state, 'Exited')) {
+    throw reader.parseError('Perforce executor contract violated.', '', `Received ${event._tag} after exit ${state.code}.`);
+  }
+
+  return Predicate.isTagged(event, 'exit') ? ProcessState.Exited({ code: event.code }) : state;
+}
+
 function invocation(
   options: P4ResolvedOptions,
   format: P4OutputFormat,
@@ -359,8 +382,16 @@ function processStream<A>(
     }
 
     const reader = new OutputReader(run, format, spec.policy);
+    let state: ProcessState = ProcessState.Reading();
 
     const events = executor.run(run).pipe(
+      Stream.concat(Stream.make(ProcessEnd.eof())),
+      Stream.mapEffect((event) => attempt(reader, () => {
+        state = transitionProcess(state, event, reader);
+
+        return event;
+      })),
+      Stream.filter((event): event is P4ProcessEvent => !Predicate.isTagged(event, 'eof')),
       Stream.mapEffect((event: P4ProcessEvent): Effect.Effect<Array<P4CommandEvent<A>>, P4Error> => {
         if (Predicate.isTagged(event, 'stderr')) {
           return Effect.sync((): Array<P4CommandEvent<A>> => {
