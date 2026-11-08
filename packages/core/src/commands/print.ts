@@ -177,6 +177,14 @@ function printFiles(spec: P4CommandSpec<PrintRecord>, handlers: PrintHandlers): 
       const item = { file: current.info, content: concat(current.chunks) };
       current = null;
 
+      // Only byte-preserving binary types have the stored size on the wire.
+      if (item.file.fileSize !== null && /^u?binary(?:\+[A-Za-z0-9]+)?$/.test(item.file.type ?? '')
+        && item.content.length !== item.file.fileSize) {
+        return Effect.fail(malformed('print binary content size does not match fileSize.', {
+          depotFile: item.file.depotFile, expected: item.file.fileSize, received: item.content.length,
+        }));
+      }
+
       return handlers.file(item);
     });
 
