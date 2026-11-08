@@ -256,7 +256,7 @@ export const getChangelistDiffSummary = operation<
     for (const message of messages) yield* sink.message(message);
     const byDepotFile = new Map(opened.flatMap((file) => file.depotFile === null ? [] : [[file.depotFile, file] as const]));
     const counter = progressCounter(sink, 'files', changelist.files.length);
-    const status = shelved ? 'shelved' : changelist.status === 'submitted' ? 'submitted' : 'pending';
+    const status = changelist.status;
     const shelvedChange = changelist.change === 'default' ? undefined : changelist.change;
 
     const files = yield* Effect.forEach(changelist.files, (file) => Effect.gen(function* () {

@@ -180,6 +180,31 @@ describe('diff2 output formats', () => {
 });
 
 describe('getChangelistDiffSummary', () => {
+  it('uses submitted revisions and counts when shelving was requested for a submitted change', async () => {
+    const diffCalls: string[][] = [];
+
+    const summary = await run(getChangelistDiffSummary, {
+      change: 7, shelved: true, includeLineCounts: true,
+    }, scriptedExecutor((invocation) => {
+      if (invocation.args.includes('describe')) {
+        expect(invocation.args).toContain('-S');
+
+        return { stdout: describeRow('submitted', [['//d/a.txt', 'edit', 3]]) };
+      }
+
+      diffCalls.push([...invocation.args]);
+
+      return { stdout: invocation.args.includes('//d/a.txt@=7')
+        ? '@@ -1 +1,2 @@\n-old\n+shelf\n+extra\n'
+        : '@@ -1 +1 @@\n-old\n+submitted\n' };
+    }));
+
+    expect(summary.changelist.status).toBe('submitted');
+    expect(summary.files[0]).toMatchObject({ additions: 1, deletions: 1 });
+    expect(diffCalls).toHaveLength(1);
+    expect(diffCalls[0]?.slice(-4)).toEqual(['diff2', '-du', '//d/a.txt#2', '//d/a.txt#3']);
+  });
+
   it('summarizes the default changelist from one opened -c default, with line counts', async () => {
     const summary = await run(getChangelistDiffSummary, {
       change: 'default', includeLineCounts: true,
