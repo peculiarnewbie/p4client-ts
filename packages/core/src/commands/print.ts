@@ -177,8 +177,11 @@ function printFiles(spec: P4CommandSpec<PrintRecord>, handlers: PrintHandlers): 
       const item = { file: current.info, content: concat(current.chunks) };
       current = null;
 
-      // Only byte-preserving binary types have the stored size on the wire.
-      if (item.file.fileSize !== null && /^u?binary(?:\+[A-Za-z0-9]+)?$/.test(item.file.type ?? '')
+      // fileSize is the synced size. Binary files without keyword expansion print exactly that many
+      // bytes; text converts line endings and charsets, and +k/+ko expand keywords, so their raw
+      // print (`-k`, the default) legitimately differs from fileSize.
+      if (item.file.fileSize !== null && /^u?binary(?:\+[A-Za-z0-9]*)?$/.test(item.file.type ?? '')
+        && !/\+[A-Za-z0-9]*k/.test(item.file.type ?? '')
         && item.content.length !== item.file.fileSize) {
         return Effect.fail(malformed('print binary content size does not match fileSize.', {
           depotFile: item.file.depotFile, expected: item.file.fileSize, received: item.content.length,

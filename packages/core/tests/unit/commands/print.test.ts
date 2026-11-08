@@ -68,6 +68,16 @@ describe('print content size', () => {
     }
   }
 
+  // A +k binary's fileSize is its keyword-expanded size, so a raw print is shorter (seen on Helix
+  // Core 2024.2: 26 raw bytes against fileSize 66).
+  for (const type of ['binary+k', 'binary+ko', 'binary+Fk', 'binary+kC', 'ubinary+kSn']) {
+    it(`accepts a raw ${type} print shorter than its expanded fileSize`, async () => {
+      const executor = scriptedExecutor(() => ({ stdout: Buffer.concat([stat('66', type), chunk('$Id$')]) }));
+      const file = await run(printFile, { file: '//d/a.bin' }, executor);
+      expect(file.content.length).toBe(4);
+    });
+  }
+
   it('accepts exact and zero binary sizes including split content', async () => {
     for (const [size, chunks] of [['2', [chunk('a'), chunk('b')]], ['0', []]] as const) {
       const executor = scriptedExecutor(() => ({ stdout: Buffer.concat([stat(size), ...chunks]) }), { chunkSize: 1 });
