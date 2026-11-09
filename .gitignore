@@ -6,3 +6,5 @@ packages/core/.captures/
 .astro
 packages/www/dist
 .vite-plus
+.env
+.env.*

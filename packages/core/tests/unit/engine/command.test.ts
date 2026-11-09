@@ -335,7 +335,7 @@ describe('command invocation', () => {
     expect(invocation?.executable).toBe('C:/p4/p4.exe');
     expect(invocation?.args).toEqual([
       '-p', 'ssl:p4:1666', '-u', 'arif', '-c', 'ws', '-C', 'utf8',
-      '-zprog=p4client-ts', '-zversion=0.14.0', '-Mj', '-z', 'tag', 'info',
+      '-zprog=p4client-ts', '-zversion=0.15.0', '-Mj', '-z', 'tag', 'info',
     ]);
     expect(invocation?.cwd).toBe('C:/ws');
     expect(invocation?.env).toEqual({ P4CLIENT: undefined, P4CONFIG: 'p4client-ts.isolated-no-config', P4ENVIRO: 'p4client-ts.isolated-no-enviro' });
