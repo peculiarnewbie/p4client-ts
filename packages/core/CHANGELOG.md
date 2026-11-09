@@ -4,13 +4,20 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
-## Unreleased
+## 0.15.0 - 2026-11-10
 
 ### Fixed
 
 - Reject executor streams that end without an exit event or emit events after exit.
-- Reject known-size binary print content whose received byte count differs from its stored size.
-- Compare submitted revisions in changelist diff summaries even when shelving was requested.
+- Reject binary print content whose received byte count differs from its stored size, so a
+  truncated print fails instead of returning short bytes. Binaries with keyword expansion
+  (`+k`, `+ko`) are exempt, because their stored size is the expanded size.
+- Changelist diff summaries report the changelist's own status, so a submitted changelist
+  is compared as submitted even when shelving was requested.
+
+### Changed
+
+- Built and tested against Effect 4.1.2. The peer range stays `^4.0.0`.
 
 ## 0.14.0 - 2026-11-05
 

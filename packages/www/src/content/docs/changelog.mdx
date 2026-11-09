@@ -5,6 +5,15 @@ description: Release notes for p4client-ts.
 
 All notable changes to `p4client-ts` are documented here.
 
+## 0.15.0 - 2026-11-10
+
+### Fixed
+
+- A command whose output ends without an exit, or keeps going after it, now fails.
+- A binary print that returns fewer bytes than the stored size fails instead of returning short
+  content. Binaries with keyword expansion (`+k`, `+ko`) are exempt.
+- Changelist diff summaries report the changelist's own status.
+
 ## 0.14.0 - 2026-11-05
 
 ### Breaking changes
