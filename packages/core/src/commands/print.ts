@@ -1,5 +1,5 @@
 import { Data, Effect, Predicate, Stream } from 'effect';
-import { streamCommand } from '../engine/command.js';
+import { sameOnStdin, streamCommand } from '../engine/command.js';
 import { operation, progressCounter } from '../engine/operation.js';
 import { fileAtRevision, isBinaryP4Type } from './diff-text.js';
 import {
@@ -72,8 +72,9 @@ export interface P4PrintedFile extends P4PrintedFileInfo {
   readonly content: Uint8Array;
   readonly isBinary: boolean;
   /**
-   * Whether `maxBytes` cut the content short. `p4` was stopped there, so
-   * `content` is shorter than `fileSize` and later messages were not read.
+   * Whether `maxBytes` cut the content short; later messages were not read. `fileSize` is
+   * still the whole revision's (for a binary type, the bytes a full print returns). To read
+   * more, print again with a larger `maxBytes`: `p4 print` cannot resume.
    */
   readonly isTruncated: boolean;
   readonly messages: P4Message[];
@@ -299,16 +300,16 @@ export const printFile = operation<PrintFileOptions, never, P4PrintedFile>('prin
   }), 'files');
 
 /**
- * Print several revisions as bytes with one `p4 -G -x - print`, specs on stdin. Each file is
- * reported once complete; a spec matching nothing is a per-item failure. Progress counts files
- * against the specs (a wildcard can print more, which clears the total) and bytes.
+ * Print several revisions as bytes with `p4 -G -x - print`, ASCII specs on stdin; a list with
+ * other characters goes as arguments, in several commands when long. Each file is reported once
+ * complete; a spec matching nothing is a per-item failure. Progress counts files and bytes.
  */
 export const printBatch = operation<PrintBatchOptions, P4PrintedBatchItem, P4PrintBatchResult>('printBatch', (options, sink) =>
   Effect.gen(function* () {
     if (options.fileSpec.length === 0) return yield* invalid('fileSpec', 'printBatch needs at least one file.');
 
-    if (options.fileSpec.some((file) => /[\r\n]/.test(file) || file.length === 0)) {
-      return yield* invalid('fileSpec', 'File specs must be non-empty and on one line.');
+    if (options.fileSpec.some((file) => /[\r\n]/.test(file) || file.length === 0 || file.startsWith('-'))) {
+      return yield* invalid('fileSpec', 'File specs must be non-empty, on one line, and not start with "-".');
     }
 
     const total = options.fileSpec.length;
@@ -322,10 +323,15 @@ export const printBatch = operation<PrintBatchOptions, P4PrintedBatchItem, P4Pri
       return Effect.void;
     });
 
+    // Stdin carries UTF-8, the command line the client's code page: a list with another
+    // character goes as arguments, so each spec names the file printFile would.
+    const specs = options.fileSpec.every(sameOnStdin)
+      ? { globalArgs: ['-x', '-'], input: `${options.fileSpec.join('\n')}\n` }
+      : { files: options.fileSpec };
+
     yield* printFiles({
       args: printArgs(options.keywords),
-      globalArgs: ['-x', '-'],
-      input: `${options.fileSpec.join('\n')}\n`,
+      ...specs,
       format: 'marshal',
       policy: BATCH_POLICY,
       decode: toPrintRecord,

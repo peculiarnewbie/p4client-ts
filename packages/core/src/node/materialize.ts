@@ -2,7 +2,7 @@ import { Data, Duration, Effect, Predicate, Schedule, Schema, Stream } from 'eff
 import { randomUUID } from 'node:crypto';
 import { chmod, copyFile, mkdir, mkdtemp, open, rename, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep, join } from 'node:path';
-import { runPlainCommand, streamCommand } from '../engine/command.js';
+import { runPlainCommand, sameOnStdin, streamCommand } from '../engine/command.js';
 import { P4Config } from '../engine/config.js';
 import { operation, progressCounter } from '../engine/operation.js';
 import { P4MaterializationError } from '../errors.js';
@@ -62,10 +62,9 @@ export interface MaterializeDepotFilesOptions<F extends P4MaterializeSpec = P4Ma
   /** Keyword expansion for per-file prints. Defaults to `raw`. */
   readonly keywords?: P4KeywordMode | undefined;
   /**
-   * Stream binary revisions from batched `p4 -G -x - print` processes and
-   * write them from this process; every other revision, and any a batch did
-   * not deliver intact, is printed per file. `true` uses the defaults.
-   * Defaults to `false`: one `p4 print -o` per revision.
+   * Stream binary revisions with ASCII paths from batched `p4 -G -x - print` processes and
+   * write them here; every other revision, and any a batch did not deliver intact, is printed
+   * per file. `true` uses the defaults. Defaults to `false`: one `p4 print -o` per revision.
    */
   readonly batch?: boolean | P4MaterializeBatchOptions | undefined;
   /**
@@ -531,7 +530,10 @@ export const materializeDepotFiles =
     });
 
     let perFile = groups;
-    const batchable = batch === null ? [] : groups.filter((group) => group.type === undefined || BATCHABLE_TYPE.test(group.type));
+
+    // A non-ASCII path reads differently on stdin than as the per-file print's argument.
+    const batchable = batch === null ? [] : groups.filter((group) =>
+      (group.type === undefined || BATCHABLE_TYPE.test(group.type)) && sameOnStdin(group.key));
 
     if (batchable.length > 0 && batchable.length >= batchMinFiles) {
       // Spread a small print over every process: one batch streams its files one after another.

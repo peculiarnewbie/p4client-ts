@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Predicate } from 'effect';
 import { listChangelists } from '../../../src/commands/changelists.js';
 import { listFiles, listHaveFiles, statFiles, whereFiles } from '../../../src/commands/files.js';
 import { openForEdit, previewOpenForAdd, previewOpenForEdit } from '../../../src/commands/open.js';
 import { listOpenedFiles } from '../../../src/commands/opened.js';
 import { previewReconcile } from '../../../src/commands/reconcile.js';
 import { previewRevert, revert } from '../../../src/commands/revert.js';
+import { printBatch, printFile } from '../../../src/commands/print.js';
 import { listStreams } from '../../../src/commands/streams.js';
 import { previewSync, sync } from '../../../src/commands/sync.js';
 import { configLayer } from '../../../src/engine/config.js';
@@ -13,12 +14,12 @@ import { runOperation } from '../../../src/engine/operation.js';
 import { P4InvalidArgumentError, P4ReadOnlyError } from '../../../src/errors.js';
 import { commandArgs, recordingExecutor, scriptedExecutor } from '../../../src/testing/executor.js';
 import { expectFailure } from '../../support/assert.js';
-import { failure, fixtures, run } from './support.js';
+import { failure, fixtures, run, watch } from './support.js';
 import type { P4ClientOptions } from '../../../src/engine/config.js';
 import type { P4Operation } from '../../../src/engine/operation.js';
 import type { P4ScriptedOutput } from '../../../src/testing/executor.js';
 import type { P4Error } from '../../../src/errors.js';
-import type { P4Executor } from '../../../src/exec/executor.js';
+import type { P4Executor, P4Invocation } from '../../../src/exec/executor.js';
 
 const TAG = ['-Mj', '-z', 'tag'];
 
@@ -135,6 +136,92 @@ describe('long file spec lists go on stdin in one batch', () => {
       expectFailure(await attempt(recorder.layer), P4ReadOnlyError);
       expect(recorder.invocations).toEqual([]);
     }
+  });
+});
+
+describe('long lists with a non-ASCII spec run as several commands of arguments', () => {
+  // On stdin `é` is UTF-8; as an argument it is the client's code page, so it would name another file.
+  const MIXED = LONG.map((spec, index) => (index === 250 ? spec.replace('Hero_Sprint', 'Héro_Sprint') : spec));
+
+  const split = async <O, I, R>(op: P4Operation<O, I, R>, options: O, prefix: readonly string[], client?: P4ClientOptions) => {
+    const calls = await invoked(op, options, client);
+    expect(calls.length).toBeGreaterThan(1);
+    expect(calls.every((call) => call.input === undefined && !call.args.includes('-x'))).toBe(true);
+    expect(calls.every((call) => call.args.slice(0, prefix.length).join(' ') === prefix.join(' '))).toBe(true);
+
+    return calls.flatMap((call) => call.args.slice(prefix.length));
+  };
+
+  it('splits every file-spec operation', async () => {
+    expect(await split(statFiles, { fileSpec: MIXED }, [...TAG, 'fstat'])).toEqual(MIXED);
+    expect(await split(statFiles, { fileSpec: MIXED, atChange: 7 }, [...TAG, 'fstat'])).toEqual(MIXED.map((spec) => `${spec}@7`));
+    expect(await split(listFiles, { fileSpec: MIXED }, [...TAG, 'files'])).toEqual(MIXED);
+    expect(await split(whereFiles, { fileSpec: MIXED }, [...TAG, 'where'])).toEqual(MIXED);
+    expect(await split(listHaveFiles, { fileSpec: MIXED }, [...TAG, 'have'])).toEqual(MIXED);
+    expect(await split(listOpenedFiles, { fileSpec: MIXED }, [...TAG, 'opened'])).toEqual(MIXED);
+    expect(await split(previewSync, { fileSpec: MIXED }, [...TAG, 'sync', '-n'])).toEqual(MIXED);
+    expect(await split(sync, { fileSpec: MIXED }, [...TAG, 'sync'], { allowMutation: true })).toEqual(MIXED);
+    expect(await split(listChangelists, { status: 'submitted', fileSpec: MIXED, limit: 'all' }, [...TAG, 'changes', '-s', 'submitted', '-l']))
+      .toEqual(MIXED);
+    expect(await split(listStreams, { fileSpec: MIXED }, [...TAG, 'streams'])).toEqual(MIXED);
+    expect(await split(previewOpenForEdit, { fileSpec: MIXED }, [...TAG, 'edit', '-n'])).toEqual(MIXED);
+    expect(await split(previewRevert, { fileSpec: MIXED }, [...TAG, 'revert', '-n'])).toEqual(MIXED);
+    expect(await split(previewReconcile, { fileSpec: MIXED }, [...TAG, 'reconcile', '-n'])).toEqual(MIXED);
+    expect(await split(printBatch, { fileSpec: MIXED }, ['-G', 'print', '-k'])).toEqual(MIXED);
+  });
+
+  it('prints a short non-ASCII list as arguments too, as printFile sends its spec', async () => {
+    const specs = ['//depot/Héro.uasset', '//depot/日本/Run.uasset'];
+    expect(await invoked(printBatch, { fileSpec: specs })).toEqual([{ args: ['-G', 'print', '-k', ...specs], input: undefined }]);
+    expect(await invoked(printFile, { file: specs[0]! })).toEqual([{ args: ['-G', 'print', '-k', specs[0]], input: undefined }]);
+    // An ASCII batch keeps stdin.
+    expect(await invoked(printBatch, { fileSpec: ['//depot/a.uasset'] })).toEqual([
+      { args: ['-G', '-x', '-', 'print', '-k'], input: '//depot/a.uasset\n' },
+    ]);
+  });
+
+  it('adds up the sync totals each command announces with its first file', async () => {
+    const respond = (invocation: P4Invocation): P4ScriptedOutput => {
+      const files = commandArgs(invocation.args).slice(5);
+
+      const rows = files.map((depotFile, index) => {
+        const row = { depotFile, clientFile: `C:\\ws\\${index}.uasset`, rev: '2', action: 'updated', change: '9', fileSize: '10' };
+        const totals = { totalFileCount: String(files.length), totalFileSize: String(files.length * 10) };
+
+        return JSON.stringify(index === 0 ? { ...row, ...totals } : row);
+      });
+
+      return { stdout: rows.join('\n') };
+    };
+
+    const recorder = recordingExecutor(scriptedExecutor(respond));
+    const result = await run(previewSync, { fileSpec: MIXED }, recorder.layer);
+    expect(recorder.invocations.length).toBeGreaterThan(1);
+    expect(result).toMatchObject({ totalFileCount: 500, totalFileSize: 5_000 });
+    expect(result.items).toHaveLength(500);
+
+    const progress = (await watch(previewSync, { fileSpec: MIXED }, scriptedExecutor(respond)))
+      .flatMap((event) => (Predicate.isTagged(event, 'progress') ? [event.progress] : []));
+
+    expect(progress.at(-1)).toMatchObject({ completed: 500, total: 500, bytesCompleted: 5_000, bytesTotal: 5_000 });
+  });
+
+  it('keeps listStreams to its limit when each command applies -m on its own', async () => {
+    const stream = (name: string) => JSON.stringify({ Stream: `//Héro/${name}`, Name: name, Type: 'development', Parent: 'none' });
+    let calls = 0;
+
+    const executor = scriptedExecutor(() => {
+      calls += 1;
+
+      return { stdout: [stream(`a${calls}`), stream(`b${calls}`), stream(`c${calls}`)].join('\n') };
+    });
+
+    const events = await watch(listStreams, { fileSpec: MIXED, limit: 4 }, executor);
+    expect(calls).toBeGreaterThan(1);
+    expect(events.filter((event) => Predicate.isTagged(event, 'item'))).toHaveLength(4);
+
+    expect(events.flatMap((event) => (Predicate.isTagged(event, 'done') ? event.result.items.map((item) => item.name) : [])))
+      .toEqual(['a1', 'b1', 'c1', 'a2']);
   });
 });
 

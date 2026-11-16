@@ -186,6 +186,52 @@ describe("p4-ts e2e plugin reads", () => {
     expect((await harness.client.previewSync({ fileSpec: specs })).items).toEqual([]);
   });
 
+  it("names the same file with a non-ASCII spec in a short list as in a long one", async () => {
+    // This server is not in Unicode mode, so it keeps the bytes each client sent. Added from this
+    // workspace, zz_café goes in the client's code page (cp1252 on Western Windows). On such a
+    // client the cp1252 name zz_æ—¥æœ¬ is the UTF-8 bytes of zz_日本, as a UTF-8 client adds it.
+    const folder = `${ROOT}/unicode-${Date.now()}`;
+    mkdirSync(harness.getPath(folder), { recursive: true });
+    writeFileSync(harness.getPath(`${folder}/zz_café.uasset`), "western");
+    writeFileSync(harness.getPath(`${folder}/zz_æ—¥æœ¬.uasset`), "outside the code page");
+    await harness.run(["add", "-t", "binary", harness.getPath(`${folder}/...`)]);
+    await harness.run(["submit", "-d", "plugin reads: non-ASCII names"]);
+
+    const names = [depot(`${folder}/zz_café.uasset`), depot(`${folder}/zz_日本.uasset`)];
+    const long = [...names, ...missing(80)];
+    expect(long.reduce((total, spec) => total + spec.length + 3, 0)).toBeGreaterThan(8_000);
+
+    const shortStats = await viaStdin.statFiles({ fileSpec: names });
+    stdinCalls = [];
+    const longStats = await viaStdin.statFiles({ fileSpec: long });
+    const longStatCalls = stdinCalls.length;
+    expect(shortStats.items.map((item) => String(item.depotFile))).toEqual([expect.stringContaining("zz_caf")]);
+    expect(longStats.items).toEqual(shortStats.items);
+    expect(longStats.failures.slice(0, shortStats.failures.length)).toEqual(shortStats.failures);
+    expect(longStats.failures).toHaveLength(shortStats.failures.length + 80);
+    // The long list ran as several commands of arguments, not on stdin.
+    expect(longStatCalls).toBeGreaterThan(1);
+
+    const shortFiles = await viaStdin.listFiles({ fileSpec: names });
+    const longFiles = await viaStdin.listFiles({ fileSpec: long });
+    expect(longFiles.items).toEqual(shortFiles.items);
+    expect(longFiles.failures.slice(0, shortFiles.failures.length)).toEqual(shortFiles.failures);
+
+    // printBatch, which used stdin for every list, now agrees with printFile.
+    const shortPrint = await viaStdin.printBatch({ fileSpec: names });
+    const longPrint = await viaStdin.printBatch({ fileSpec: long });
+    expect(longPrint.items).toEqual(shortPrint.items);
+    expect(longPrint.failures.slice(0, shortPrint.failures.length)).toEqual(shortPrint.failures);
+
+    for (const name of names) {
+      const single = await viaStdin.printFile({ file: name }).catch(() => null);
+      const batched = shortPrint.items.find((item) => item.file.depotFile === single?.depotFile);
+      expect(batched?.content ?? null, name).toEqual(single?.content ?? null);
+    }
+
+    expect(stdinCalls.some(usesStdin)).toBe(false);
+  });
+
   it("prints only the first bytes of a large revision and stops reading", async () => {
     let stdoutBytes = 0;
     let sawExit = false;

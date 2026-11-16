@@ -336,6 +336,8 @@ describe('printBatch', () => {
 
     expectFailure(await failure(printBatch, { fileSpec: [] }, none), P4InvalidArgumentError, { option: 'fileSpec' });
     expectFailure(await failure(printBatch, { fileSpec: ['//d/a\n-o'] }, none), P4InvalidArgumentError);
+    // As an argument, which a non-ASCII list is, a leading dash would be an option.
+    expectFailure(await failure(printBatch, { fileSpec: ['//d/café.uasset', '-a'] }, none), P4InvalidArgumentError);
   });
 });
 

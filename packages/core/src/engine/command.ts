@@ -36,8 +36,9 @@ export interface P4CommandSpec<A> {
   /** The subcommand and its arguments, without global options. */
   readonly args: readonly string[];
   /**
-   * File arguments, appended to `args`. A list too long for one command line
-   * is sent on stdin instead, in a single `-x -` batch. Not with `input`.
+   * File arguments, appended to `args`. An ASCII list too long for one command line goes on
+   * stdin as one `-x -` batch; one with other characters runs as several commands, whose
+   * per-command output (sync totals, `-m` limits) the operation merges. Not with `input`.
    */
   readonly files?: readonly string[] | undefined;
   /** Structured output format. */
@@ -136,6 +137,20 @@ function commandLineLength(executable: string, args: readonly string[]): number 
   return args.reduce((length, arg) => length + arg.length + 3, executable.length + 2);
 }
 
+/**
+ * Whether a file spec reaches the server as the same bytes on stdin as on the command line.
+ * Stdin carries UTF-8; Windows hands `p4` its arguments in the ANSI code page (best-fit, so
+ * `ā` becomes `a`), and the client charset then decides how either is read. Only ASCII is
+ * the same in all of them.
+ */
+export function sameOnStdin(spec: string): boolean {
+  for (let index = 0; index < spec.length; index += 1) {
+    if (spec.charCodeAt(index) > 0x7f) return false;
+  }
+
+  return true;
+}
+
 interface InvocationSpec {
   readonly args: readonly string[];
   readonly files?: readonly string[] | undefined;
@@ -143,7 +158,33 @@ interface InvocationSpec {
   readonly globalArgs?: readonly string[] | undefined;
 }
 
-function invocation(options: P4ResolvedOptions, format: P4OutputFormat, spec: InvocationSpec): P4Invocation {
+/** File arguments in runs whose command lines, each with `fixed` before them, fit the budget. */
+function argumentBatches(executable: string, fixed: readonly string[], files: readonly string[]): string[][] {
+  const base = commandLineLength(executable, fixed);
+  const batches: string[][] = [];
+  let batch: string[] = [];
+  let length = base;
+
+  for (const file of files) {
+    if (batch.length > 0 && length + file.length + 3 > COMMAND_LINE_BUDGET) {
+      batches.push(batch);
+      batch = [];
+      length = base;
+    }
+
+    batch.push(file);
+    length += file.length + 3;
+  }
+
+  return [...batches, batch];
+}
+
+/**
+ * The processes one command runs as. A file list too long for the command line goes on
+ * stdin as one `-x -` batch when it is all ASCII; otherwise it is split into several
+ * commands, so each spec names the file it would in a short list.
+ */
+function invocations(options: P4ResolvedOptions, format: P4OutputFormat, spec: InvocationSpec): P4Invocation[] {
   const head = [...globalArgs(options.connection), ...FORMAT_ARGS[format], ...(spec.globalArgs ?? [])];
   const files = spec.files ?? [];
   const args = [...head, ...spec.args, ...files];
@@ -155,18 +196,23 @@ function invocation(options: P4ResolvedOptions, format: P4OutputFormat, spec: In
   };
 
   if (files.length === 0 || commandLineLength(options.executable, args) <= COMMAND_LINE_BUDGET) {
-    return { ...run, args, input: spec.input };
+    return [{ ...run, args, input: spec.input }];
   }
 
   if (spec.input !== undefined) throw new Error('A command cannot send both input and files on stdin.');
 
+  if (!files.every(sameOnStdin)) {
+    return argumentBatches(options.executable, [...head, ...spec.args], files)
+      .map((batch) => ({ ...run, args: [...head, ...spec.args, ...batch], input: undefined }));
+  }
+
   // `-x` runs the command once per `-b` arguments (128 by default), which would repeat
   // once-per-command output such as sync totals; one batch keeps argv's results.
-  return {
+  return [{
     ...run,
     args: [...head, '-x', '-', '-b', String(files.length), ...spec.args],
     input: `${files.join('\n')}\n`,
-  };
+  }];
 }
 
 /**
@@ -397,64 +443,71 @@ function attempt<A>(reader: OutputReader, f: () => A): Effect.Effect<A, P4ParseE
 
 function processStream<A>(
   format: P4OutputFormat,
-  spec: Parameters<typeof invocation>[2] & { readonly policy?: P4MessagePolicy | undefined },
+  spec: InvocationSpec & { readonly policy?: P4MessagePolicy | undefined },
   onRecords: (reader: OutputReader, records: WireRecord[]) => Effect.Effect<Array<P4CommandEvent<A>>, P4ParseError>,
   onExit: (reader: OutputReader, code: number | null) => Effect.Effect<Array<P4CommandEvent<A>>, P4Error>,
 ): Stream.Stream<P4CommandEvent<A>, P4Error, Context> {
   return Stream.unwrap(Effect.gen(function* () {
     const options = yield* P4Config;
     const executor = yield* P4Executor;
-    const run = invocation(options, format, spec);
+    const runs = invocations(options, format, spec);
 
-    if (checkCommand(run.args, run.input).mutates && !options.allowMutation) {
-      const args = redactArgs(run.args);
+    // Every process is checked before the first one starts.
+    for (const run of runs) {
+      if (checkCommand(run.args, run.input).mutates && !options.allowMutation) {
+        const args = redactArgs(run.args);
 
-      return yield* new P4ReadOnlyError({
-        message: `Refusing to run ${run.executable} ${args.join(' ')}: it can change the server or a workspace, `
-          + 'and this client was not created with allowMutation: true.',
-        command: run.executable,
-        args,
-      });
+        return yield* new P4ReadOnlyError({
+          message: `Refusing to run ${run.executable} ${args.join(' ')}: it can change the server or a workspace, `
+            + 'and this client was not created with allowMutation: true.',
+          command: run.executable,
+          args,
+        });
+      }
     }
 
-    const reader = new OutputReader(run, format, spec.policy);
-    let state: ProcessState = ProcessState.Reading();
+    const processEvents = (run: P4Invocation): Stream.Stream<P4CommandEvent<A>, P4Error> => {
+      const reader = new OutputReader(run, format, spec.policy);
+      let state: ProcessState = ProcessState.Reading();
 
-    const events = executor.run(run).pipe(
-      Stream.concat(Stream.make(ProcessEnd.eof())),
-      Stream.mapEffect((event) => attempt(reader, () => {
-        state = transitionProcess(state, event, reader);
+      const events = executor.run(run).pipe(
+        Stream.concat(Stream.make(ProcessEnd.eof())),
+        Stream.mapEffect((event) => attempt(reader, () => {
+          state = transitionProcess(state, event, reader);
 
-        return event;
-      })),
-      Stream.filter((event): event is P4ProcessEvent => !Predicate.isTagged(event, 'eof')),
-      Stream.mapEffect((event: P4ProcessEvent): Effect.Effect<Array<P4CommandEvent<A>>, P4Error> => {
-        if (Predicate.isTagged(event, 'stderr')) {
-          return Effect.sync((): Array<P4CommandEvent<A>> => {
-            reader.stderr(event.bytes);
+          return event;
+        })),
+        Stream.filter((event): event is P4ProcessEvent => !Predicate.isTagged(event, 'eof')),
+        Stream.mapEffect((event: P4ProcessEvent): Effect.Effect<Array<P4CommandEvent<A>>, P4Error> => {
+          if (Predicate.isTagged(event, 'stderr')) {
+            return Effect.sync((): Array<P4CommandEvent<A>> => {
+              reader.stderr(event.bytes);
 
-            return [];
-          });
-        }
+              return [];
+            });
+          }
 
-        if (Predicate.isTagged(event, 'stdout')) {
-          return attempt(reader, () => reader.stdout(event.bytes)).pipe(
-            Effect.flatMap((records) => onRecords(reader, records)),
-          );
-        }
+          if (Predicate.isTagged(event, 'stdout')) {
+            return attempt(reader, () => reader.stdout(event.bytes)).pipe(
+              Effect.flatMap((records) => onRecords(reader, records)),
+            );
+          }
 
-        return onExit(reader, event.code);
-      }),
-      Stream.flattenIterable,
-    );
+          return onExit(reader, event.code);
+        }),
+        Stream.flattenIterable,
+      );
 
-    const timeoutMs = options.timeoutMs;
+      const timeoutMs = options.timeoutMs;
 
-    return timeoutMs === undefined
-      ? events
-      : events.pipe(Stream.interruptWhen(
-        Effect.sleep(timeoutMs).pipe(Effect.andThen(Effect.failSync(() => reader.timeoutError(timeoutMs)))),
-      ));
+      return timeoutMs === undefined
+        ? events
+        : events.pipe(Stream.interruptWhen(
+          Effect.sleep(timeoutMs).pipe(Effect.andThen(Effect.failSync(() => reader.timeoutError(timeoutMs)))),
+        ));
+    };
+
+    return runs.length === 1 ? processEvents(runs[0]!) : Stream.fromIterable(runs).pipe(Stream.flatMap(processEvents));
   }));
 }
 

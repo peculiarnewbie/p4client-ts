@@ -203,10 +203,24 @@ try {
 }
 ```
 
-Spec lists can be as long as needed. A list too long for one command line is sent on stdin
-in one batch (`p4 -x - -b <count>`), so the command runs once, as with a short list: sync
-totals arrive once and per-spec failures and messages are the same. Each spec must be on one
-line and must not start with `-`; anything else rejects with `P4InvalidArgumentError`.
+Spec lists can be as long as needed, and each spec names the same file in a long list as in
+a short one. An ASCII list too long for one command line is sent on stdin in one batch
+(`p4 -x - -b <count>`), so the command runs once: sync totals arrive once and per-spec
+failures and messages are the same. A list with any other character stays on the command
+line, split into as many commands as it needs; the operation adds up sync totals and keeps
+`limit`. Stdin would carry such a spec as UTF-8, but on Windows `p4` receives its arguments
+in the ANSI code page, and the two name different depot files: `café` stored by a Windows
+client on a server that is not in Unicode mode matches only the code-page bytes. `printBatch`
+and batched `materializeDepotFiles` follow the same rule, so they agree with `printFile`.
+Each spec must be on one line and must not start with `-`; anything else rejects with
+`P4InvalidArgumentError`.
+
+Limits of the command line on Windows, for short and long lists alike: a character outside
+the ANSI code page does not survive (`日本` arrives as `??`, and best-fit mapping turns `ā`
+into `a`, which can name another file). With a Unicode-mode server and `P4CHARSET=utf8`,
+`p4` cannot translate code-page arguments, so non-ASCII specs find nothing. On a server
+that is not in Unicode mode, a name read back as `depotFile` has U+FFFD wherever its stored
+bytes are not UTF-8, and that name does not find its file again.
 
 `statFiles` items carry `otherOpenedBy`, the `user` and `client` of each other open. Where
 users share an account, the client is what tells people apart. `isExclusive` marks a `+l`
@@ -218,6 +232,14 @@ file is writable, so a writable file does not mean it was edited.
 so an asset's header costs a fraction of the revision. `isTruncated` says whether content
 was left unread. A print that ends short without being asked to still fails, as does one
 killed by a signal.
+
+On a cut print, `fileSize` is still the whole revision's size, from the record `p4` sends
+before the content. For a binary type without keyword expansion it is exactly the bytes a
+full print returns, so a package reader can pass it on beside the leading bytes. For text,
+and for `+k` types, it is the stored size, which can differ from the printed bytes (line
+endings, charset, expanded keywords). It is `null` only when the server leaves the size out,
+so treat `null` as unknown, not zero. `p4 print` cannot start partway through a revision: to
+read more, call `printFile` again with a larger `maxBytes`, which prints from the start.
 
 
 ### Project-scoped discovery

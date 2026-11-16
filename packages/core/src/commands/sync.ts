@@ -141,8 +141,13 @@ const runSync = Effect.fnUntraced(function* (
     item: (record) => record.item,
     counter: perFile,
     inspect: (record) => {
-      if (record.totalFileCount !== null && totals.files === null) {
-        totals = { files: record.totalFileCount, bytes: record.totalFileSize };
+      // A command announces its totals once; a long non-ASCII list runs as several commands.
+      if (record.totalFileCount !== null) {
+        totals = {
+          files: (totals.files ?? 0) + record.totalFileCount,
+          bytes: record.totalFileSize === null ? totals.bytes : (totals.bytes ?? 0) + record.totalFileSize,
+        };
+
         counter.expect(totals.files, totals.bytes);
       }
 
