@@ -10,6 +10,7 @@ import {
   itemFailure,
   malformed,
   optionalAction,
+  requirePositive,
   text,
 } from './shared.js';
 import type { P4CommandSpec } from '../engine/command.js';
@@ -52,6 +53,12 @@ export interface PrintFileOptions {
   readonly revision?: P4RevisionSpec | undefined;
   /** Keyword expansion. Defaults to `raw`. */
   readonly keywords?: P4KeywordMode | undefined;
+  /**
+   * Read at most this many bytes, then stop `p4`, for example to read an asset's
+   * header without transferring the whole revision. `file` must name one file,
+   * without a wildcard. Defaults to the whole revision.
+   */
+  readonly maxBytes?: number | undefined;
 }
 
 /**
@@ -61,8 +68,14 @@ export interface PrintFileOptions {
  * survives `structuredClone` and IPC.
  */
 export interface P4PrintedFile extends P4PrintedFileInfo {
+  /** The content, or its first `maxBytes` bytes when `isTruncated`. */
   readonly content: Uint8Array;
   readonly isBinary: boolean;
+  /**
+   * Whether `maxBytes` cut the content short. `p4` was stopped there, so
+   * `content` is shorter than `fileSize` and later messages were not read.
+   */
+  readonly isTruncated: boolean;
   readonly messages: P4Message[];
 }
 
@@ -159,28 +172,36 @@ function concat(chunks: readonly Uint8Array[]): Uint8Array {
 }
 
 interface PrintHandlers {
-  readonly file: (item: P4PrintedBatchItem) => Effect.Effect<void>;
+  /** A complete file, or one `maxBytes` cut short (`truncated`). */
+  readonly file: (item: P4PrintedBatchItem, truncated: boolean) => Effect.Effect<void>;
   readonly message: (message: P4Message) => Effect.Effect<void>;
   readonly failure: (message: P4Message) => Effect.Effect<void>;
 }
 
 /**
- * Run a `-G print` and assemble its records into files: each `stat` record
- * is followed by the file's `text` or `binary` content records.
+ * Run a `-G print` and assemble its records into files: a `stat` record, then content records.
+ * With `maxBytes`, reading stops once a file passes it, which kills `p4` before its exit, so
+ * neither the exit verdict nor the size check applies; the file is reported cut to `maxBytes`.
  */
-function printFiles(spec: P4CommandSpec<PrintRecord>, handlers: PrintHandlers): Effect.Effect<void, P4Error, P4Context> {
+function printFiles(
+  spec: P4CommandSpec<PrintRecord>,
+  handlers: PrintHandlers,
+  maxBytes?: number,
+): Effect.Effect<void, P4Error, P4Context> {
   return Effect.suspend(() => {
-    let current: { info: P4PrintedFileInfo; chunks: Uint8Array[] } | null = null;
+    let current: { info: P4PrintedFileInfo; chunks: Uint8Array[]; size: number } | null = null;
+    let cut = false;
 
     const flush = Effect.suspend(() => {
       if (current === null) return Effect.void;
-      const item = { file: current.info, content: concat(current.chunks) };
+      const content = concat(current.chunks);
+      const item = { file: current.info, content: cut ? content.slice(0, maxBytes) : content };
       current = null;
 
       // fileSize is the synced size. Binary files without keyword expansion print exactly that many
       // bytes; text converts line endings and charsets, and +k/+ko expand keywords, so their raw
-      // print (`-k`, the default) legitimately differs from fileSize.
-      if (item.file.fileSize !== null && /^u?binary(?:\+[A-Za-z0-9]*)?$/.test(item.file.type ?? '')
+      // print (`-k`, the default) legitimately differs from fileSize. A requested cut is shorter.
+      if (!cut && item.file.fileSize !== null && /^u?binary(?:\+[A-Za-z0-9]*)?$/.test(item.file.type ?? '')
         && !/\+[A-Za-z0-9]*k/.test(item.file.type ?? '')
         && item.content.length !== item.file.fileSize) {
         return Effect.fail(malformed('print binary content size does not match fileSize.', {
@@ -188,26 +209,33 @@ function printFiles(spec: P4CommandSpec<PrintRecord>, handlers: PrintHandlers): 
         }));
       }
 
-      return handlers.file(item);
+      return handlers.file(item, cut);
     });
 
     return streamCommand(spec).pipe(
-      Stream.runForEach((event): Effect.Effect<void, P4Error> => {
-        if (Predicate.isTagged(event, 'message')) return handlers.message(event.message);
+      Stream.runForEachWhile((event): Effect.Effect<boolean, P4Error> => {
+        if (Predicate.isTagged(event, 'message')) return Effect.as(handlers.message(event.message), true);
 
-        if (Predicate.isTagged(event, 'failure')) return Effect.andThen(flush, handlers.failure(event.message));
+        if (Predicate.isTagged(event, 'failure')) {
+          return Effect.as(Effect.andThen(flush, handlers.failure(event.message)), true);
+        }
+
         const record = event.value;
 
         if (Predicate.isTagged(record, 'stat')) {
           return Effect.andThen(flush, Effect.sync(() => {
-            current = { info: record.info, chunks: [] };
+            current = { info: record.info, chunks: [], size: 0 };
+
+            return true;
           }));
         }
 
         if (current === null) return Effect.fail(malformed('print sent content before naming its file.', null));
         current.chunks.push(record.data);
+        current.size += record.data.length;
+        cut = maxBytes !== undefined && current.size > maxBytes;
 
-        return Effect.void;
+        return Effect.succeed(!cut);
       }),
       Effect.andThen(flush),
     );
@@ -228,8 +256,15 @@ function advance(counter: P4ProgressCounter, item: P4PrintedBatchItem): Effect.E
 export const printFile = operation<PrintFileOptions, never, P4PrintedFile>('printFile', (options, sink) =>
   Effect.gen(function* () {
     const spec = options.revision === undefined ? options.file : fileAtRevision(options.file, options.revision);
+    const maxBytes = options.maxBytes === undefined ? undefined : yield* requirePositive(options.maxBytes, 'maxBytes');
+
+    // A cut stops p4 inside the first file, so a later match would go unnoticed.
+    if (maxBytes !== undefined && /\*|\.\.\./.test(options.file)) {
+      return yield* invalid('maxBytes', `maxBytes reads one file; ${options.file} has a wildcard.`);
+    }
+
     const counter = progressCounter(sink, 'files', 1);
-    const files: P4PrintedBatchItem[] = [];
+    const files: Array<{ readonly item: P4PrintedBatchItem; readonly truncated: boolean }> = [];
     const messages: P4Message[] = [];
     yield* printFiles({
       args: [...printArgs(options.keywords), spec],
@@ -237,13 +272,13 @@ export const printFile = operation<PrintFileOptions, never, P4PrintedFile>('prin
       policy: FILE_POLICY,
       decode: toPrintRecord,
     }, {
-      file: (item) => Effect.sync(() => {
-        files.push(item);
+      file: (item, truncated) => Effect.sync(() => {
+        files.push({ item, truncated });
       }),
       message: (message) => Effect.andThen(Effect.sync(() => messages.push(message)), sink.message(message)),
       // The policy fails every per-file problem, so there are no failures.
       failure: () => Effect.void,
-    });
+    }, maxBytes);
     const printed = files[0];
 
     if (printed === undefined) return yield* malformed(`print printed nothing for ${spec}.`, messages);
@@ -252,12 +287,13 @@ export const printFile = operation<PrintFileOptions, never, P4PrintedFile>('prin
       return yield* invalid('file', `${spec} matches ${files.length} files; printFile prints one. Use printBatch.`);
     }
 
-    yield* advance(counter, printed);
+    yield* (printed.truncated ? counter.advance(1, printed.item.content.length) : advance(counter, printed.item));
 
     return {
-      ...printed.file,
-      content: printed.content,
-      isBinary: isBinaryP4Type(printed.file.type),
+      ...printed.item.file,
+      content: printed.item.content,
+      isBinary: isBinaryP4Type(printed.item.file.type),
+      isTruncated: printed.truncated,
       messages,
     };
   }), 'files');

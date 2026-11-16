@@ -81,6 +81,40 @@ const rows = await client.runTagged({
 
 console.log(rows.items.map((row) => row.depotFile));
 
+const watcher = client.with({ connection: { client: 'alice_ws' } });
+
+try {
+  const lastSeen = 1200;
+
+  const submitted = await watcher.listChangelists({
+    status: 'submitted', fileSpec: `//alice_ws/...@${lastSeen + 1},@now`, limit: 'all',
+  });
+
+  const assets = await watcher.listFiles({ fileSpec: `//alice_ws/....uasset@${lastSeen + 1},@now` });
+  const live = assets.items.filter((file) => !file.isDeletedAtHead);
+  const states = await watcher.statFiles({ fileSpec: live.map((file) => file.depotFile) });
+  const workspaces = await watcher.listWorkspaces({ user: 'alice' });
+  const allwrite = workspaces.items.find((entry) => entry.client === 'alice_ws')?.options?.allwrite;
+
+  for (const state of states.items) {
+    const holders = state.otherOpenedBy.map((open) => open.client);
+
+    if (state.isExclusive && holders.length > 0) console.log(state.depotFile, 'checked out in', holders);
+  }
+
+  for (const file of live) {
+    const header = await watcher.printFile({
+      file: file.depotFile, revision: file.revision ?? undefined, maxBytes: 512 * 1024,
+    });
+
+    console.log(file.depotFile, header.content.length, header.isTruncated);
+  }
+
+  console.log(submitted.items.length, allwrite);
+} finally {
+  await watcher.dispose();
+}
+
 const projectCwd = '/work/project';
 const probe = createP4Client({ cwd: projectCwd });
 

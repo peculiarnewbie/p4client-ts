@@ -159,6 +159,66 @@ The schema determines the decoded row type. Raw commands use the same
 classification and mutation guard. For IPC, clone result envelopes directly
 and use `encodeP4Error` / `decodeP4Error` for tagged errors.
 
+### Watch submits through a workspace view
+
+A file spec can carry a revision range, so a workspace's view answers "what was submitted
+since change N": `//alice_ws/...@1201,@now`, or a date such as `@2026/11/10,@now` on
+first use. Pass `limit: 'all'` to list the whole range in one page. `listFiles` items carry
+`revision`, `change`, `action` and `submittedAt`. An empty change range is a `no_such_file`
+failure; a date range with nothing after it is an `empty` message.
+
+```ts
+const watcher = client.with({ connection: { client: 'alice_ws' } });
+
+try {
+  const lastSeen = 1200;
+
+  const submitted = await watcher.listChangelists({
+    status: 'submitted', fileSpec: `//alice_ws/...@${lastSeen + 1},@now`, limit: 'all',
+  });
+
+  const assets = await watcher.listFiles({ fileSpec: `//alice_ws/....uasset@${lastSeen + 1},@now` });
+  const live = assets.items.filter((file) => !file.isDeletedAtHead);
+  const states = await watcher.statFiles({ fileSpec: live.map((file) => file.depotFile) });
+  const workspaces = await watcher.listWorkspaces({ user: 'alice' });
+  const allwrite = workspaces.items.find((entry) => entry.client === 'alice_ws')?.options?.allwrite;
+
+  for (const state of states.items) {
+    const holders = state.otherOpenedBy.map((open) => open.client);
+
+    if (state.isExclusive && holders.length > 0) console.log(state.depotFile, 'checked out in', holders);
+  }
+
+  for (const file of live) {
+    const header = await watcher.printFile({
+      file: file.depotFile, revision: file.revision ?? undefined, maxBytes: 512 * 1024,
+    });
+
+    console.log(file.depotFile, header.content.length, header.isTruncated);
+  }
+
+  console.log(submitted.items.length, allwrite);
+} finally {
+  await watcher.dispose();
+}
+```
+
+Spec lists can be as long as needed. A list too long for one command line is sent on stdin
+in one batch (`p4 -x - -b <count>`), so the command runs once, as with a short list: sync
+totals arrive once and per-spec failures and messages are the same. Each spec must be on one
+line and must not start with `-`; anything else rejects with `P4InvalidArgumentError`.
+
+`statFiles` items carry `otherOpenedBy`, the `user` and `client` of each other open. Where
+users share an account, the client is what tells people apart. `isExclusive` marks a `+l`
+head type. With `fields`, ask for `otherOpen0`, `otherOpen1` and so on: `otherOpen` alone
+is only their count. `listWorkspaces` items carry `options`; with `allwrite`, every synced
+file is writable, so a writable file does not mean it was edited.
+
+`printFile({ maxBytes })` reads at most that many bytes of one revision, then stops `p4`,
+so an asset's header costs a fraction of the revision. `isTruncated` says whether content
+was left unread. A print that ends short without being asked to still fails, as does one
+killed by a signal.
+
 
 ### Project-scoped discovery
 

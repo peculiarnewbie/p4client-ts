@@ -3,13 +3,13 @@ import { streamCommand } from '../engine/command.js';
 import { drain, operation, progressCounter } from '../engine/operation.js';
 import {
   clientFile,
+  fileArgs,
   integer,
   invalid,
   itemFailure,
   optionalAction,
   optionalDepotPath,
   requirePositive,
-  specList,
   text,
 } from './shared.js';
 import type { P4Sink } from '../engine/operation.js';
@@ -78,7 +78,7 @@ const runRevert = Effect.fnUntraced(function* (
     args.push('-c', options.change === 'default' ? 'default' : String(yield* requirePositive(options.change, 'change')));
   }
 
-  const specs = specList(options.fileSpec);
+  const specs = yield* fileArgs(options.fileSpec);
 
   if (specs.length === 0) {
     if (options.change === undefined) {
@@ -89,7 +89,8 @@ const runRevert = Effect.fnUntraced(function* (
   }
 
   const output = yield* drain(sink, streamCommand({
-    args: [...args, ...specs],
+    args,
+    files: specs,
     format: 'json',
     policy: REVERT_POLICY,
     decode: toRevertedFile,

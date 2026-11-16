@@ -5,11 +5,11 @@ import {
   action,
   change,
   clientFile,
+  fileArgs,
   integer,
   invalid,
   malformed,
   optionalDepotPath,
-  specList,
   text,
 } from './shared.js';
 import type { P4CommandSpec } from '../engine/command.js';
@@ -92,9 +92,8 @@ function reconcileCommand(options: PreviewReconcileOptions, specs: string[]): P4
   if (options.useModTime) args.push('-m');
 
   if (options.includeWritable) args.push('-w');
-  args.push(...specs);
 
-  return { args, format: 'json', decode: toReconcileCandidate };
+  return { args, files: specs, format: 'json', decode: toReconcileCandidate };
 }
 
 /**
@@ -107,7 +106,7 @@ function reconcileCommand(options: PreviewReconcileOptions, specs: string[]): P4
 export const previewReconcile = operation<PreviewReconcileOptions, P4ReconcileCandidate, P4ReconcilePreview>(
   'previewReconcile',
   (options, sink) => Effect.gen(function* () {
-    let specs = specList(options.fileSpec);
+    let specs = yield* fileArgs(options.fileSpec);
 
     if (options.fileSpec === undefined && options.workspace !== undefined) {
       if (!options.workspace.root.trim()) return yield* invalid('workspace', 'The workspace has no root.');

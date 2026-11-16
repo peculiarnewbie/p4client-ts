@@ -4,11 +4,11 @@ import { drain, operation, progressCounter } from '../engine/operation.js';
 import {
   depotPath,
   description,
+  fileArgs,
   indexes,
   isoFromSeconds,
   malformed,
   requirePositive,
-  specList,
   text,
 } from './shared.js';
 import type { P4DepotPath } from '../schemas.js';
@@ -89,9 +89,9 @@ export const listStreams = operation<ListStreamsOptions, P4Stream, P4StreamList>
     const args = ['streams'];
 
     if (options.limit !== undefined) args.push('-m', String(yield* requirePositive(options.limit, 'limit')));
-    args.push(...specList(options.fileSpec));
+    const files = yield* fileArgs(options.fileSpec);
 
-    const output = yield* drain(sink, streamCommand({ args, format: 'json', decode: toStream }), {
+    const output = yield* drain(sink, streamCommand({ args, files, format: 'json', decode: toStream }), {
       item: (stream) => stream,
       counter: progressCounter(sink, 'records'),
     });

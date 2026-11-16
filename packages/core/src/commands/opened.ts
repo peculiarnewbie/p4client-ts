@@ -6,6 +6,7 @@ import {
   change,
   clientFile,
   description,
+  fileArgs,
   integer,
   optionalDepotPath,
   specList,
@@ -88,17 +89,19 @@ export function openedCommand(options: ListOpenedFilesOptions): P4CommandSpec<P4
   if (options.client !== undefined) args.push('-C', options.client);
 
   if (options.change !== undefined) args.push('-c', String(options.change));
-  args.push(...specList(options.fileSpec));
 
-  return { args, format: 'json', decode: toOpenedFile };
+  return { args, files: specList(options.fileSpec), format: 'json', decode: toOpenedFile };
 }
 
 /** Files open for any action (`p4 opened`), in the connection's workspace unless filtered. */
 export const listOpenedFiles = operation<ListOpenedFilesOptions, P4OpenedFile, P4OpenedFileList>('listOpenedFiles', (options, sink) =>
-  Effect.map(
-    drain(sink, streamCommand(openedCommand(options)), {
+  Effect.gen(function* () {
+    const fileSpec = yield* fileArgs(options.fileSpec);
+
+    const output = yield* drain(sink, streamCommand(openedCommand({ ...options, fileSpec })), {
       item: (file) => file,
       counter: progressCounter(sink, 'files'),
-    }),
-    (output) => ({ items: output.items, messages: output.messages }),
-  ), 'files');
+    });
+
+    return { items: output.items, messages: output.messages };
+  }), 'files');

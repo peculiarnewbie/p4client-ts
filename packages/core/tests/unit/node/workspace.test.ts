@@ -20,7 +20,7 @@ mkdirSync(join(alternate, 'Content'), { recursive: true });
 
 const clients = [
   { client: 'project', Owner: 'arif', Root: project },
-  { client: 'tool', Owner: 'arif', Root: nested },
+  { client: 'tool', Owner: 'arif', Root: nested, Options: 'allwrite noclobber nocompress unlocked nomodtime normdir' },
   { client: 'elsewhere', Owner: 'arif', Root: join(scratch, 'Missing') },
 ];
 
@@ -41,6 +41,7 @@ describe('findWorkspaceForPath', () => {
     const found = await run(findWorkspaceForPath, { path: join(nested, 'Source') }, executor);
     expect(found.match).toMatchObject({ root: nested, relativePath: 'Source' });
     expect(found.match?.workspace.client).toBe('tool');
+    expect(found.match?.workspace.options).toMatchObject({ allwrite: true, clobber: false });
     expect(found.candidates.map((candidate) => candidate.workspace.client)).toEqual(['tool', 'project']);
   });
 

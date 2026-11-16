@@ -8,6 +8,7 @@ import {
   decodeField,
   depotPath,
   description,
+  fileArgs,
   integer,
   invalid,
   isoFromSeconds,
@@ -17,7 +18,6 @@ import {
   optionalAction,
   positive,
   requirePositive,
-  specList,
   text,
 } from './shared.js';
 import type { P4CommandSpec } from '../engine/command.js';
@@ -329,7 +329,7 @@ export interface ListFilesOptions {
 export const listFiles = operation<ListFilesOptions, P4DepotFile, P4FileList>('listFiles', (options, sink) =>
   Effect.gen(function* () {
     const limit = options.limit === undefined ? undefined : yield* requirePositive(options.limit, 'limit');
-    const specs = specList(options.fileSpec);
+    const specs = yield* fileArgs(options.fileSpec);
 
     if (specs.length === 0) return { items: [], messages: [], failures: [], hasMore: false };
     const args = ['files'];
@@ -337,11 +337,10 @@ export const listFiles = operation<ListFilesOptions, P4DepotFile, P4FileList>('l
     if (options.existing) args.push('-e');
 
     if (limit !== undefined) args.push('-m', String(limit + 1));
-    args.push(...specs);
 
     const output = yield* drainAll(
       sink,
-      { args, format: 'json', policy: FILE_SPEC_POLICY, decode: toDepotFile },
+      { args, files: specs, format: 'json', policy: FILE_SPEC_POLICY, decode: toDepotFile },
       progressCounter(sink, 'files', limit ?? null),
       upTo(limit),
     );
@@ -489,8 +488,19 @@ export interface P4FileStat {
   readonly isUnresolved: boolean;
   /** `user@client` of each other workspace that has the file open. */
   readonly otherOpen: string[];
+  /** {@link otherOpen}, split into user and workspace, in the same order. */
+  readonly otherOpenedBy: P4OpenedBy[];
   /** Whether another workspace has the file locked. */
   readonly otherLocked: boolean;
+  /** Whether the head file type is exclusive-open (`+l`), so only one workspace can have it open. */
+  readonly isExclusive: boolean;
+}
+
+/** Who has a file open: a user, and the workspace they opened it in. */
+export interface P4OpenedBy {
+  readonly user: string;
+  /** Workspace name; identifies the person where users share an account. */
+  readonly client: string;
 }
 
 /** File state for several specs, with the specs that matched nothing. */
@@ -501,6 +511,15 @@ export interface P4FileStatList {
   readonly failures: P4ItemFailure[];
 }
 
+/** Split `user@client` at its last `@`: a workspace name cannot contain one. */
+function openedBy(value: string, row: Row): P4OpenedBy {
+  const at = value.lastIndexOf('@');
+
+  if (at <= 0 || at === value.length - 1) throw malformed(`Expected user@client, received "${value}".`, row);
+
+  return { user: value.slice(0, at), client: value.slice(at + 1) };
+}
+
 function toFileStat(row: Row): P4FileStat {
   const headAction = optionalAction(row.headAction, row);
   const headType = text(row.headType);
@@ -509,6 +528,7 @@ function toFileStat(row: Row): P4FileStat {
   const isDeletedAtHead = isDeleteAction(headAction);
   const openAction = optionalAction(row.action, row);
   const keys = Object.keys(row);
+  const otherOpen = keys.filter((key) => /^otherOpen\d+$/.test(key)).flatMap((key) => text(row[key]) ?? []);
 
   return {
     depotFile: depotPath(row.depotFile, row),
@@ -529,8 +549,10 @@ function toFileStat(row: Row): P4FileStat {
     openChange: openAction !== null && row.change !== undefined ? change(row.change, row) : null,
     openType: openAction === null ? null : text(row.type),
     isUnresolved: row.unresolved !== undefined,
-    otherOpen: keys.filter((key) => /^otherOpen\d+$/.test(key)).flatMap((key) => text(row[key]) ?? []),
+    otherOpen,
+    otherOpenedBy: otherOpen.map((value) => openedBy(value, row)),
     otherLocked: keys.some((key) => /^otherLock\d*$/.test(key)),
+    isExclusive: /\+[A-Za-z0-9]*l/.test(headType ?? ''),
   };
 }
 
@@ -540,7 +562,7 @@ function toFileStat(row: Row): P4FileStat {
  */
 export const statFiles = operation<StatFilesOptions, P4FileStat, P4FileStatList>('statFiles', (options, sink) =>
   Effect.gen(function* () {
-    const specs = specList(options.fileSpec);
+    const specs = yield* fileArgs(options.fileSpec);
     const limit = options.limit === undefined ? undefined : yield* requirePositive(options.limit, 'limit');
     const scoped: string[] = [];
 
@@ -559,11 +581,9 @@ export const statFiles = operation<StatFilesOptions, P4FileStat, P4FileStatList>
       args.push('-T', [...new Set(['depotFile', ...options.fields])].join(' '));
     }
 
-    args.push(...scoped);
-
     const output = yield* drainAll(
       sink,
-      { args, format: 'json', policy: FILE_SPEC_POLICY, decode: toFileStat },
+      { args, files: scoped, format: 'json', policy: FILE_SPEC_POLICY, decode: toFileStat },
       progressCounter(sink, 'files', limit ?? null),
     );
 
@@ -620,13 +640,13 @@ function toWhereMapping(row: Row): P4WhereMapping {
  */
 export const whereFiles = operation<WhereFilesOptions, P4WhereMapping, P4WhereMappingList>('whereFiles', (options, sink) =>
   Effect.gen(function* () {
-    const specs = specList(options.fileSpec);
+    const specs = yield* fileArgs(options.fileSpec);
 
     if (specs.length === 0) return { items: [], messages: [], failures: [] };
 
     const output = yield* drainAll(
       sink,
-      { args: ['where', ...specs], format: 'json', policy: FILE_SPEC_POLICY, decode: toWhereMapping },
+      { args: ['where'], files: specs, format: 'json', policy: FILE_SPEC_POLICY, decode: toWhereMapping },
       progressCounter(sink, 'files'),
     );
 
@@ -676,11 +696,11 @@ function toHaveFile(row: Row): P4HaveFile {
  */
 export const listHaveFiles = operation<ListHaveFilesOptions, P4HaveFile, P4HaveFileList>('listHaveFiles', (options, sink) =>
   Effect.gen(function* () {
-    const specs = specList(options.fileSpec);
+    const specs = yield* fileArgs(options.fileSpec);
 
     const output = yield* drainAll(
       sink,
-      { args: ['have', ...specs], format: 'json', policy: specs.length > 0 ? FILE_SPEC_POLICY : undefined, decode: toHaveFile },
+      { args: ['have'], files: specs, format: 'json', policy: specs.length > 0 ? FILE_SPEC_POLICY : undefined, decode: toHaveFile },
       progressCounter(sink, 'files'),
     );
 

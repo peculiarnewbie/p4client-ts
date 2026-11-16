@@ -4,7 +4,7 @@ import { drain, operation, progressCounter } from '../engine/operation.js';
 import { decodeField, description, isoFromSeconds, malformed, optionalDepotPath, text } from './shared.js';
 import type { P4DepotPath } from '../schemas.js';
 import type { P4Message } from '../wire/message.js';
-import type { Row } from './shared.js';
+import type { Field, Row } from './shared.js';
 
 /** Options for {@link listWorkspaces}. */
 export interface ListWorkspacesOptions {
@@ -19,6 +19,24 @@ export interface ListWorkspacesOptions {
   readonly host?: string | undefined;
 }
 
+/** A workspace's `Options:` line, one flag per option; `true` is the option, `false` its `no` form. */
+export interface P4WorkspaceOptions {
+  /** Synced files are writable, so a writable file does not mean it was edited. */
+  readonly allwrite: boolean;
+  /** Sync may overwrite writable files that are not open. */
+  readonly clobber: boolean;
+  /** Content is compressed between client and server. */
+  readonly compress: boolean;
+  /** Only the owner can use, change or delete the workspace (`locked`, not `unlocked`). */
+  readonly locked: boolean;
+  /** Synced files get the revision's modification time instead of the sync time. */
+  readonly modtime: boolean;
+  /** Sync and revert remove directories they leave empty. */
+  readonly rmdir: boolean;
+  /** An alternate sync client (such as P4VFS) manages the files. `false` when the server does not report it. */
+  readonly altsync: boolean;
+}
+
 /** A workspace (client spec) as `p4 clients` lists it. */
 export interface P4Workspace {
   readonly client: string;
@@ -30,6 +48,8 @@ export interface P4Workspace {
   /** Stream of a stream workspace, or `null`. */
   readonly stream: P4DepotPath | null;
   readonly description: string | null;
+  /** The spec's `Options:` line, or `null` when the server did not report one. */
+  readonly options: P4WorkspaceOptions | null;
   /** Last use, as ISO 8601. */
   readonly accessedAt: string | null;
   /** Last change to the spec, as ISO 8601. */
@@ -44,6 +64,24 @@ export interface P4WorkspaceList {
 
 const Name = Schema.NonEmptyString;
 
+/** Parse an `Options:` line such as `allwrite noclobber nocompress unlocked nomodtime rmdir`. */
+function workspaceOptions(value: Field): P4WorkspaceOptions | null {
+  const words = text(value)?.split(/\s+/);
+
+  if (words === undefined) return null;
+  const set = new Set(words);
+
+  return {
+    allwrite: set.has('allwrite'),
+    clobber: set.has('clobber'),
+    compress: set.has('compress'),
+    locked: set.has('locked'),
+    modtime: set.has('modtime'),
+    rmdir: set.has('rmdir'),
+    altsync: set.has('altsync'),
+  };
+}
+
 function toWorkspace(row: Row): P4Workspace {
   const root = text(row.Root);
 
@@ -56,6 +94,7 @@ function toWorkspace(row: Row): P4Workspace {
     host: text(row.Host),
     stream: optionalDepotPath(row.Stream, row),
     description: description(row.Description),
+    options: workspaceOptions(row.Options),
     accessedAt: isoFromSeconds(row.Access),
     updatedAt: isoFromSeconds(row.Update),
   };

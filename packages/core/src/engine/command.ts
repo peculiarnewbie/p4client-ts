@@ -35,6 +35,11 @@ const FORMAT_ARGS: Readonly<Record<P4OutputFormat, readonly string[]>> = {
 export interface P4CommandSpec<A> {
   /** The subcommand and its arguments, without global options. */
   readonly args: readonly string[];
+  /**
+   * File arguments, appended to `args`. A list too long for one command line
+   * is sent on stdin instead, in a single `-x -` batch. Not with `input`.
+   */
+  readonly files?: readonly string[] | undefined;
   /** Structured output format. */
   readonly format: 'json' | 'marshal';
   /** Text for stdin, with `-x -` in `globalArgs`. */
@@ -119,17 +124,48 @@ function transitionProcess(state: ProcessState, event: P4ProcessEvent | { readon
   return Predicate.isTagged(event, 'exit') ? ProcessState.Exited({ code: event.code }) : state;
 }
 
-function invocation(
-  options: P4ResolvedOptions,
-  format: P4OutputFormat,
-  spec: { readonly args: readonly string[]; readonly input?: string | undefined; readonly globalArgs?: readonly string[] | undefined },
-): P4Invocation {
-  return {
+/**
+ * Longest command line, in characters, that keeps file arguments on it. Windows refuses
+ * more than 32,767 (`ENAMETOOLONG`); this leaves room for the quotes Node adds around
+ * arguments with spaces.
+ */
+export const COMMAND_LINE_BUDGET = 8_000;
+
+/** Windows command-line length of an invocation: each argument quoted and space-separated. */
+function commandLineLength(executable: string, args: readonly string[]): number {
+  return args.reduce((length, arg) => length + arg.length + 3, executable.length + 2);
+}
+
+interface InvocationSpec {
+  readonly args: readonly string[];
+  readonly files?: readonly string[] | undefined;
+  readonly input?: string | undefined;
+  readonly globalArgs?: readonly string[] | undefined;
+}
+
+function invocation(options: P4ResolvedOptions, format: P4OutputFormat, spec: InvocationSpec): P4Invocation {
+  const head = [...globalArgs(options.connection), ...FORMAT_ARGS[format], ...(spec.globalArgs ?? [])];
+  const files = spec.files ?? [];
+  const args = [...head, ...spec.args, ...files];
+
+  const run = {
     executable: options.executable,
-    args: [...globalArgs(options.connection), ...FORMAT_ARGS[format], ...(spec.globalArgs ?? []), ...spec.args],
     cwd: options.cwd,
     env: { ...options.env, ...connectionEnv(options.connection) },
-    input: spec.input,
+  };
+
+  if (files.length === 0 || commandLineLength(options.executable, args) <= COMMAND_LINE_BUDGET) {
+    return { ...run, args, input: spec.input };
+  }
+
+  if (spec.input !== undefined) throw new Error('A command cannot send both input and files on stdin.');
+
+  // `-x` runs the command once per `-b` arguments (128 by default), which would repeat
+  // once-per-command output such as sync totals; one batch keeps argv's results.
+  return {
+    ...run,
+    args: [...head, '-x', '-', '-b', String(files.length), ...spec.args],
+    input: `${files.join('\n')}\n`,
   };
 }
 

@@ -68,9 +68,32 @@ describe('listWorkspaces', () => {
       host: null,
       stream: asDepotPath('//p4ts/main'),
       description: null,
+      // Options: allwrite clobber nocompress unlocked nomodtime rmdir noaltsync
+      options: {
+        allwrite: true, clobber: true, compress: false, locked: false, modtime: false, rmdir: true, altsync: false,
+      },
       accessedAt: fixtureTime('clients', 'Access'),
       updatedAt: fixtureTime('clients', 'Update'),
     }]);
+  });
+
+  it('reads each option and its no form, and null when the server reports no Options line', async () => {
+    const row = (client: string, options?: string) => JSON.stringify({ client, Owner: 'u', Root: `C:\\${client}`, Options: options });
+
+    const result = await run(listWorkspaces, {}, scriptedExecutor(() => ({
+      stdout: [
+        row('a', 'noallwrite noclobber compress locked modtime normdir altsync'),
+        row('b', 'allwrite noclobber nocompress unlocked nomodtime normdir'),
+        row('c'),
+      ].join('\n'),
+    })));
+
+    expect(result.items.map((workspace) => [workspace.client, workspace.options])).toEqual([
+      ['a', { allwrite: false, clobber: false, compress: true, locked: true, modtime: true, rmdir: false, altsync: true }],
+      // A server before altsync leaves it out.
+      ['b', { allwrite: true, clobber: false, compress: false, locked: false, modtime: false, rmdir: false, altsync: false }],
+      ['c', null],
+    ]);
   });
 
   it('keeps hostless workspaces and those restricted to the host', async () => {

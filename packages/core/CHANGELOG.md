@@ -4,6 +4,35 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
+## Unreleased
+
+### Breaking changes
+
+- File specs must be non-blank, on one line, and must not start with `-`, in every operation
+  that takes a list of them. Others reject with `P4InvalidArgumentError` (`option: 'fileSpec'`)
+  without running `p4`; a leading `-` used to reach `p4` as an option.
+- `P4FileStat`, `P4Workspace` and `P4PrintedFile` have new fields (below). Results compared
+  with `toEqual` need them.
+
+### Added
+
+- File spec lists of any length. `statFiles`, `listFiles`, `whereFiles`, `listHaveFiles`,
+  `listOpenedFiles`, `previewSync`, `sync`, `listChangelists`, `listStreams`,
+  `previewReconcile` and the open and revert operations send a list too long for one command
+  line on stdin, as one `p4 -x - -b <count>` batch. Windows refused such a list with
+  `ENAMETOOLONG` (32,767 characters). One batch runs the command once, so it reports what the
+  argument list does: the same items, per-spec failures and messages, and sync totals once.
+  Shorter lists stay on the command line. `P4CommandSpec` takes the list as `files`.
+- `printFile({ maxBytes })` reads at most that many bytes of one revision, then stops `p4`.
+  `isTruncated` says whether content was left unread. The binary size check and the signal
+  error skip a requested cut and still apply to any other short print. `file` must not
+  contain a wildcard.
+- `listWorkspaces` items, and so `findWorkspaceForPath` matches, carry `options`: the
+  `Options:` line as flags (`allwrite`, `clobber`, `compress`, `locked`, `modtime`, `rmdir`,
+  `altsync`), or `null` when the server reports none.
+- `statFiles` items carry `otherOpenedBy`, the `user` and `client` of each `otherOpen` entry
+  in the same order, and `isExclusive` for a `+l` head type.
+
 ## 0.15.0 - 2026-11-10
 
 ### Fixed

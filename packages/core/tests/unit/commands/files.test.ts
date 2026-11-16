@@ -270,7 +270,9 @@ describe('statFiles', () => {
       openType: null,
       isUnresolved: false,
       otherOpen: [],
+      otherOpenedBy: [],
       otherLocked: false,
+      isExclusive: false,
     });
   });
 
@@ -296,7 +298,43 @@ describe('statFiles', () => {
 
   it('reads other workspaces that have the file open and locked', async () => {
     const stats = await run(statFiles, { fileSpec: '//p4ts/main/wire/exclusive.uasset' }, replay('fstat-exclusive-other'));
-    expect(stats.items).toMatchObject([{ otherOpen: ['p4ts-e2e@wire_second'], otherLocked: true, isBinary: true }]);
+    expect(stats.items).toEqual([expect.objectContaining({
+      headType: 'binary+l',
+      otherOpen: ['p4ts-e2e@wire_second'],
+      otherOpenedBy: [{ user: 'p4ts-e2e', client: 'wire_second' }],
+      otherLocked: true,
+      isBinary: true,
+      isExclusive: true,
+    })]);
+  });
+
+  it('splits each other open at its last @, keeping their order', async () => {
+    const row = JSON.stringify({
+      depotFile: '//d/a.uasset', headType: 'binary+Fl',
+      otherOpen: '3', otherOpen0: 'anna@ws-anna', otherOpen1: 'shared@studio@ws-bo', otherOpen2: 'anna@ws-anna-laptop',
+    });
+
+    const [stat] = (await run(statFiles, { fileSpec: '//d/a.uasset' }, scriptedExecutor(() => ({ stdout: row })))).items;
+    expect(stat?.otherOpen).toEqual(['anna@ws-anna', 'shared@studio@ws-bo', 'anna@ws-anna-laptop']);
+    expect(stat?.otherOpenedBy).toEqual([
+      { user: 'anna', client: 'ws-anna' },
+      { user: 'shared@studio', client: 'ws-bo' },
+      { user: 'anna', client: 'ws-anna-laptop' },
+    ]);
+  });
+
+  it('flags exclusive-open (+l) head types only', async () => {
+    const types = ['binary+l', 'binary+Fl', 'binary+lS2', 'text+kl', 'binary', 'binary+S10', 'ltext', 'text+k', 'xbinary'];
+    const stdout = types.map((headType, index) => JSON.stringify({ depotFile: `//d/${index}`, headType })).join('\n');
+    const stats = await run(statFiles, { fileSpec: '//d/...' }, scriptedExecutor(() => ({ stdout })));
+    expect(stats.items.map((stat) => [stat.headType, stat.isExclusive])).toEqual(types.map((type, index) => [type, index < 4]));
+  });
+
+  it('fails on another open that is not user@client', async () => {
+    for (const value of ['nobody', '@ws', 'user@']) {
+      const stdout = JSON.stringify({ depotFile: '//d/a.uasset', otherOpen0: value });
+      expectFailure(await failure(statFiles, { fileSpec: '//d/a.uasset' }, scriptedExecutor(() => ({ stdout }))), P4ParseError);
+    }
   });
 
   it('reads how this workspace has the file open', async () => {

@@ -141,6 +141,20 @@ export function specList(specs: FileSpecs | undefined): string[] {
   return isWireString(specs) ? [specs] : [...specs];
 }
 
+/**
+ * The file specs as a list of command `files`, which a long list sends on stdin, one per line.
+ * Each must read the same either way: not blank, on one line (p4 drops a line's `\r`), and
+ * not starting with `-`, which p4 would take as an option.
+ */
+export function fileArgs(specs: FileSpecs | undefined, option = 'fileSpec'): Effect.Effect<string[], P4InvalidArgumentError> {
+  const list = specList(specs);
+  const rejected = list.find((spec) => spec.trim() === '' || /[\r\n]/.test(spec) || spec.startsWith('-'));
+
+  return rejected === undefined
+    ? Effect.succeed(list)
+    : invalid(option, `${option} entries must be non-blank, on one line, and not start with "-"; received ${JSON.stringify(rejected)}.`);
+}
+
 /** Every `name{index}` field of a record, by index, in index order (as `describe` and `filelog` print them). */
 export function indexes(row: Row, field: string): number[] {
   const pattern = new RegExp(`^${field}(\\d+)$`);
