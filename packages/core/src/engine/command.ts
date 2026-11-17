@@ -1,6 +1,7 @@
 import { Data, Effect, Predicate, Stream } from 'effect';
 import {
   P4CommandError,
+  P4InvalidArgumentError,
   P4ParseError,
   P4ReadOnlyError,
   P4TimeoutError,
@@ -39,6 +40,7 @@ export interface P4CommandSpec<A> {
    * File arguments, appended to `args`. An ASCII list too long for one command line goes on
    * stdin as one `-x -` batch; one with other characters runs as several commands, whose
    * per-command output (sync totals, `-m` limits) the operation merges. Not with `input`.
+   * An entry that is blank, spans lines or starts with `-` fails with `P4InvalidArgumentError`.
    */
   readonly files?: readonly string[] | undefined;
   /** Structured output format. */
@@ -149,6 +151,14 @@ export function sameOnStdin(spec: string): boolean {
   }
 
   return true;
+}
+
+/**
+ * Whether a file argument reads the same as an argument and as a stdin line: not blank, on
+ * one line (p4 drops a line's `\r`), and not starting with `-`, which p4 takes as an option.
+ */
+export function isFileArg(spec: string): boolean {
+  return spec.trim() !== '' && !/[\r\n]/.test(spec) && !spec.startsWith('-');
 }
 
 interface InvocationSpec {
@@ -450,6 +460,15 @@ function processStream<A>(
   return Stream.unwrap(Effect.gen(function* () {
     const options = yield* P4Config;
     const executor = yield* P4Executor;
+    const rejected = spec.files?.find((file) => !isFileArg(file));
+
+    if (rejected !== undefined) {
+      return yield* new P4InvalidArgumentError({
+        message: `files entries must be non-blank, on one line, and not start with "-"; received ${JSON.stringify(rejected)}.`,
+        option: 'files',
+      });
+    }
+
     const runs = invocations(options, format, spec);
 
     // Every process is checked before the first one starts.

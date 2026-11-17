@@ -1,4 +1,5 @@
 import { Effect, Schema } from 'effect';
+import { isFileArg } from '../engine/command.js';
 import { P4InvalidArgumentError, P4ParseError } from '../errors.js';
 import {
   P4ChangeSchema,
@@ -141,14 +142,10 @@ export function specList(specs: FileSpecs | undefined): string[] {
   return isWireString(specs) ? [specs] : [...specs];
 }
 
-/**
- * The file specs as a list of command `files`, which a long list sends on stdin, one per line.
- * Each must read the same either way: not blank, on one line (p4 drops a line's `\r`), and
- * not starting with `-`, which p4 would take as an option.
- */
+/** The file specs as a list of command `files`, each checked by {@link isFileArg}. */
 export function fileArgs(specs: FileSpecs | undefined, option = 'fileSpec'): Effect.Effect<string[], P4InvalidArgumentError> {
   const list = specList(specs);
-  const rejected = list.find((spec) => spec.trim() === '' || /[\r\n]/.test(spec) || spec.startsWith('-'));
+  const rejected = list.find((spec) => !isFileArg(spec));
 
   return rejected === undefined
     ? Effect.succeed(list)

@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { Effect, Layer, Predicate } from 'effect';
+import { Cause, Effect, Exit, Layer, Predicate } from 'effect';
 import { listChangelists } from '../../../src/commands/changelists.js';
 import { listFiles, listHaveFiles, statFiles, whereFiles } from '../../../src/commands/files.js';
 import { openForEdit, previewOpenForAdd, previewOpenForEdit } from '../../../src/commands/open.js';
-import { listOpenedFiles } from '../../../src/commands/opened.js';
+import { listOpenedFiles, openedCommand } from '../../../src/commands/opened.js';
 import { previewReconcile } from '../../../src/commands/reconcile.js';
 import { previewRevert, revert } from '../../../src/commands/revert.js';
 import { printBatch, printFile } from '../../../src/commands/print.js';
 import { listStreams } from '../../../src/commands/streams.js';
 import { previewSync, sync } from '../../../src/commands/sync.js';
+import { runCommand } from '../../../src/engine/command.js';
 import { configLayer } from '../../../src/engine/config.js';
 import { runOperation } from '../../../src/engine/operation.js';
 import { P4InvalidArgumentError, P4ReadOnlyError } from '../../../src/errors.js';
@@ -253,6 +254,19 @@ describe('file spec validation', () => {
       }
     });
   }
+
+  it('rejects the same specs through the public openedCommand builder, which does not check them', async () => {
+    for (const spec of rejected) {
+      const recorder = recordingExecutor(scriptedExecutor(() => ({})));
+
+      const exit = await Effect.runPromiseExit(runCommand(openedCommand({ fileSpec: [...LONG, spec] })).pipe(
+        Effect.provide(Layer.merge(recorder.layer, configLayer({}))),
+      ));
+
+      expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : null).toBeInstanceOf(P4InvalidArgumentError);
+      expect(recorder.invocations).toEqual([]);
+    }
+  });
 
   it('keeps spaces, which mean the same on stdin', async () => {
     const spec = '//depot/My Project/Content/Hero Idle.uasset';

@@ -4,6 +4,7 @@ import { configLayer } from '../../../src/engine/config.js';
 import { COMMAND_LINE_BUDGET, runCommand, runPlainCommand, streamCommand } from '../../../src/engine/command.js';
 import {
   P4CommandError,
+  P4InvalidArgumentError,
   P4ParseError,
   P4ReadOnlyError,
   P4SpawnError,
@@ -337,7 +338,7 @@ describe('command invocation', () => {
     expect(invocation?.executable).toBe('C:/p4/p4.exe');
     expect(invocation?.args).toEqual([
       '-p', 'ssl:p4:1666', '-u', 'arif', '-c', 'ws', '-C', 'utf8',
-      '-zprog=p4client-ts', '-zversion=0.15.0', '-Mj', '-z', 'tag', 'info',
+      '-zprog=p4client-ts', '-zversion=0.16.0', '-Mj', '-z', 'tag', 'info',
     ]);
     expect(invocation?.cwd).toBe('C:/ws');
     expect(invocation?.env).toEqual({ P4CLIENT: undefined, P4CONFIG: 'p4client-ts.isolated-no-config', P4ENVIRO: 'p4client-ts.isolated-no-enviro' });
@@ -496,6 +497,21 @@ describe('file arguments', () => {
     ));
 
     expect(Exit.isFailure(exit) && exit.cause.reasons[0]?._tag).toBe('Die');
+  });
+
+  it.each([
+    ['blank', ['//d/a.uasset', ' ']],
+    ['spanning lines', ['//d/a.uasset\n//d/b.uasset']],
+    ['carrying a carriage return', ['//d/a.uasset\r']],
+    ['starting with "-"', ['-a']],
+  ])('rejects a file argument %s before running anything, short list or long', async (_, bad) => {
+    for (const files of [bad, [...paths(500), ...bad]]) {
+      const recorder = recordingExecutor(scriptedExecutor(() => ({ stdout: '' })));
+      const error = await failure(runCommand(spec(files)), recorder.layer);
+      expect(error).toBeInstanceOf(P4InvalidArgumentError);
+      expect(error).toMatchObject({ option: 'files' });
+      expect(recorder.invocations).toEqual([]);
+    }
   });
 });
 

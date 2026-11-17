@@ -5,12 +5,13 @@ description: Release notes for p4client-ts.
 
 All notable changes to `p4client-ts` are documented here.
 
-## Unreleased
+## 0.16.0 - 2026-11-17
 
 ### Breaking changes
 
 - File specs must be non-blank, on one line, and must not start with `-`; others reject with
-  `P4InvalidArgumentError` without running `p4`.
+  `P4InvalidArgumentError` without running `p4`. `runCommand` checks a spec's `files` the
+  same way.
 - `P4FileStat`, `P4Workspace` and `P4PrintedFile` have new fields.
 - `listStreams` returns at most `limit` streams, also when given several paths.
 

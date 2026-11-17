@@ -4,13 +4,15 @@ All notable changes to `p4client-ts` are documented here.
 
 This project follows semantic versioning.
 
-## Unreleased
+## 0.16.0 - 2026-11-17
 
 ### Breaking changes
 
 - File specs must be non-blank, on one line, and must not start with `-`, in every operation
   that takes a list of them, `printBatch` included. Others reject with `P4InvalidArgumentError`
   (`option: 'fileSpec'`) without running `p4`; a leading `-` used to reach `p4` as an option.
+  `runCommand` and `streamCommand` check a spec's `files` the same way (`option: 'files'`),
+  so command builders such as `openedCommand` do too.
 - `P4FileStat`, `P4Workspace` and `P4PrintedFile` have new fields (below). Results compared
   with `toEqual` need them.
 - `listStreams` returns at most `limit` streams, also when given several paths.
@@ -26,13 +28,6 @@ This project follows semantic versioning.
   several commands, so each spec names the file it names in a short list: stdin carries UTF-8,
   while Windows passes arguments in the ANSI code page. Sync totals are added up across the
   commands. Shorter lists stay on the command line. `P4CommandSpec` takes the list as `files`.
-
-### Fixed
-
-- `printBatch` and batched `materializeDepotFiles` sent every spec on stdin, so a non-ASCII
-  spec could name a different file than `printFile` and the per-file print did (on Windows, the
-  command line uses the ANSI code page). A list with a non-ASCII spec is now sent as
-  arguments, and materialize prints such revisions per file.
 - `printFile({ maxBytes })` reads at most that many bytes of one revision, then stops `p4`.
   `isTruncated` says whether content was left unread; `fileSize` stays the whole revision's.
   The binary size check and the signal error skip a requested cut and still apply to any
@@ -42,6 +37,13 @@ This project follows semantic versioning.
   `altsync`), or `null` when the server reports none.
 - `statFiles` items carry `otherOpenedBy`, the `user` and `client` of each `otherOpen` entry
   in the same order, and `isExclusive` for a `+l` head type.
+
+### Fixed
+
+- `printBatch` and batched `materializeDepotFiles` sent every spec on stdin, so a non-ASCII
+  spec could name a different file than `printFile` and the per-file print did (on Windows, the
+  command line uses the ANSI code page). A list with a non-ASCII spec is now sent as
+  arguments, and materialize prints such revisions per file.
 
 ## 0.15.0 - 2026-11-10
 
