@@ -5,11 +5,11 @@ import { readDefaultChangelist } from './default-changelist.js';
 import {
   change,
   description,
+  fileArgs,
   invalid,
   isoFromSeconds,
   requireNonNegative,
   requirePositive,
-  specList,
   text,
 } from './shared.js';
 import type { P4Operation, P4Context, P4Sink } from '../engine/operation.js';
@@ -132,7 +132,8 @@ export const listChangelists =
   Effect.gen(function* () {
     const limit = options.limit === 'all' ? null : yield* requirePositive(options.limit ?? DEFAULT_LIMIT, 'limit');
     const cursor = options.cursor === undefined ? undefined : yield* requireNonNegative(options.cursor, 'cursor');
-    const specs = yield* scopedSpecs(specList(options.fileSpec), cursor);
+    const fileSpec = yield* fileArgs(options.fileSpec);
+    const specs = yield* scopedSpecs(fileSpec, cursor);
     const args = ['changes', '-s', options.status];
 
     if (options.fullDescriptions ?? true) args.push('-l');
@@ -142,13 +143,12 @@ export const listChangelists =
     if (options.user !== undefined) args.push('-u', options.user);
 
     if (options.client !== undefined) args.push('-c', options.client);
-    args.push(...specs);
 
     const counter = progressCounter(sink, 'changes', limit);
 
-    const output = yield* drain(sink, streamCommand({ args, format: 'json', decode: toChangelist(options.status) }), {
-      counter,
-    });
+    const output = yield* drain(sink, streamCommand({
+      args, files: specs, format: 'json', decode: toChangelist(options.status),
+    }), { counter });
 
     // Several scopes can each report the same changelist.
     const unique = [...new Map(output.items.map((item) => [item.change, item])).values()]
@@ -163,7 +163,7 @@ export const listChangelists =
     const wantsDefault = options.status === 'pending' && (options.includeDefault ?? true) && cursor === undefined;
 
     if (wantsDefault) {
-      const { description: found, opened } = yield* readDefaultChangelist(options);
+      const { description: found, opened } = yield* readDefaultChangelist({ ...options, fileSpec });
       messages.push(...found.messages);
 
       for (const message of found.messages) yield* sink.message(message);

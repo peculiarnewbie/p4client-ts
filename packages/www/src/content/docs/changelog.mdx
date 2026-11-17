@@ -5,6 +5,32 @@ description: Release notes for p4client-ts.
 
 All notable changes to `p4client-ts` are documented here.
 
+## 0.16.0 - 2026-11-17
+
+### Breaking changes
+
+- File specs must be non-blank, on one line, and must not start with `-`; others reject with
+  `P4InvalidArgumentError` without running `p4`. `runCommand` checks a spec's `files` the
+  same way.
+- `P4FileStat`, `P4Workspace` and `P4PrintedFile` have new fields.
+- `listStreams` returns at most `limit` streams, also when given several paths.
+
+### Added
+
+- File spec lists of any length. A long ASCII list goes on stdin as one `p4 -x - -b <count>`
+  batch, so results match a short list's, sync totals included. A long list with another
+  character stays on the command line in several commands, so each spec names the same file
+  as in a short list.
+- `printFile({ maxBytes })` reads the start of a revision and stops `p4`; `isTruncated` says
+  whether content was left unread, and `fileSize` stays the whole revision's.
+- Workspaces carry `options` (`allwrite`, `clobber`, `locked` and the rest).
+- `statFiles` items carry `otherOpenedBy` (`user`, `client`) and `isExclusive` (`+l`).
+
+### Fixed
+
+- `printBatch` and batched `materializeDepotFiles` send a non-ASCII spec as an argument, as
+  `printFile` does; on stdin it could name a different file.
+
 ## 0.15.0 - 2026-11-10
 
 ### Fixed

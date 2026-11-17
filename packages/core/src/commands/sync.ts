@@ -3,12 +3,12 @@ import { streamCommand } from '../engine/command.js';
 import { drain, operation, progressCounter } from '../engine/operation.js';
 import {
   clientFile,
+  fileArgs,
   integer,
   itemFailure,
   malformed,
   optionalAction,
   optionalDepotPath,
-  specList,
 } from './shared.js';
 import type { P4CommandSpec } from '../engine/command.js';
 import type { P4ProgressCounter, P4Sink } from '../engine/operation.js';
@@ -96,7 +96,7 @@ export function toSyncItem(row: Row): P4SyncItem {
   return item;
 }
 
-function syncCommand(options: SyncOptions, preview: boolean): P4CommandSpec<SyncRecord> {
+function syncCommand(options: SyncOptions, preview: boolean, files: readonly string[]): P4CommandSpec<SyncRecord> {
   const args = ['sync'];
 
   if (preview) args.push('-n');
@@ -104,10 +104,10 @@ function syncCommand(options: SyncOptions, preview: boolean): P4CommandSpec<Sync
   if (options.force) args.push('-f');
 
   if (options.keepWorkspaceFiles) args.push('-k');
-  args.push(...specList(options.fileSpec));
 
   return {
     args,
+    files,
     format: 'json',
     policy: SYNC_POLICY,
     decode: (row) => ({
@@ -130,18 +130,24 @@ const runSync = Effect.fnUntraced(function* (
   preview: boolean,
   sink: P4Sink<P4SyncItem>,
 ) {
+  const files = yield* fileArgs(options.fileSpec);
   const counter = progressCounter(sink, 'files');
   let bytes: number | undefined;
   let totals: SyncTotals = { files: null, bytes: null };
   // Each file advances the count by one and the bytes by its size.
   const perFile: P4ProgressCounter = { ...counter, advance: () => counter.advance(1, bytes) };
 
-  const output = yield* drain(sink, streamCommand(syncCommand(options, preview)), {
+  const output = yield* drain(sink, streamCommand(syncCommand(options, preview, files)), {
     item: (record) => record.item,
     counter: perFile,
     inspect: (record) => {
-      if (record.totalFileCount !== null && totals.files === null) {
-        totals = { files: record.totalFileCount, bytes: record.totalFileSize };
+      // A command announces its totals once; a long non-ASCII list runs as several commands.
+      if (record.totalFileCount !== null) {
+        totals = {
+          files: (totals.files ?? 0) + record.totalFileCount,
+          bytes: record.totalFileSize === null ? totals.bytes : (totals.bytes ?? 0) + record.totalFileSize,
+        };
+
         counter.expect(totals.files, totals.bytes);
       }
 

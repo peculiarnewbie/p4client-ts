@@ -5,12 +5,12 @@ import { openHolder } from '../wire/fallback.js';
 import {
   action,
   clientFile,
+  fileArgs,
   integer,
   invalid,
   itemFailure,
   optionalDepotPath,
   requirePositive,
-  specList,
   text,
 } from './shared.js';
 import type { P4Sink } from '../engine/operation.js';
@@ -124,12 +124,13 @@ const runOpen = Effect.fnUntraced(function* (
   fileSpec: FileSpecs,
   sink: P4Sink<P4FileOpen>,
 ) {
-  const specs = specList(fileSpec);
+  const specs = yield* fileArgs(fileSpec);
 
   if (specs.length === 0) return yield* invalid('fileSpec', `${command} needs at least one file.`);
 
   const output = yield* drain(sink, streamCommand({
-    args: [command, ...args, ...specs],
+    args: [command, ...args],
+    files: specs,
     format: 'json',
     policy: OPEN_POLICY,
     decode: toFileOpen,

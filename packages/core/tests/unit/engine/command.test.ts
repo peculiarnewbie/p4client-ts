@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { Effect, Exit, Layer, Predicate, Stream } from 'effect';
 import { configLayer } from '../../../src/engine/config.js';
-import { runCommand, runPlainCommand, streamCommand } from '../../../src/engine/command.js';
+import { COMMAND_LINE_BUDGET, runCommand, runPlainCommand, streamCommand } from '../../../src/engine/command.js';
 import {
   P4CommandError,
+  P4InvalidArgumentError,
   P4ParseError,
   P4ReadOnlyError,
   P4SpawnError,
@@ -11,15 +12,17 @@ import {
 } from '../../../src/errors.js';
 import { P4Executor, P4ProcessEvent } from '../../../src/exec/executor.js';
 import { expectFailure } from '../../support/assert.js';
-import { recordingExecutor, replayExecutor, scriptedExecutor } from '../../../src/testing/executor.js';
+import { commandArgs, recordingExecutor, replayExecutor, scriptedExecutor } from '../../../src/testing/executor.js';
 import { fixtureStdout } from '../../../src/testing/fixture.js';
 import { corpus } from '../../support/corpus.js';
+import { isWireString } from '../../../src/wire/value.js';
 import type { P4WireFields } from '../../../src/wire/value.js';
 import type { P4ClientOptions } from '../../../src/engine/config.js';
 import type { P4Error } from '../../../src/errors.js';
 import { P4CommandEvent } from '../../../src/engine/command.js';
 import type { P4CommandSpec } from '../../../src/engine/command.js';
 import type { P4ScriptedOutput } from '../../../src/testing/executor.js';
+import type { P4Invocation } from '../../../src/exec/executor.js';
 
 const fixtures = (...names: string[]) => names.map((name) => {
   const fixture = corpus.get(name);
@@ -335,7 +338,7 @@ describe('command invocation', () => {
     expect(invocation?.executable).toBe('C:/p4/p4.exe');
     expect(invocation?.args).toEqual([
       '-p', 'ssl:p4:1666', '-u', 'arif', '-c', 'ws', '-C', 'utf8',
-      '-zprog=p4client-ts', '-zversion=0.15.0', '-Mj', '-z', 'tag', 'info',
+      '-zprog=p4client-ts', '-zversion=0.16.0', '-Mj', '-z', 'tag', 'info',
     ]);
     expect(invocation?.cwd).toBe('C:/ws');
     expect(invocation?.env).toEqual({ P4CLIENT: undefined, P4CONFIG: 'p4client-ts.isolated-no-config', P4ENVIRO: 'p4client-ts.isolated-no-enviro' });
@@ -366,6 +369,149 @@ describe('command invocation', () => {
     expect(error).toBeInstanceOf(P4TimeoutError);
     expect(error).toMatchObject({ timeoutMs: 50, stdout: '{"depotFile":"//d/a.txt"}\n' });
     expect(interrupted).toBe(true);
+  });
+});
+
+describe('file arguments', () => {
+  const spec = (files: readonly string[], args = ['fstat']): P4CommandSpec<P4WireFields> => ({
+    args, files, format: 'json', decode: (row) => row,
+  });
+
+  const paths = (count: number) => Array.from({ length: count }, (_, index) =>
+    `//depot/Content/Characters/Hero/Animations/Locomotion/AS_Hero_Sprint_${String(index).padStart(4, '0')}.uasset`);
+
+  // What Windows counts: every argument quoted, separated by a space.
+  const commandLine = (executable: string, args: readonly string[]) =>
+    args.reduce((length, arg) => length + arg.length + 3, executable.length + 2);
+
+  const invoked = async (files: readonly string[], options: P4ClientOptions = {}, args = ['fstat']) => {
+    const recorder = recordingExecutor(scriptedExecutor(() => ({ stdout: '' })));
+    await run(runCommand(spec(files, args)), recorder.layer, options);
+
+    return recorder.invocations[0]!;
+  };
+
+  it('keeps a list that fits on the command line as arguments', async () => {
+    const files = paths(10);
+    const invocation = await invoked(files);
+    expect(commandArgs(invocation.args)).toEqual(['-Mj', '-z', 'tag', 'fstat', ...files]);
+    expect(invocation.input).toBeUndefined();
+  });
+
+  it('sends a longer list on stdin as one batch, so the command still runs once', async () => {
+    const files = paths(500);
+    const invocation = await invoked(files, {}, ['fstat', '-T', 'depotFile headRev']);
+    expect(commandArgs(invocation.args)).toEqual(['-Mj', '-z', 'tag', '-x', '-', '-b', '500', 'fstat', '-T', 'depotFile headRev']);
+    expect(invocation.input).toBe(`${files.join('\n')}\n`);
+  });
+
+  it('switches once the whole command line, executable included, passes the budget', async () => {
+    const bare = await invoked([]);
+    const room = COMMAND_LINE_BUDGET - commandLine('p4', bare.args) - 3;
+    const fits = `//d/${'a'.repeat(room - 4)}`;
+
+    expect((await invoked([fits])).args.at(-1)).toBe(fits);
+    expect((await invoked([`${fits}b`])).input).toBe(`${fits}b\n`);
+    expect((await invoked([fits], { executable: 'C:/Program Files/Perforce/p4.exe' })).input).toBe(`${fits}\n`);
+  });
+
+  it('applies the mutation guard to files sent on stdin', async () => {
+    const recorder = recordingExecutor(scriptedExecutor(() => ({ stdout: '' })));
+    const error = await failure(runCommand(spec(paths(500), ['sync'])), recorder.layer);
+    expect(error).toBeInstanceOf(P4ReadOnlyError);
+    expect(recorder.invocations).toEqual([]);
+    await run(runCommand(spec(paths(500), ['sync', '-n'])), recorder.layer);
+    expect(recorder.invocations).toHaveLength(1);
+    expect(commandArgs(recorder.invocations[0]!.args)).toEqual(['-Mj', '-z', 'tag', '-x', '-', '-b', '500', 'sync', '-n']);
+  });
+
+  it('keeps a short list with a non-ASCII spec as arguments', async () => {
+    const files = ['//depot/Content/Héro/AS_Héro_Idle.uasset', '//depot/Content/日本/AS_Run.uasset'];
+    const invocation = await invoked(files);
+    expect(commandArgs(invocation.args)).toEqual(['-Mj', '-z', 'tag', 'fstat', ...files]);
+    expect(invocation.input).toBeUndefined();
+  });
+
+  it('runs a long list with a non-ASCII spec as several commands of arguments, never on stdin', async () => {
+    // Stdin carries UTF-8 while Windows passes arguments in the ANSI code page, so `é` would name another file.
+    for (const at of [0, 250, 499]) {
+      const files = paths(500);
+      files[at] = '//depot/Content/Characters/Héro/AS_Héro_Idle.uasset';
+      const recorder = recordingExecutor(scriptedExecutor(() => ({ stdout: '' })));
+      await run(runCommand(spec(files, ['fstat', '-T', 'depotFile'])), recorder.layer);
+      const calls = recorder.invocations;
+
+      expect(calls.length).toBeGreaterThan(1);
+      expect(calls.every((call) => call.input === undefined && !call.args.includes('-x'))).toBe(true);
+      expect(calls.every((call) => commandLine(call.executable, call.args) <= COMMAND_LINE_BUDGET)).toBe(true);
+      expect(calls.every((call) => commandArgs(call.args).slice(0, 6).join(' ') === '-Mj -z tag fstat -T depotFile')).toBe(true);
+      expect(calls.flatMap((call) => commandArgs(call.args).slice(6))).toEqual(files);
+    }
+  });
+
+  it('streams the commands of a split list as one, in order, failing after the earlier ones', async () => {
+    const files = [...paths(300), '//depot/Content/Héro.uasset'];
+
+    const respond = (invocation: P4Invocation): P4ScriptedOutput => {
+      const first = commandArgs(invocation.args)[4]!;
+
+      return first === files[0]
+        ? { stdout: `${JSON.stringify({ depotFile: first })}\n` }
+        : { stdout: `${JSON.stringify({ depotFile: first })}\n`, exitCode: null };
+    };
+
+    const events: Array<P4CommandEvent<P4WireFields>> = [];
+
+    const error = await failure(
+      Stream.runForEach(streamCommand(spec(files)), (event) => Effect.sync(() => {
+        events.push(event);
+      })),
+      scriptedExecutor(respond),
+    );
+
+    // The second command's row follows the first's; then its signal fails the stream.
+    expect(error).toBeInstanceOf(P4CommandError);
+
+    const rows = events.flatMap((event) => (Predicate.isTagged(event, 'data') && isWireString(event.value.depotFile)
+      ? [event.value.depotFile]
+      : []));
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toBe(files[0]);
+    expect(files.indexOf(rows[1]!)).toBeGreaterThan(0);
+  });
+
+  it('checks every command of a split list before running any', async () => {
+    const files = [...paths(300), '//depot/Content/Héro.uasset'];
+    const recorder = recordingExecutor(scriptedExecutor(() => ({ stdout: '' })));
+    expect(await failure(runCommand(spec(files, ['sync'])), recorder.layer)).toBeInstanceOf(P4ReadOnlyError);
+    expect(recorder.invocations).toEqual([]);
+    await run(runCommand(spec(files, ['sync'])), recorder.layer, { allowMutation: true });
+    expect(recorder.invocations.length).toBeGreaterThan(1);
+  });
+
+  it('refuses input beside files that need stdin', async () => {
+    const exit = await Effect.runPromiseExit(provide(
+      runCommand({ ...spec(paths(500)), input: 'spec\n' }),
+      scriptedExecutor(() => ({ stdout: '' })),
+    ));
+
+    expect(Exit.isFailure(exit) && exit.cause.reasons[0]?._tag).toBe('Die');
+  });
+
+  it.each([
+    ['blank', ['//d/a.uasset', ' ']],
+    ['spanning lines', ['//d/a.uasset\n//d/b.uasset']],
+    ['carrying a carriage return', ['//d/a.uasset\r']],
+    ['starting with "-"', ['-a']],
+  ])('rejects a file argument %s before running anything, short list or long', async (_, bad) => {
+    for (const files of [bad, [...paths(500), ...bad]]) {
+      const recorder = recordingExecutor(scriptedExecutor(() => ({ stdout: '' })));
+      const error = await failure(runCommand(spec(files)), recorder.layer);
+      expect(error).toBeInstanceOf(P4InvalidArgumentError);
+      expect(error).toMatchObject({ option: 'files' });
+      expect(recorder.invocations).toEqual([]);
+    }
   });
 });
 

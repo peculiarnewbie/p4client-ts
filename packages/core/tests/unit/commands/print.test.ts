@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { Effect, Layer, Predicate } from 'effect';
+import { Effect, Layer, Predicate, Stream } from 'effect';
+import { P4Executor, P4ProcessEvent } from '../../../src/exec/executor.js';
 import { printBatch, printedText, printFile } from '../../../src/commands/print.js';
 import { runCommand } from '../../../src/engine/command.js';
 import { configLayer } from '../../../src/engine/config.js';
@@ -98,6 +99,92 @@ describe('print content size', () => {
   });
 });
 
+describe('printFile maxBytes', () => {
+  const SIZE = 1_000;
+
+  const stat = (fileSize = String(SIZE), type = 'binary+l') => marshalRecord({
+    code: 'stat', depotFile: '//d/Hero.uasset', rev: '3', type, fileSize,
+  });
+
+  const bytes = Buffer.from(Array.from({ length: SIZE }, (_, index) => 65 + (index % 26)));
+
+  // p4 sends content in 64 KiB records; these are smaller so a cut lands mid-file. All ASCII.
+  const content = (data: Buffer, size = 100) => Array.from({ length: Math.ceil(data.length / size) }, (_, index) =>
+    marshalRecord({ code: 'binary', data: data.subarray(index * size, (index + 1) * size).toString('latin1') }));
+
+  it('returns the first maxBytes bytes of a longer revision, marked truncated', async () => {
+    for (const chunkSize of [undefined, 7, 4096]) {
+      const executor = scriptedExecutor(() => ({ stdout: Buffer.concat([stat(), ...content(bytes)]) }), { chunkSize });
+      const printed = await run(printFile, { file: '//d/Hero.uasset', revision: 3, maxBytes: 250 }, executor);
+      expect(printed).toMatchObject({ depotFile: '//d/Hero.uasset', revision: 3, fileSize: SIZE, isBinary: true, isTruncated: true });
+      expect(Buffer.from(printed.content)).toEqual(bytes.subarray(0, 250));
+      expect(structuredClone(printed).content.byteLength).toBe(250);
+    }
+  });
+
+  it('stops reading and interrupts p4 at the cut, before it exits', async () => {
+    let interrupted = false;
+
+    const endless = Layer.succeed(P4Executor, {
+      run: () => Stream.concat(
+        Stream.fromIterable([stat(), ...content(bytes)].map((record) => P4ProcessEvent.stdout({ bytes: record }))),
+        Stream.never,
+      ).pipe(Stream.onExit(() => Effect.sync(() => {
+        interrupted = true;
+      }))),
+    });
+
+    const printed = await run(printFile, { file: '//d/Hero.uasset', maxBytes: 150 }, endless);
+    expect(printed).toMatchObject({ isTruncated: true });
+    expect(printed.content.length).toBe(150);
+    expect(interrupted).toBe(true);
+  });
+
+  it('returns a revision that fits whole, not truncated, and still checks its size', async () => {
+    for (const maxBytes of [SIZE, SIZE + 1, 1_000_000]) {
+      const printed = await run(printFile, { file: '//d/Hero.uasset', maxBytes }, scriptedExecutor(() => ({
+        stdout: Buffer.concat([stat(), ...content(bytes)]),
+      })));
+
+      expect(printed.isTruncated).toBe(false);
+      expect(Buffer.from(printed.content)).toEqual(bytes);
+    }
+  });
+
+  it('still fails a binary print short of fileSize that p4 ended itself', async () => {
+    const short = Buffer.concat([stat(), ...content(bytes.subarray(0, 300))]);
+    const executor = scriptedExecutor(() => ({ stdout: short }));
+    expectFailure(await failure(printFile, { file: '//d/Hero.uasset', maxBytes: 500 }, executor), P4ParseError);
+    expectFailure(await failure(printFile, { file: '//d/Hero.uasset' }, executor), P4ParseError);
+  });
+
+  it('still reports a signal that ended p4 before the cut', async () => {
+    const killed = scriptedExecutor(() => ({ stdout: Buffer.concat([stat(), ...content(bytes.subarray(0, 300))]), exitCode: null }));
+
+    for (const options of [{ maxBytes: 500 }, {}]) {
+      const error = await failure(printFile, { file: '//d/Hero.uasset', ...options }, killed);
+      expectFailure(error, P4CommandError, { exitCode: -1 });
+      expect(error.message).toContain('p4 was terminated by a signal.');
+    }
+  });
+
+  it('rejects a byte count that is not a positive integer, and a wildcard, without running p4', async () => {
+    const recorder = recordingExecutor(scriptedExecutor(() => ({})));
+
+    for (const maxBytes of [0, -1, 1.5, Number.NaN]) {
+      expectFailure(await failure(printFile, { file: '//d/Hero.uasset', maxBytes }, recorder.layer), P4InvalidArgumentError, {
+        option: 'maxBytes',
+      });
+    }
+
+    for (const file of ['//d/....uasset', '//d/*.uasset']) {
+      expectFailure(await failure(printFile, { file, maxBytes: 10 }, recorder.layer), P4InvalidArgumentError, { option: 'maxBytes' });
+    }
+
+    expect(recorder.invocations).toEqual([]);
+  });
+});
+
 function collect<A>(spec: P4CommandSpec<A>, ...names: string[]) {
   return Effect.runPromise(runCommand(spec).pipe(Effect.provide(Layer.merge(replay(...names), configLayer({})))));
 }
@@ -147,6 +234,7 @@ describe('printFile', () => {
       fileSize: 8,
       content: encoder.encode('one\ntwo\n'),
       isBinary: false,
+      isTruncated: false,
       messages: [],
     });
     expect(printedText(printed)).toBe('one\ntwo\n');
@@ -248,6 +336,8 @@ describe('printBatch', () => {
 
     expectFailure(await failure(printBatch, { fileSpec: [] }, none), P4InvalidArgumentError, { option: 'fileSpec' });
     expectFailure(await failure(printBatch, { fileSpec: ['//d/a\n-o'] }, none), P4InvalidArgumentError);
+    // As an argument, which a non-ASCII list is, a leading dash would be an option.
+    expectFailure(await failure(printBatch, { fileSpec: ['//d/café.uasset', '-a'] }, none), P4InvalidArgumentError);
   });
 });
 

@@ -156,6 +156,26 @@ describe('materializeDepotFiles batches', () => {
     expect(leftovers(directory)).toEqual([]);
   });
 
+  it('prints a non-ASCII path per file, which the batch would read differently on stdin', async () => {
+    const directory = folder();
+    const inputs: string[] = [];
+
+    const recorder = executor((invocation) => {
+      inputs.push(invocation.input ?? '');
+
+      return { stdout: marshal([stat('//d/Hero.uasset', 4), chunk('hero')]) };
+    });
+
+    const fileSpec = ['//d/Hero.uasset', '//d/Héro.uasset', '//d/日本/Run.uasset']
+      .map((depotFile) => ({ depotFile, revision: 1, type: 'binary' }));
+
+    const result = succeeded(await materialize({ fileSpec, directory, maxFiles: 3, batch: { processes: 1 } }, recorder));
+    expect(inputs).toEqual(['//d/Hero.uasset#1\n']);
+    expect(result.items.map((item) => [item.file.depotFile, item.method])).toEqual([
+      ['//d/Hero.uasset', 'batch'], ['//d/Héro.uasset', 'print'], ['//d/日本/Run.uasset', 'print'],
+    ]);
+  });
+
   it('fails as before when the per-file print of a revision the batch skipped finds nothing', async () => {
     const [fixture] = fixtures('print-materialize-batch');
 

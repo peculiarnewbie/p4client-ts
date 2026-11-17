@@ -6,7 +6,7 @@ import { P4, P4Executor, configLayer, globalArgs, connectionEnv } from '../../sr
 import { runNodeProcess } from '../../src/node/index.js';
 import { createP4ClientFromLayer } from '../../src/promise/index.js';
 import { captureProcess } from '../support/process.js';
-import type { P4ClientOptions, P4Invocation, SyncOptions } from '../../src/index.js';
+import type { P4ClientOptions, P4Invocation, P4ProcessEvent, P4SpawnError, SyncOptions } from '../../src/index.js';
 import type { P4PromiseClient } from '../../src/promise/index.js';
 import type { E2EConfig } from "./config.js";
 import { assertSeededWorkspace, type E2EFixture, type FixtureSentinel } from "./fixture.js";
@@ -16,6 +16,9 @@ const GUIDE_PATH = "docs/guide/getting-started.md";
 const NEW_FEATURE_PATH = "src/app/new-feature.txt";
 const RENAME_SOURCE_PATH = "history/chain-source.txt";
 const RENAME_TARGET_PATH = "history/chain-renamed.txt";
+
+/** Runs one checked `p4` invocation as process events. */
+export type ProcessRunner = (invocation: P4Invocation) => Stream.Stream<P4ProcessEvent, P4SpawnError>;
 
 export class P4E2EHarness {
   readonly client: P4PromiseClient;
@@ -33,9 +36,10 @@ export class P4E2EHarness {
 
   /**
    * A library client for a disposable workspace, with the same localhost isolation checks.
-   * Pass `client` to target a workspace other than the fixture's `P4CLIENT`.
+   * Pass `client` to target a workspace other than the fixture's `P4CLIENT`, and `adapt` to
+   * wrap how each checked invocation is run.
    */
-  createWorkspaceClient(cwd: string, client?: string): P4PromiseClient {
+  createWorkspaceClient(cwd: string, client?: string, adapt: (run: ProcessRunner) => ProcessRunner = (run) => run): P4PromiseClient {
     const config = this.config;
 
     const options: P4ClientOptions = {
@@ -47,12 +51,14 @@ export class P4E2EHarness {
       allowMutation: true,
     };
 
-    const executor = Layer.succeed(P4Executor, {
-      run: (invocation) => Stream.unwrap(Effect.sync(() => {
-        this.assertIsolated(invocation);
+    const runChecked = adapt((invocation) => {
+      this.assertIsolated(invocation);
 
-        return runNodeProcess(invocation);
-      })),
+      return runNodeProcess(invocation);
+    });
+
+    const executor = Layer.succeed(P4Executor, {
+      run: (invocation) => Stream.unwrap(Effect.sync(() => runChecked(invocation))),
     });
 
     const derive = (patch: P4ClientOptions) => P4.layer.pipe(
@@ -71,13 +77,15 @@ export class P4E2EHarness {
     const ports = args.flatMap((arg, index) => arg === '-p' ? [args[index + 1]] :
       arg.startsWith('-p') ? [arg.slice(2)] : []);
 
+    // Arguments on stdin (`-x -`) are appended after the command, so they cannot reach the
+    // global options; an argument file could not be checked.
     const batches = args.flatMap((arg, index) => arg === '-x' ? [index] :
       arg.startsWith('-x') ? [-1] : []);
 
     if (ports.length !== 1 || ports[0] !== this.config.p4Port ||
       this.config.p4Port !== process.env.P4_TS_E2E_ISOLATED_PORT ||
       !/^127\.0\.0\.1:\d+$/.test(this.config.p4Port) ||
-      batches.some((index) => index < 0 || args[index + 1] !== '-' || args[index + 2] !== 'print')) {
+      batches.some((index) => index < 0 || args[index + 1] !== '-')) {
       throw new Error('Refusing command outside the disposable localhost server.');
     }
   }
@@ -272,14 +280,14 @@ export class P4E2EHarness {
     copyFileSync(sentinel.seedPath, sentinel.workspacePath);
   }
 
-  async run(args: string[], options: { input?: string; allowNonZeroExit?: boolean } = {}) {
+  async run(args: string[], options: { input?: string; allowNonZeroExit?: boolean; client?: string; cwd?: string } = {}) {
     const connection = { port: this.config.p4Port, user: this.config.user,
-      client: this.config.client, isolated: true };
+      client: options.client ?? this.config.client, isolated: true };
 
     const invocation: P4Invocation = {
       executable: this.config.p4Executable,
       args: [...globalArgs(connection), ...args],
-      cwd: this.config.workspaceRoot,
+      cwd: options.cwd ?? this.config.workspaceRoot,
       env: { ...this.config.p4Env, ...connectionEnv(connection) },
       input: options.input,
     };

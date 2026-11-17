@@ -1,4 +1,5 @@
 import { Effect, Schema } from 'effect';
+import { isFileArg } from '../engine/command.js';
 import { P4InvalidArgumentError, P4ParseError } from '../errors.js';
 import {
   P4ChangeSchema,
@@ -139,6 +140,16 @@ export function specList(specs: FileSpecs | undefined): string[] {
   if (specs === undefined) return [];
 
   return isWireString(specs) ? [specs] : [...specs];
+}
+
+/** The file specs as a list of command `files`, each checked by {@link isFileArg}. */
+export function fileArgs(specs: FileSpecs | undefined, option = 'fileSpec'): Effect.Effect<string[], P4InvalidArgumentError> {
+  const list = specList(specs);
+  const rejected = list.find((spec) => !isFileArg(spec));
+
+  return rejected === undefined
+    ? Effect.succeed(list)
+    : invalid(option, `${option} entries must be non-blank, on one line, and not start with "-"; received ${JSON.stringify(rejected)}.`);
 }
 
 /** Every `name{index}` field of a record, by index, in index order (as `describe` and `filelog` print them). */

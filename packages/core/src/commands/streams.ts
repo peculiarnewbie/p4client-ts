@@ -4,11 +4,11 @@ import { drain, operation, progressCounter } from '../engine/operation.js';
 import {
   depotPath,
   description,
+  fileArgs,
   indexes,
   isoFromSeconds,
   malformed,
   requirePositive,
-  specList,
   text,
 } from './shared.js';
 import type { P4DepotPath } from '../schemas.js';
@@ -87,16 +87,26 @@ function toStream(row: Row): P4Stream {
 export const listStreams = operation<ListStreamsOptions, P4Stream, P4StreamList>('listStreams', (options, sink) =>
   Effect.gen(function* () {
     const args = ['streams'];
+    const limit = options.limit === undefined ? undefined : yield* requirePositive(options.limit, 'limit');
 
-    if (options.limit !== undefined) args.push('-m', String(yield* requirePositive(options.limit, 'limit')));
-    args.push(...specList(options.fileSpec));
+    if (limit !== undefined) args.push('-m', String(limit));
+    const files = yield* fileArgs(options.fileSpec);
+    let reported = 0;
 
-    const output = yield* drain(sink, streamCommand({ args, format: 'json', decode: toStream }), {
-      item: (stream) => stream,
+    // A long non-ASCII list runs as several commands, each applying `-m` on its own.
+    const withinLimit = (stream: P4Stream): P4Stream | null => {
+      if (limit !== undefined && reported >= limit) return null;
+      reported += 1;
+
+      return stream;
+    };
+
+    const output = yield* drain(sink, streamCommand({ args, files, format: 'json', decode: toStream }), {
+      item: withinLimit,
       counter: progressCounter(sink, 'records'),
     });
 
-    return { items: output.items, messages: output.messages };
+    return { items: limit === undefined ? output.items : output.items.slice(0, limit), messages: output.messages };
   }));
 
 /** Options for {@link getStream}. */
